@@ -18,11 +18,13 @@ import {
   subagentBtwOf,
   companyOf,
   createSnapshot,
-  detailLines,
+  detailOf,
   findCrab,
   handoverOf,
   hatsOf,
   memoFor,
+  orderPromptOf,
+  ordersFor,
   parseSay,
   messageSent,
   parseSnapshot,
@@ -31,6 +33,7 @@ import {
   pruned,
   seatOf,
   spawned,
+  talkOf,
   toolAsked,
   toolFinished,
   toolLabel,
@@ -122,6 +125,10 @@ test("a manager's task is what the person asked, without the tags around it", as
     "<command-name>/goal</command-name>\n<command-message>goal</command-message>\n<command-args>完善办公室设计</command-args>" +
     "<local-command-stdout>Goal set: 完善办公室设计</local-command-stdout>"
   expect(promptOf(goal)).toBe("/goal 完善办公室设计")
+  // a memo handed over is its memo, not the handover with its roster
+  const handover = "The crab-office plugin sent a message: [螃蟹办公室 · 董事长在白板上的留言 · 待领 · memo m1]\n全体扣工资\n\n你是 web-app 部 · 本部 的部长。公司里现在的同事：\n- …"
+  expect(promptOf(handover)).toBe("留言：全体扣工资")
+  expect(promptOf("[crab-office · the chairman's memo on the board · everyone · memo m2]\nship it\n\nYou are…")).toBe("留言：ship it")
   expect(
     promptOf("<system-reminder>be brief</system-reminder>为啥我看不到"),
   ).toBe("为啥我看不到")
@@ -193,10 +200,15 @@ test("a click finds the crab and its detail carries what passed between them", a
   turnFinished(s, "a1", { isAnswer: true, answer: "seven" }, T0 + 1)
   const found = findCrab([s], "a1")
   expect(found?.snap.sessionId).toBe("s1")
-  const lines = detailLines(found!.crab, found!.snap, T0 + 2)
-  expect(lines[0]).toContain("调研员")
-  expect(lines[1]).toBe("↓ 收到: List every package")
-  expect(lines[3]).toBe("↑ 交回: seven")
+  const card = detailOf(found!.crab, found!.snap, T0 + 2)
+  expect(card.title).toBe("调研员")
+  expect(card.where).toBe("web-app 部 · 本部")
+  expect(card.rows).toEqual([
+    { label: "收到", text: "List every package" },
+    { label: "交回", text: "seven" },
+  ])
+  // the manager's card names it as the drawing does: alone in its department, 大部长
+  expect(detailOf(s.leader, s, T0 + 2, [s]).title).toBe("大部长")
 })
 
 test("a snapshot file that is not one is ignored", async () => {
@@ -438,4 +450,56 @@ test("a colleague's message waits in its addressee's inbox until the board is re
   const board = boardOf(snaps, T0 + 100)
   expect(board).toHaveLength(3)
   expect(board[2]).toContain("api-server 部 · 本部 的大部长 → 全体：别动 main")
+})
+
+test("the board pages back eight lines at a time and keeps a long line whole", async () => {
+  const a = withAgent()
+  a.updatedAt = T0 + 100
+  for (let i = 0; i < 20; i++) messageSent(a, undefined, "s2", `line ${i} ${"x".repeat(300)}`, T0 + 10 + i)
+  const newest = companyOf([a], "s1", T0 + 100)
+  // the hire's own line, then the twenty said
+  expect(newest.boardView).toEqual({ first: 14, last: 21, total: 21 })
+  expect(newest.board?.at(-1)?.text.startsWith("line 19 ")).toBe(true)
+  expect(newest.board?.at(-1)?.text.length).toBe("line 19 ".length + 300)
+  expect(companyOf([a], "s1", T0 + 100, undefined, 8).boardView).toEqual({ first: 6, last: 13, total: 21 })
+  // paged past the oldest, it stops at the oldest page
+  expect(companyOf([a], "s1", T0 + 100, undefined, 100).boardView).toEqual({ first: 1, last: 8, total: 21 })
+  expect(new Set(newest.board?.map((l) => l.key)).size).toBe(8)
+})
+
+test("a session's talk is what was said to it and what it answered, the engine's own lines left out", async () => {
+  const rows = [
+    { role: "user", text: "<system-reminder>be brief</system-reminder>整理 README" },
+    { role: "assistant", text: "先看一下现在的结构" },
+    { role: "user", text: "" },
+    { role: "assistant", text: "README 改好了，加了截图" },
+    { role: "user", text: "Stop hook feedback:\n[goal]: not yet" },
+    { role: "user", text: "The crab-office plugin sent a message: [螃蟹办公室 · 董事长交代] 再跑一遍测试" },
+    { role: "assistant", text: "测试全过了" },
+  ]
+  expect(talkOf(rows)).toEqual([
+    { role: "user", text: "整理 README" },
+    { role: "assistant", text: "README 改好了，加了截图" },
+    { role: "user", text: "再跑一遍测试" },
+    { role: "assistant", text: "测试全过了" },
+  ])
+  const many = Array.from({ length: 20 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", text: `第 ${i} 句` }))
+  expect(talkOf(many).map((t) => t.text)).toEqual(["第 14 句", "第 15 句", "第 16 句", "第 17 句", "第 18 句", "第 19 句"])
+})
+
+test("the chairman's instructions reach only the session they name, once", async () => {
+  const s = withAgent()
+  const other = createSnapshot("s2", "web-app", undefined, T0)
+  const orders = [
+    { id: "o2", at: T0 + 20, to: "s1", text: "再跑一遍测试" },
+    { id: "o1", at: T0 + 10, to: "s1", text: "先合并 main" },
+    { id: "o3", at: T0 + 10, to: "s2", text: "别动" },
+    { id: "old", at: T0 - 25 * 60 * 60_000, to: "s1", text: "太久了" },
+  ]
+  expect(ordersFor(s, orders, T0 + 30).map((o) => o.id)).toEqual(["o1", "o2"])
+  s.obeyed = ["o1"]
+  expect(ordersFor(s, orders, T0 + 30).map((o) => o.id)).toEqual(["o2"])
+  expect(ordersFor(other, orders, T0 + 30).map((o) => o.id)).toEqual(["o3"])
+  // taken up, an instruction is its session's task as it was written
+  expect(promptOf(`The crab-office plugin sent a message: ${orderPromptOf("再跑一遍测试")}`)).toBe("再跑一遍测试")
 })

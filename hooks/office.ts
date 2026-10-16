@@ -78,6 +78,52 @@ export type Snapshot = {
   // When this session last read the board, so its inbox holds only what came
   // after.
   seen?: number
+  // The chairman's instructions this session has taken up, so none runs twice.
+  obeyed?: string[]
+  // Its last few exchanges, for its card: what was said to it, what it said.
+  talk?: Talk[]
+}
+
+export type Talk = { role: "user" | "assistant"; text: string }
+
+const TALK_KEPT = 6
+const TALK_MAX = 300
+// What the engine itself puts in a session's mouth as a user message: a stop
+// hook's verdict, an interruption, a summary at a resume. Not talk; a session
+// held by a stop hook would show nothing else.
+const NOT_TALK = /^(Stop hook feedback:|\[Request interrupted|This session is being continued|Caveat:)/
+
+// A session's last exchanges as its card shows them, text alone: a run of its
+// own messages between tool calls is its last, and tool results and the
+// engine's wrappers are not talk.
+export function talkOf(rows: readonly { role: string; text: string }[]): Talk[] {
+  const talk: Talk[] = []
+  for (const row of rows) {
+    const role = row.role === "user" ? "user" : "assistant"
+    if (role === "user" && NOT_TALK.test(row.text.trim())) continue
+    const text = clip(role === "user" ? promptOf(row.text) : row.text, TALK_MAX)
+    if (text === "") continue
+    if (talk.at(-1)?.role === role) talk[talk.length - 1] = { role, text }
+    else talk.push({ role, text })
+  }
+  return talk.slice(-TALK_KEPT)
+}
+
+// An instruction the chairman gives one session from its card in the pane: a
+// prompt of its own there, run once that session is free. Only the person can
+// give one, so no session sets another to work.
+export type Order = { id: string; at: number; to: string; text: string }
+
+const ORDER_TTL_MS = 24 * 60 * 60_000
+
+export function ordersFor(me: Snapshot, orders: Order[], now: number): Order[] {
+  return orders
+    .filter((o) => o.to === me.sessionId && !(me.obeyed ?? []).includes(o.id) && now - o.at < ORDER_TTL_MS)
+    .sort((a, b) => a.at - b.at)
+}
+
+export function orderPromptOf(text: string): string {
+  return `${w().orderHead} ${text}`
 }
 
 export const STALE_MS = 30_000
@@ -88,7 +134,12 @@ export const MAIL_MS = 3_000
 export const CHEER_MS = 15_000
 const TEXT_MAX = 500
 const TOOLS_KEPT = 5
-const BOARD_KEPT = 12
+// Enough of a session's lines to page back through, and no more: every session
+// reads every other's snapshot each second.
+const BOARD_KEPT = 40
+// A line on the board keeps this much of what was said; the board shows a row
+// of it, and a click shows it whole.
+const NOTE_MAX = 400
 const BOARD_SHOWN = 8
 
 // The crew's colours sit beside Clawd's own at a like lightness, handed out in
@@ -205,8 +256,18 @@ export function promptOf(text: string): string {
     .replace(/<bash-input>([\s\S]*?)<\/bash-input>/g, "! $1")
     .replace(/<[^>]+>/g, " ")
   const command = name === undefined ? "" : `${name.trim()} ${args.trim()}`
-  return clip(`${command} ${typed}`)
+  // A memo handed over is a prompt this plugin wrote, behind the engine's "The
+  // <plugin> plugin sent a message:": as a task it is the memo, not the whole
+  // handover with its roster of colleagues.
+  const sent = `${command} ${typed}`
+    .trim()
+    .replace(/^The [\w-]+ plugin sent a message:\s*/, "")
+    .replace(/^\[(?:螃蟹办公室 · 董事长交代|crab-office · from the chairman)\]\s*/, "")
+  const memo = HANDOVER.exec(sent)?.[1]
+  return clip(memo === undefined ? sent : w().memoTask(memo.trim()))
 }
+
+const HANDOVER = /^\[(?:螃蟹办公室 · 董事长在白板上的留言|crab-office · the chairman's memo on the board)[^\]]*\]\s*([^\n]*)/
 
 export function turnStarted(
   s: Snapshot,
@@ -280,7 +341,7 @@ export function messageSent(
     kind: "message",
     from: speakerOf(sender, s),
     to: recipient,
-    text: clip(text, 120),
+    text: clip(text, NOTE_MAX),
   })
 }
 
@@ -386,7 +447,7 @@ export function turnFinished(
   }
   crab.answer = clip(t.answer)
   moved(crab, t.isAnswer ? "done" : "failed", now)
-  const text = t.isAnswer ? clip(t.answer, 120) : w().unfinished
+  const text = t.isAnswer ? clip(t.answer, NOTE_MAX) : w().unfinished
   noted(s, {
     at: now,
     kind: "report",
@@ -549,6 +610,7 @@ export function companyOf(
   mine: string,
   now: number,
   desk: { memos: Memo[]; claims: Claim[] } = { memos: [], claims: [] },
+  older = 0,
 ): Company {
   const present = snaps.filter(
     (s) => now - s.updatedAt < LEAVE_MS || s.sessionId === mine,
@@ -593,17 +655,21 @@ export function companyOf(
     }
   })
   const chiefs = chiefsOf(present, now)
-  const board: BoardLine[] = [...present.flatMap((s) => (s.board ?? []).map((n) => shownNote(n, s, chiefs))), ...memoNotes]
-    .sort((a, b) => a.at - b.at)
-    .slice(-BOARD_SHOWN)
-    .map((n) => ({
-      time: clockOf(n.at),
-      kind: n.kind,
-      from: n.from,
-      to: n.to,
-      text: n.text,
-    }))
-  return { header: w().header(onDuty), rooms, board, lang: w().lang }
+  const all = [...present.flatMap((s) => (s.board ?? []).map((n) => shownNote(n, s, chiefs))), ...memoNotes].sort(
+    (a, b) => a.at - b.at,
+  )
+  // `older`: how many lines back from the newest the board is paged.
+  const last = all.length - Math.min(older, Math.max(0, all.length - BOARD_SHOWN))
+  const board: BoardLine[] = all.slice(Math.max(0, last - BOARD_SHOWN), last).map((n) => ({
+    key: `${n.at}:${n.from.id ?? n.from.name}`,
+    time: clockOf(n.at),
+    kind: n.kind,
+    from: n.from,
+    to: n.to,
+    text: n.text,
+  }))
+  const boardView = { first: last - board.length + 1, last, total: all.length }
+  return { header: w().header(onDuty), rooms, board, boardView, lang: w().lang }
 }
 
 // The strip above the prompt: this session's team on one row of desks.
@@ -638,21 +704,31 @@ function statusOf(look: string): string {
   return w().status[look] ?? look
 }
 
-export function detailLines(crab: Crab, snap: Snapshot, now: number): string[] {
+// What a clicked crab's card shows: who and where, what it is doing and for how
+// long, then its task, its last tools, and for crew what it handed back. Its
+// model and the whole of a long prompt were dropped as noise.
+export type Detail = { title: string; where: string; state: string; color: string; rows: { label: string; text: string }[] }
+
+const DETAIL_MAX = 160
+
+// `snaps`, the company, so a 大部长's card names it as the drawing does.
+export function detailOf(crab: Crab, snap: Snapshot, now: number, snaps: Snapshot[] = [snap]): Detail {
   const look = lookOf(crab, now, isGoneOf(snap, now))
-  const state = `${statusOf(look)} ${elapsed(now - crab.since)}`
-  const model = crab.model ?? w().modelUnknown
-  const tools = crab.tools.length > 0 ? crab.tools.join("  ") : w().noTools
-  const head = `${titleOf(roleOf(crab, snap))} · ${model} · ${state}`
-  if (crab.role === "leader") {
-    return [`${head} · ${whoOf(snap)}`, w().task(crab.prompt ?? w().notStarted), `⚙ ${tools}`]
-  }
-  return [
-    `${head} · ${crab.role}`,
-    w().given(crab.prompt ?? ""),
-    `⚙ ${tools}`,
-    w().handedBack(crab.answer ?? w().stillWorking),
+  const tools = crab.tools.slice(-3).join(" · ")
+  const label = w().labels
+  const isLeader = crab.role === "leader"
+  const rows = [
+    { label: isLeader ? label.task : label.given, text: clip(crab.prompt ?? "", DETAIL_MAX) || w().notStarted },
+    ...(tools ? [{ label: label.tools, text: tools }] : []),
+    ...(!isLeader && crab.answer ? [{ label: label.back, text: clip(crab.answer, DETAIL_MAX) }] : []),
   ]
+  return {
+    title: isLeader ? managerTitleOf(snap, chiefsOf(snaps, now)) : titleOf(roleOf(crab, snap)),
+    where: whoOf(snap),
+    state: `${statusOf(look)} · ${elapsed(now - crab.since)}`,
+    color: colorOf(crab),
+    rows,
+  }
 }
 
 // The chairman's memos: who they are for, who takes them, and what a session is

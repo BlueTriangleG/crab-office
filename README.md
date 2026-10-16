@@ -9,10 +9,11 @@ Every Claude Code session running on your machine, and every subagent it hires, 
 - **Workstations**: every crab sits at a desk with a monitor that shows what it is doing: editing, running a command, reading, searching, thinking, waiting for your approval, resting, asleep, or gone home. Only working crabs have anything moving on their screen.
 - **A shared whiteboard**: who handed what to whom, what came back, and what sessions said to each other, across every session.
 - **You are the chairman**: post a memo to a team, a department or everyone, and an idle session picks it up.
-- **btw**: click any crab and ask it what it is doing and how it is going. It answers on the side, without starting a turn or interrupting its work.
+- **Talk to any session**: click a manager for its card: what it is on, its recent conversation, and a field to give it an instruction, which it carries out once it is free. You keep the conversation going from the office without switching windows.
+- **btw**: or just ask any crab what it is doing and how it is going. It answers on the side, without starting a turn or interrupting its work.
 - **Colleagues**: every session gets an `office_board` tool, so the models can read the board and write to each other.
 
-![Ask any crab: its details and a btw answer under the drawing](docs/btw.png)
+![A director's card: its task, tools and recent conversation, an instruction delivered, and fields to give another or ask a btw](docs/card.png)
 
 ## Install
 
@@ -50,19 +51,20 @@ The office speaks English by default. To switch to Chinese, set the plugin's `la
 
 In the pane:
 
-- Click a crab for its details, and use the **btw** field under them to ask it something.
-- Click a line on the board to select the crab who said it.
+- Click a crab for its card. A manager's card shows its last few exchanges, a **➤ Tell it** field for an instruction (it runs once that session is free, never interrupting it), and a **btw** field for a question it answers on the side. A crew member's card has the btw field.
+- Click a line on the board to select the crab who said it and read the line whole. With more lines than fit, page with **▲ older** and **▼ newer** on the board's edges.
 - Type in the field under the board and press Enter to pin a memo.
 - A gold mark shows the team you are viewing from (◀ you).
 
 ## How it works
 
 - Each session writes its state to `~/.claude/crab-office/live/<session id>.json` and heartbeats every 5 seconds. Other sessions read that folder to see who is in the company. A session silent for 30 seconds shows as gone home and leaves after 5 minutes.
-- Memos live in `memos/` and claims in `claims/`; btw questions between sessions go through `asks/` and `replies/`. Everything is local files; nothing goes over the network.
+- Memos live in `memos/` and claims in `claims/`, instructions in `orders/`; btw questions between sessions go through `asks/` and `replies/`. Everything is local files; nothing goes over the network.
 - **What costs tokens**:
   - A memo is handed to an idle session as a new prompt. It goes only when that session's manager and crew have all finished, and you are not typing in its prompt box.
+  - An instruction from a card is a new prompt in that session, run when its current turn ends.
   - Each btw question is one model call. Asking a manager forks its session's whole context (mostly served from the prompt cache).
-- A message one session writes to another never wakes it. It waits until the reader next looks at the board, so two models cannot talk each other into turns without end.
+- Only you can give instructions or post memos; a model has no way to. A message one session writes to another never wakes it. It waits until the reader next looks at the board, so two models cannot talk each other into turns without end.
 - Background processes that the Claude Code daemon keeps warm stay out of the office until someone actually uses them.
 
 The design choices, and the alternatives that were tried, are in [DESIGN.md](DESIGN.md).

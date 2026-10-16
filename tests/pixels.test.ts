@@ -104,8 +104,8 @@ test("a selected crab's name plate is drawn in its own colour", async () => {
 
 test("the shared board sits under the rooms, two rows a line", async () => {
   const lines = [
-    { time: "12:03", kind: "assign", from: { name: "经理", color: "#d77757" }, to: { name: "调研员", color: "#6a9bcc" }, text: "找调用点" },
-    { time: "12:04", kind: "report", from: { name: "调研员", color: "#6a9bcc" }, to: { name: "经理", color: "#d77757" }, text: "找到 3 处" },
+    { key: "k1", time: "12:03", kind: "assign", from: { name: "经理", color: "#d77757" }, to: { name: "调研员", color: "#6a9bcc" }, text: "找调用点" },
+    { key: "k2", time: "12:04", kind: "report", from: { name: "调研员", color: "#6a9bcc" }, to: { name: "经理", color: "#d77757" }, text: "找到 3 处" },
   ]
   const company: Company = { ...oneRoom([team(1)]), board: lines }
   const without = heightOf(oneRoom([team(1)]), 34)
@@ -176,10 +176,10 @@ test("a big team keeps two rows of desks and folds the rest into a crowd line", 
 })
 
 test("a board line names the crab who said it, and marks it while that crab is selected", async () => {
-  const said = { time: "12:03", kind: "report", from: { name: "调研员", color: "#6a9bcc", id: "a0" }, to: { name: "经理", color: "#d77757", id: "boss" }, text: "找到了" }
+  const said = { key: "k3", time: "12:03", kind: "report", from: { name: "调研员", color: "#6a9bcc", id: "a0" }, to: { name: "经理", color: "#d77757", id: "boss" }, text: "找到了" }
   const company: Company = { ...oneRoom([team(1)]), board: [said] }
   const row = heightOf(oneRoom([team(1)]), 34) + 1
-  expect(office(company, 34, 0).lines).toEqual([{ id: "a0", cy: row }])
+  expect(office(company, 34, 0).lines).toEqual([{ id: "a0", key: "k3", cy: row }])
   expect(office(company, 34, 0).cells[row]![1]!.ch).not.toBe("▸")
   expect(office(company, 34, 0, "a0").cells[row]![1]!.ch).toBe("▸")
 })
@@ -313,4 +313,18 @@ test("a resting crab's monitor stands still; a working crab's moves", async () =
   }
   const editing = Array.from({ length: 24 }, (_, t) => monitorOf("editing", t).join())
   expect(new Set(editing).size).toBeGreaterThan(1)
+})
+
+test("a board with more lines than it shows has a way back and a way forward", async () => {
+  const line = (i: number) => ({ key: `n${i}`, time: "12:00", kind: "message", from: { name: "部长", color: "#d77757", id: "boss" }, to: { name: "董事长", color: "#e8c468" }, text: `第 ${i} 句` })
+  const company: Company = { rooms: [], board: Array.from({ length: 8 }, (_, i) => line(i + 9)), boardView: { first: 9, last: 16, total: 30 } }
+  const drawn = office(company, 60, 0)
+  expect(drawn.pagers.map((p) => p.dir)).toEqual(["older", "newer"])
+  const text = drawn.cells.map((row) => row.map((c) => c.ch).join(""))
+  expect(text[0]).toContain("▲ 更早")
+  expect(text.at(-1)).toContain("第 9–16 条，共 30 条")
+  expect(text.at(-1)).toContain("▼ 更新")
+  expect(drawn.lines.map((l) => l.key)).toEqual(company.board!.map((l) => l.key))
+  const newest = office({ ...company, boardView: { first: 23, last: 30, total: 30 } }, 60, 0)
+  expect(newest.pagers.map((p) => p.dir)).toEqual(["older"])
 })

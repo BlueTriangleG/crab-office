@@ -1,4 +1,4 @@
-import type { EngineInterface, Register } from "claude-code"
+import type { ClientElements, EngineInterface, Register } from "claude-code"
 
 import {
   CHEER_MS,
@@ -6,13 +6,15 @@ import {
   bandOf,
   companyOf,
   createSnapshot,
-  detailLines,
+  detailOf,
   findCrab,
   handoverOf,
   boardOf,
   btwOf,
   inboxOf,
   memoFor,
+  orderPromptOf,
+  ordersFor,
   recipientsOf,
   targetOf,
   messageSent,
@@ -24,6 +26,7 @@ import {
   pruned,
   rosterOf,
   spawned,
+  talkOf,
   toolAsked,
   toolFinished,
   toolLabel,
@@ -32,7 +35,8 @@ import {
   turnStarted,
   whoOf,
 } from "./office.ts"
-import type { Ask, Claim, Memo, Reply, Snapshot } from "./office.ts"
+import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
+import type { BoardLine } from "./pixels.ts"
 import { SEAT_COLS, heightOf, office as draw, slicesOf } from "./pixels.ts"
 import { setLanguage, w } from "./words.ts"
 
@@ -49,6 +53,8 @@ const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
 const HEARTBEAT_MS = 5000
+// The board pages by as many lines as it shows.
+const BOARD_PAGE = 8
 // Room for three desks a row between the room's walls.
 const PANE_COLUMNS = SEAT_COLS * 3 + 2
 
@@ -75,6 +81,10 @@ const office = {
   chats: new Map<string, Chat[]>(),
   // The btw field's key, as `said` is the board field's.
   asked: 0,
+  // How many lines back from the newest the board is paged, and the line shown
+  // whole under the drawing.
+  boardOlder: 0,
+  note: null as string | null,
   // Asks from other sessions this one has taken up, so each is answered once.
   answered: new Set<string>(),
   // A background process the daemon keeps warm for a session nobody has opened
@@ -83,7 +93,105 @@ const office = {
   isSpare: false,
 }
 
-type Chat = { id: string; at: number; question: string; answer?: string; isRemote: boolean }
+// A btw asked of a crab, or an instruction given to a session: `answer` is the
+// btw's reply, or for an instruction to this session itself, that it went.
+type Chat = { id: string; at: number; question: string; answer?: string; isRemote: boolean; kind: "btw" | "order" }
+
+const GOLD = "#e8c468"
+const CHALK = "#5d7a66"
+
+// A board line shown whole, on a card the colour of the board.
+function noteCard(el: Pick<ClientElements, "Box" | "Text">, note: BoardLine) {
+  const { Box, Text } = el
+  return (
+    <Box key="note-card" flexDirection="column" borderStyle="round" borderColor={CHALK} paddingX={1}>
+      <Box flexDirection="row" columnGap={1}>
+        <Text dimColor>{note.time}</Text>
+        <Text bold color={note.from.color}>
+          {note.from.name}
+        </Text>
+        <Text dimColor>→</Text>
+        <Text bold color={note.to.color}>
+          {note.to.name}
+        </Text>
+      </Box>
+      <Text wrap="wrap">{note.text}</Text>
+    </Box>
+  )
+}
+
+// A clicked crab on a card in its own colour: who, where and what it is doing,
+// its task and tools, then the btw asked of it and the field to ask again. The
+// pane and the band draw the same card.
+function crabCard(
+  el: Pick<ClientElements, "Box" | "Text" | "Input">,
+  detail: Detail,
+  chats: Chat[],
+  inputKey: string,
+  orders?: { key: string; obeyed: string[]; talk: Talk[] },
+) {
+  const { Box, Text, Input } = el
+  const given = chats.filter((chat) => chat.kind === "order")
+  return (
+    <Box key="crab-card" flexDirection="column" borderStyle="round" borderColor={detail.color} paddingX={1}>
+      <Box flexDirection="row" columnGap={1}>
+        <Text bold color={detail.color}>
+          {detail.title}
+        </Text>
+        <Text dimColor>{detail.where}</Text>
+        <Text>{detail.state}</Text>
+      </Box>
+      {detail.rows.map((row) => (
+        <Box key={`row-${row.label}`} flexDirection="row">
+          <Box width={7}>
+            <Text dimColor>{row.label}</Text>
+          </Box>
+          <Text wrap="wrap">{row.text}</Text>
+        </Box>
+      ))}
+      {orders !== undefined &&
+        orders.talk.map((line, i) => (
+          <Box key={`talk-${i}`} flexDirection="row">
+            <Box width={6}>
+              <Text color={line.role === "user" ? GOLD : detail.color} bold>
+                {line.role === "user" ? w().you : w().it}
+              </Text>
+            </Box>
+            <Text wrap="wrap" dimColor={line.role === "user"}>
+              {line.text}
+            </Text>
+          </Box>
+        ))}
+      {orders !== undefined &&
+        given.map((chat) => (
+          <Box key={`order-${chat.id}`} flexDirection="row" columnGap={2}>
+            <Text color={GOLD} wrap="wrap">{`➤ ${chat.question}`}</Text>
+            <Text dimColor>
+              {chat.answer !== undefined || orders.obeyed.includes(chat.id) ? w().orderDelivered : w().orderQueued}
+            </Text>
+          </Box>
+        ))}
+      {orders !== undefined && (
+        <Input
+          key={orders.key}
+          label={w().orderLabel}
+          placeholder={w().orderPlaceholder}
+          submitLabel={w().send}
+          onSubmit={() => undefined}
+        />
+      )}
+      {chats.filter((chat) => chat.kind === "btw").flatMap((chat) => [
+        <Text key={`ask-${chat.id}`} color={GOLD} wrap="wrap">
+          {`${w().you}${chat.question}`}
+        </Text>,
+        <Text key={`answer-${chat.id}`} wrap="wrap" dimColor={chat.answer === undefined}>
+          {`${w().it}${chat.answer ?? w().thinkingDots}`}
+        </Text>,
+      ])}
+      <Input key={inputKey} label="btw " placeholder={w().btwPlaceholder} submitLabel={w().ask} onSubmit={() => undefined} />
+    </Box>
+  )
+}
 const CHAT_KEPT = 5
 // A question to another session waits this long for its answer, and an ask this
 // session finds older than it is left alone: whoever asked has given up on it.
@@ -130,13 +238,52 @@ async function ask($: EngineInterface, crabId: string, question: string) {
   if (me === undefined || found === undefined || question.trim() === "") return
   const now = Date.now()
   const isRemote = found.snap.sessionId !== me.sessionId
-  const chat: Chat = { id: idOf(now), at: now, question: question.trim(), isRemote }
+  const chat: Chat = { id: idOf(now), at: now, question: question.trim(), isRemote, kind: "btw" }
   office.chats.set(crabId, [...(office.chats.get(crabId) ?? []), chat].slice(-CHAT_KEPT))
   office.asked += 1
   $.ui.invalidate("ui.render")
   if (!isRemote) return heard($, crabId, chat.id, await answer($, crabId, chat.question))
   const sent: Ask = { id: chat.id, at: now, to: found.snap.sessionId, crab: crabId, question: chat.question }
   await $.fs.write(`${office.base}/asks/${chat.id}.json`, JSON.stringify(sent))
+}
+
+// An instruction from a session's card: to this session, a prompt now, as if
+// typed here; to another, a file it takes up on its next tick.
+async function order($: EngineInterface, sessionId: string, text: string) {
+  const me = office.me
+  if (me === undefined || text.trim() === "") return
+  const now = Date.now()
+  const isRemote = sessionId !== me.sessionId
+  const chat: Chat = { id: idOf(now), at: now, question: text.trim(), isRemote, kind: "order" }
+  if (!isRemote) chat.answer = ""
+  office.chats.set(sessionId, [...(office.chats.get(sessionId) ?? []), chat].slice(-CHAT_KEPT))
+  office.asked += 1
+  $.ui.invalidate("ui.render")
+  if (!isRemote) return void (await $.prompt.submit({ text: chat.question }))
+  const sent: Order = { id: chat.id, at: now, to: sessionId, text: chat.question }
+  await $.fs.write(`${office.base}/orders/${chat.id}.json`, JSON.stringify(sent))
+}
+
+// Instructions for this session, each taken up once: the engine runs a prompt
+// submitted while a turn is on once that turn ends, so none interrupts work.
+async function obey($: EngineInterface, now: number) {
+  const me = office.me
+  if (me === undefined) return
+  for (const o of ordersFor(me, await readJsonDir<Order>($, `${office.base}/orders`), now)) {
+    me.obeyed = [...(me.obeyed ?? []), o.id]
+    changed($)
+    void $.prompt.submit({ text: orderPromptOf(o.text) })
+  }
+}
+
+// What this session's card shows of its conversation, read from the transcript
+// itself: at load, so a session reloaded a minute ago is not a blank, and as each
+// turn ends.
+async function refreshTalk($: EngineInterface) {
+  const me = office.me
+  if (me === undefined) return
+  me.talk = talkOf(await $.session.messages())
+  changed($)
 }
 
 async function reply($: EngineInterface, asked: Ask) {
@@ -267,6 +414,7 @@ async function tick($: EngineInterface) {
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
   await deliver($, now)
   await btw($, now)
+  await obey($, now)
   if (office.isOpen) announce($, office.others, now)
   // The elapsed times on screen move every second.
   if (office.isOpen || me.agents.length > 0) $.ui.invalidate("ui.render")
@@ -285,6 +433,7 @@ async function restore($: EngineInterface, me: Snapshot) {
   me.board = before.board ?? []
   me.handled = before.handled ?? []
   if (before.seen !== undefined) me.seen = before.seen
+  me.obeyed = before.obeyed ?? []
 }
 
 async function claim(
@@ -345,6 +494,7 @@ export const register: Register = (on, options) => {
       place.team,
     )
     await restore($, office.me)
+    await refreshTalk($).catch(() => undefined)
     office.isDirty = true
     await $.command.register({
       name: COMMAND,
@@ -393,6 +543,11 @@ export const register: Register = (on, options) => {
 
   on("turn.start", ($, e, next) => {
     if (e.agentId === undefined) office.isSpare = false
+    // What was just said to it shows on its card at once, not when the turn ends.
+    if (office.me !== undefined && e.agentId === undefined) {
+      const said = talkOf([{ role: "user", text: e.text }])
+      office.me.talk = [...(office.me.talk ?? []), ...said].slice(-6)
+    }
     if (office.me !== undefined) {
       turnStarted(office.me, e.agentId, e.text, Date.now())
       changed($)
@@ -524,6 +679,7 @@ export const register: Register = (on, options) => {
         Date.now(),
       )
       changed($)
+      if (e.agentId === undefined) await refreshTalk($).catch(() => undefined)
     }
     return r
   })
@@ -579,6 +735,13 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  on("ui.input", { element: /^office-order-/ }, async ($, e, next) => {
+    if (e.kind !== "submit" || office.selected === null) return next(e)
+    const found = findCrab([...(office.me ? [office.me] : []), ...office.others], office.selected)
+    if (found?.crab.role === "leader") void order($, found.snap.sessionId, e.value)
+    return next(e)
+  })
+
   on("ui.input", { element: /^office-btw-/ }, async ($, e, next) => {
     if (e.kind !== "submit" || office.selected === null) return next(e)
     void ask($, office.selected, e.value)
@@ -592,7 +755,7 @@ export const register: Register = (on, options) => {
 
   on("ui.message", ($, e, next) => {
     if (!e.element.startsWith("crab-office") && e.element !== "crab-band") return next(e)
-    const data = e.data as { select?: unknown; drawn?: unknown } | null
+    const data = e.data as { select?: unknown; drawn?: unknown; board?: unknown; note?: unknown } | null
     // A drawing's first frame reports itself, so the snapshot shows the
     // surface module really drew in this session.
     if (data?.drawn === true) {
@@ -602,7 +765,14 @@ export const register: Register = (on, options) => {
       }
       return next(e)
     }
+    if (data?.board === "older" || data?.board === "newer") {
+      office.boardOlder = Math.max(0, office.boardOlder + (data.board === "older" ? BOARD_PAGE : -BOARD_PAGE))
+      $.ui.invalidate("ui.render")
+      return next(e)
+    }
     office.selected = typeof data?.select === "string" ? data.select : null
+    const note = typeof data?.note === "string" ? data.note : null
+    office.note = note === office.note ? null : note
     $.ui.invalidate("ui.render")
     return next(e)
   })
@@ -618,10 +788,17 @@ export const register: Register = (on, options) => {
       const me = office.me
       const snaps = me !== undefined ? [me, ...office.others] : office.others
       const names = addresseesOf(snaps, now, "").map((r) => r.text.trim())
-      const company = companyOf(snaps, me?.sessionId ?? "", now, {
-        memos: office.memos,
-        claims: office.claims,
-      })
+      const company = companyOf(
+        snaps,
+        me?.sessionId ?? "",
+        now,
+        { memos: office.memos, claims: office.claims },
+        office.boardOlder,
+      )
+      // Paged past the oldest line kept, the count comes back to where it shows.
+      if (company.boardView !== undefined)
+        office.boardOlder = company.boardView.total - company.boardView.last
+      const note = company.board?.find((line) => line.key === office.note)
       const chosen =
         office.selected !== null ? findCrab(snaps, office.selected) : undefined
       return (
@@ -653,30 +830,21 @@ export const register: Register = (on, options) => {
               <Text dimColor>{w().uncalled}</Text>
             </Box>
           </Box>
+          {note !== undefined && noteCard({ Box, Text }, note)}
           {chosen !== undefined &&
-            detailLines(chosen.crab, chosen.snap, now).map((line, i) => (
-              <Text key={`detail-${i}`} wrap="wrap" bold={i === 0}>
-                {line}
-              </Text>
-            ))}
-          {chosen !== undefined &&
-            (office.chats.get(chosen.crab.id) ?? []).flatMap((chat) => [
-              <Text key={`ask-${chat.id}`} color="#e8c468" wrap="wrap">
-                {`${w().you}${chat.question}`}
-              </Text>,
-              <Text key={`answer-${chat.id}`} wrap="wrap" dimColor={chat.answer === undefined}>
-                {`${w().it}${chat.answer ?? w().thinkingDots}`}
-              </Text>,
-            ])}
-          {chosen !== undefined && (
-            <Input
-              key={`office-btw-${office.asked}-${chosen.crab.id}`}
-              label="btw "
-              placeholder={w().btwPlaceholder}
-              submitLabel={w().ask}
-              onSubmit={() => undefined}
-            />
-          )}
+            crabCard(
+              { Box, Text, Input },
+              detailOf(chosen.crab, chosen.snap, now, snaps),
+              office.chats.get(chosen.crab.id) ?? [],
+              `office-btw-${office.asked}-${chosen.crab.id}`,
+              chosen.crab.role === "leader"
+                ? {
+                    key: `office-order-${office.asked}-${chosen.crab.id}`,
+                    obeyed: chosen.snap.obeyed ?? [],
+                    talk: chosen.snap.talk ?? [],
+                  }
+                : undefined,
+            )}
         </Box>
       )
     },
@@ -706,29 +874,19 @@ export const register: Register = (on, options) => {
           flexGrow={1}
         />
         {chosen !== undefined &&
-          detailLines(chosen.crab, chosen.snap, now).map((line, i) => (
-            <Text key={`detail-${i}`} wrap="truncate" dimColor={i > 0}>
-              {line}
-            </Text>
-          ))}
-        {chosen !== undefined &&
-          (office.chats.get(chosen.crab.id) ?? []).slice(-1).flatMap((chat) => [
-            <Text key={`ask-${chat.id}`} color="#e8c468" wrap="truncate">
-              {`${w().you}${chat.question}`}
-            </Text>,
-            <Text key={`answer-${chat.id}`} wrap="wrap" dimColor={chat.answer === undefined}>
-              {`${w().it}${chat.answer ?? w().thinkingDots}`}
-            </Text>,
-          ])}
-        {chosen !== undefined && (
-          <Input
-            key={`office-btw-band-${office.asked}-${chosen.crab.id}`}
-            label="btw "
-            placeholder={w().btwPlaceholder}
-            submitLabel={w().ask}
-            onSubmit={() => undefined}
-          />
-        )}
+          crabCard(
+            { Box, Text, Input },
+            detailOf(chosen.crab, chosen.snap, now, [me, ...office.others]),
+            (office.chats.get(chosen.crab.id) ?? []).slice(-1),
+            `office-btw-band-${office.asked}-${chosen.crab.id}`,
+            chosen.crab.role === "leader"
+              ? {
+                  key: `office-order-band-${office.asked}-${chosen.crab.id}`,
+                  obeyed: chosen.snap.obeyed ?? [],
+                  talk: (chosen.snap.talk ?? []).slice(-2),
+                }
+              : undefined,
+          )}
       </Box>
     )
   })

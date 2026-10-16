@@ -44,17 +44,21 @@ const Crabs: ClientModule<CrabsProps, State> = (props, surface) => {
   surface.onPointer((event) => {
     if (event.type !== "down") return
     const y = event.y + from
-    // A desk, or a line on the board: either names a crab.
-    const hit =
-      drawn.seats.find(
-        (s) =>
-          event.x >= s.cx &&
-          event.x < s.cx + SEAT_COLS &&
-          y >= s.cy &&
-          y < s.cy + SEAT_ROWS,
-      ) ?? drawn.lines.find((l) => y === l.cy || y === l.cy + 1)
+    const pager = drawn.pagers.find((p) => y === p.cy && event.x >= p.cx && event.x < p.cx + p.w)
+    if (pager !== undefined) {
+      surface.post({ board: pager.dir })
+      return
+    }
+    // A desk names a crab; a line on the board names the crab who said it and
+    // the line itself, which the pane then shows whole.
+    const seat = drawn.seats.find(
+      (s) => event.x >= s.cx && event.x < s.cx + SEAT_COLS && y >= s.cy && y < s.cy + SEAT_ROWS,
+    )
+    const line = seat === undefined ? drawn.lines.find((l) => y === l.cy || y === l.cy + 1) : undefined
+    const id = seat?.id ?? line?.id
     surface.post({
-      select: hit === undefined || hit.id === props.selected ? null : hit.id,
+      select: id === undefined || id === props.selected ? null : id,
+      note: line?.key ?? null,
     })
   })
 

@@ -48,9 +48,27 @@ before anyone knew which session would be 大部长.
   the manager's desk centred on a row of its own, the crew on the rows below,
   hung from one line, at most two rows of desks; further crew wait in a crowd
   line ("还有 5 人" and a head each). The room's bottom edge counts who is working, who waits on
-  you and who has gone home. Click a crab for its detail under the drawing: a
-  crew member's task handed down, last five tool calls and answer handed back;
-  a manager's current prompt.
+  you and who has gone home. Click a crab for its card under the drawing,
+  bordered in its own colour: title, team, what it is doing and for how long,
+  then its task (a crew member's handed down, a manager's prompt), its last
+  three tools and a crew member's answer handed back, each cut to 160
+  characters. A manager's card then shows its last six exchanges, what was said
+  to it and what it answered, text alone and 300 characters each, which the
+  session reads from its own transcript at load and as each turn ends, so a
+  session reloaded a minute ago is not a blank; tool results and the engine's
+  own lines (a stop hook's verdict, an interruption) are left out. Its last
+  answer alone was tried first and showed nothing until a turn had ended. Its model and a long prompt whole were dropped as noise, and a
+  memo handed over reads as `Memo: <the memo>`, not the handover and its
+  roster. A board line clicked shows whole on a card of its own.
+- **Instructions**: a manager's card has a field to tell its session what to
+  do (`➤ 交代` / `➤ Tell it`). To the viewer's own session it is a prompt at
+  once, as if typed there; to another it goes as `orders/<id>.json`, which that
+  session takes up on its next tick and submits as a prompt of its own. A
+  prompt submitted while a turn runs waits for the turn to end, so an
+  instruction never interrupts work. Each session keeps the ids it has taken
+  up (`obeyed`), so none runs twice, and the card marks each one delivered or
+  still waiting. Only the person gives instructions: the model has no way to,
+  so sessions cannot set one another to work.
 - **btw**: under a clicked crab, a field to ask it something. The answer never
   starts a turn or interrupts the work: a manager answers through a fork of its
   session's own thread (`$.model.fork`, as `/btw` does), a subagent from its own
@@ -63,7 +81,12 @@ before anyone knew which session would be 大部长.
   (`agent.spawn`), work handed back (a crew member's `turn.complete`) and every
   SendMessage (`session.send`), to a crab of this session or to another session.
   Each line is two rows, who to whom in their own colours, then the words.
-  Click a line to select the crab who said it; a selected crab's lines carry ▸.
+  Click a line to select the crab who said it and to show the line whole under
+  the drawing; a selected crab's lines carry ▸. With more lines than it
+  shows, the board pages: ▲ older on its top edge and ▼ newer on its bottom
+  edge, eight lines a click, the count reading which of how many. Each session
+  keeps its last forty lines and each line its first 400 characters: every
+  session reads every other's snapshot each second, so the history is bounded.
 - **The chairman's memos**: `/office say [@组名|@全体] 留言`, or the framed field
   under the board in the pane (click it, type, Enter, the names it can call
   shown as tags beneath), pins a memo to the board. `@<worktree>` (or `@本部`) is for that team, `@全体` for every team,
@@ -169,9 +192,10 @@ but never drew.
 
 ## Limits
 
-- Observes, except for memos and btw: every hook passes its event on unchanged;
-  it hands a memo the chairman wrote to a finished session as a prompt, and
-  answers a btw with one side call to the model. No network, no processes.
+- Observes, except for memos, instructions and btw: every hook passes its event
+  on unchanged; it hands a memo the chairman wrote to a finished session and an
+  instruction to the session it names as prompts, and answers a btw with one
+  side call to the model. No network, no processes.
 - "Waiting for approval" comes from the classic `PermissionRequest` event, skipped in
   auto mode. `tool.check` answering `ask` was tried first and raised a hand on most
   calls in auto mode, where the classifier answers and nobody is asked. Where an

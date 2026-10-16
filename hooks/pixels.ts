@@ -21,6 +21,8 @@ export type SeatData = {
 // Who said a board line; `id` is the crab's, so a click on the line finds it.
 export type Speaker = { name: string; color: string; id?: string }
 export type BoardLine = {
+  // Which line it is, from page to page and frame to frame.
+  key: string
   time: string
   kind: string
   from: Speaker
@@ -44,7 +46,14 @@ export type Room = {
 }
 // `lang`: the words the drawing's own labels are in, since a Client runs apart
 // from the hooks that chose them.
-export type Company = { header?: string; rooms: Room[]; board?: BoardLine[]; lang?: string }
+export type Company = {
+  header?: string
+  rooms: Room[]
+  board?: BoardLine[]
+  // Which lines of how many the board shows, counted from the oldest kept.
+  boardView?: { first: number; last: number; total: number }
+  lang?: string
+}
 export type Cell = {
   ch: string
   fg?: string
@@ -57,8 +66,10 @@ export type Drawn = {
   rows: number
   cells: Cell[][]
   seats: { id: string; cx: number; cy: number }[]
-  // Each board line's first row and the crab who said it.
-  lines: { id: string; cy: number }[]
+  // Each board line's first row, which line it is and the crab who said it.
+  lines: { id?: string; key: string; cy: number }[]
+  // The board's page controls: where each is and which way it pages.
+  pagers: { dir: "older" | "newer"; cx: number; cy: number; w: number }[]
 }
 
 type Pixels = { w: number; h: number; px: (string | null)[] }
@@ -815,12 +826,28 @@ function board(
   y: number,
   w: number,
   lines: BoardLine[],
+  view: Company["boardView"],
   selected: string | null,
   links: Drawn["lines"],
+  pagers: Drawn["pagers"],
 ) {
   const h = 2 + Math.max(1, lines.length * 2)
   fill(b, 2, (y + 1) * 2, (w - 2) * 2, (h - 2) * 2, CHALKBOARD)
-  frame(labels, y, w, h, words().board, lines.length > 0 ? words().boardFooter(lines.length) : "")
+  const isPaged = view !== undefined && view.total > lines.length
+  const footer = isPaged ? words().boardRange(view.first, view.last, view.total) : words().boardFooter(lines.length)
+  frame(labels, y, w, h, words().board, lines.length > 0 ? footer : "")
+  // More lines than the board holds: older ones on its top edge, newer on its
+  // bottom edge, clear of the title, the count and the markers in the tray.
+  if (isPaged && view.first > 1) {
+    const str = words().older
+    pagers.push({ dir: "older", cx: w - 3 - width(str), cy: y, w: width(str) })
+    labels.push({ x: w - 3 - width(str), y, str, fg: TITLE, bold: true })
+  }
+  if (isPaged && view.last < view.total) {
+    const str = words().newer
+    pagers.push({ dir: "newer", cx: w - 14 - width(str), cy: y + h - 1, w: width(str) })
+    labels.push({ x: w - 14 - width(str), y: y + h - 1, str, fg: TITLE, bold: true })
+  }
   if (lines.length === 0) {
     labels.push({ x: 2, y: y + 1, str: words().boardEmpty, fg: MUTED })
     return
@@ -833,7 +860,7 @@ function board(
       labels.push({ x, y: row, str: shown, fg, bold })
       x += width(shown)
     }
-    if (line.from.id !== undefined) links.push({ id: line.from.id, cy: row })
+    links.push({ ...(line.from.id !== undefined ? { id: line.from.id } : {}), key: line.key, cy: row })
     if (line.from.id !== undefined && line.from.id === selected) {
       labels.push({ x: 1, y: row, ch: "▸", fg: line.from.color, bold: true })
     }
@@ -1031,6 +1058,7 @@ export function office(
   const labels: Label[] = []
   const seats: Drawn["seats"] = []
   const links: Drawn["lines"] = []
+  const pagers: Drawn["pagers"] = []
   if (company.header)
     labels.push({
       x: 0,
@@ -1063,9 +1091,9 @@ export function office(
     }
   }
   if (company.board !== undefined) {
-    board(b, labels, layout.bottom, cols, company.board, selected, links)
+    board(b, labels, layout.bottom, cols, company.board, company.boardView, selected, links, pagers)
   }
-  return { cols, rows, cells: toCells(b, cols, rows, labels), seats, lines: links }
+  return { cols, rows, cells: toCells(b, cols, rows, labels), seats, lines: links, pagers }
 }
 
 // A row as the drawing sends it: one run per stretch of cells alike in colour.
