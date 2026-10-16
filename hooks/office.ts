@@ -3,6 +3,7 @@
 // here, so the tests drive it directly.
 
 import { HQ, LEADER_COLOR, MANAGER_HATS, titleOf } from "./pixels.ts"
+import { CHAIRMAN_NAMES, HQ_NAMES, w } from "./words.ts"
 import type { BoardLine, Company, Room, SeatData, Speaker } from "./pixels.ts"
 
 export type Status =
@@ -385,7 +386,7 @@ export function turnFinished(
   }
   crab.answer = clip(t.answer)
   moved(crab, t.isAnswer ? "done" : "failed", now)
-  const text = t.isAnswer ? clip(t.answer, 120) : "没做完"
+  const text = t.isAnswer ? clip(t.answer, 120) : w().unfinished
   noted(s, {
     at: now,
     kind: "report",
@@ -537,11 +538,7 @@ export function footerOf(seats: SeatData[]): string {
     (s) => s.look === "approval" || s.look === "idle",
   ).length
   const gone = seats.filter((s) => s.look === "gone").length
-  return [
-    `${working} 在干活`,
-    `${waiting} 等你`,
-    ...(gone > 0 ? [`${gone} 下班`] : []),
-  ].join("  ")
+  return w().footer(working, waiting, gone)
 }
 
 // The company: a department per project, this session's first; in each, a team
@@ -572,9 +569,9 @@ export function companyOf(
     const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId)))
     const isCheering = teams.some((team) => team[0]?.finish === "cheer")
     // Signs only where a department has more than one team to tell apart.
-    const signs = sessions.length > 1 ? sessions.map((s) => (s.team ? `${s.team} 组` : HQ)) : undefined
+    const signs = sessions.length > 1 ? sessions.map((s) => (s.team ? w().teamSign(s.team) : w().hq)) : undefined
     return {
-      title: `${project} 部`,
+      title: w().dept(project),
       footer: footerOf(teams.flat()),
       teams,
       ...(signs ? { signs } : {}),
@@ -590,12 +587,13 @@ export function companyOf(
     return {
       at: m.at,
       kind: "memo",
-      from: CHAIRMAN,
+      from: chairman(),
       to: { name: addresseeOf(m.to), color: NAMEPLATE_INK },
-      text: takers.length === 0 ? m.text : `${m.text} · ✓ ${takers.join("、")} 接了`,
+      text: takers.length === 0 ? m.text : w().taken(m.text, takers),
     }
   })
-  const board: BoardLine[] = [...present.flatMap((s) => s.board ?? []), ...memoNotes]
+  const chiefs = chiefsOf(present, now)
+  const board: BoardLine[] = [...present.flatMap((s) => (s.board ?? []).map((n) => shownNote(n, s, chiefs))), ...memoNotes]
     .sort((a, b) => a.at - b.at)
     .slice(-BOARD_SHOWN)
     .map((n) => ({
@@ -605,7 +603,7 @@ export function companyOf(
       to: n.to,
       text: n.text,
     }))
-  return { header: `螃蟹有限公司  董事长：你  在岗 ${onDuty} 人`, rooms, board }
+  return { header: w().header(onDuty), rooms, board, lang: w().lang }
 }
 
 // The strip above the prompt: this session's team on one row of desks.
@@ -620,6 +618,7 @@ export function bandOf(s: Snapshot, snaps: Snapshot[], now: number): Company {
         teams: [teamOf(s, now, hatsOf(snaps, now).get(s.sessionId))],
       },
     ],
+    lang: w().lang,
   }
 }
 
@@ -635,48 +634,31 @@ export function findCrab(
   return undefined
 }
 
-const WORDS: Record<string, string> = {
-  thinking: "思考",
-  editing: "改代码",
-  reading: "读文件",
-  searching: "搜索",
-  running: "跑命令",
-  browsing: "上网",
-  delegating: "派活",
-  approval: "等你批准",
-  idle: "等你",
-  done: "交差了",
-  failed: "失败",
-  asleep: "打盹",
-  gone: "下班了",
+function statusOf(look: string): string {
+  return w().status[look] ?? look
 }
 
 export function detailLines(crab: Crab, snap: Snapshot, now: number): string[] {
   const look = lookOf(crab, now, isGoneOf(snap, now))
-  const state = `${WORDS[look] ?? look} ${elapsed(now - crab.since)}`
-  const model = crab.model ?? "模型未知"
-  const tools = crab.tools.length > 0 ? crab.tools.join("  ") : "还没用工具"
-  const where = snap.team === undefined ? `${snap.project} 部` : `${snap.project} 部 · ${snap.team} 组`
+  const state = `${statusOf(look)} ${elapsed(now - crab.since)}`
+  const model = crab.model ?? w().modelUnknown
+  const tools = crab.tools.length > 0 ? crab.tools.join("  ") : w().noTools
   const head = `${titleOf(roleOf(crab, snap))} · ${model} · ${state}`
   if (crab.role === "leader") {
-    return [
-      `${head} · ${where}`,
-      `当前任务: ${crab.prompt ?? "还没开始"}`,
-      `⚙ ${tools}`,
-    ]
+    return [`${head} · ${whoOf(snap)}`, w().task(crab.prompt ?? w().notStarted), `⚙ ${tools}`]
   }
   return [
     `${head} · ${crab.role}`,
-    `↓ 收到: ${crab.prompt ?? ""}`,
+    w().given(crab.prompt ?? ""),
     `⚙ ${tools}`,
-    `↑ 交回: ${crab.answer ?? "还在干"}`,
+    w().handedBack(crab.answer ?? w().stillWorking),
   ]
 }
 
 // The chairman's memos: who they are for, who takes them, and what a session is
 // handed when one reaches it.
 
-const CHAIRMAN: Speaker = { name: "董事长", color: "#e8c468" }
+const chairman = (): Speaker => ({ name: w().chairman, color: "#e8c468" })
 const NAMEPLATE_INK = "#e6e0d6"
 export const MEMO_TTL_MS = 24 * 60 * 60_000
 const EVERYONE = new Set(["全体", "所有人", "大家", "all", "everyone"])
@@ -687,9 +669,9 @@ export function parseSay(args: string, id: string, now: number): Memo | undefine
   const text = args.trim()
   // "@name 组 text" as the board spells a team, "@name组 text", or "@name text";
   // 本部 keeps its own name.
-  const at = /^@(\S+)(?:\s+(?:组|部))?\s+([\s\S]+)$/.exec(text)
+  const at = /^@(\S+)(?:\s+(?:组|部|team|dept))?\s+([\s\S]+)$/.exec(text)
   if (at?.[1] !== undefined && at[2] !== undefined) {
-    const name = at[1] === HQ ? HQ : at[1].replace(/(组|部)$/, "")
+    const name = HQ_NAMES.has(at[1].toLowerCase()) ? HQ : at[1].replace(/(组|部)$/, "")
     const to: Target = EVERYONE.has(name.toLowerCase()) ? { kind: "all" } : { kind: "team", name }
     return { id, at: now, text: clip(at[2]), to }
   }
@@ -697,9 +679,9 @@ export function parseSay(args: string, id: string, now: number): Memo | undefine
 }
 
 export function addresseeOf(to: Target): string {
-  if (to.kind === "all") return "全体"
-  if (to.kind === "open") return "待领"
-  return to.name === HQ ? HQ : `${to.name} 组`
+  if (to.kind === "all") return w().everyone
+  if (to.kind === "open") return w().open
+  return to.name === HQ ? w().hq : w().teamSign(to.name)
 }
 
 export function teamNameOf(s: Snapshot): string {
@@ -707,7 +689,7 @@ export function teamNameOf(s: Snapshot): string {
 }
 
 export function whoOf(s: Snapshot): string {
-  return `${s.project} 部 · ${teamNameOf(s)}`
+  return w().who(s.project, s.team ?? w().hq)
 }
 
 // A team memo names a worktree, 本部, or a whole department by its project.
@@ -720,7 +702,7 @@ export function isFor(to: Target, s: Snapshot): boolean {
 // or a department. The chairman, or no name, is nobody's inbox but the board.
 export function targetOf(to: string): Target | undefined {
   const name = to.trim().replace(/^@/, "")
-  if (name === "" || name === CHAIRMAN.name) return undefined
+  if (name === "" || CHAIRMAN_NAMES.has(name)) return undefined
   return parseSay(`@${name} .`, "", 0)?.to
 }
 
@@ -731,7 +713,8 @@ export function recipientsOf(to: Target, me: Snapshot, snaps: Snapshot[], now: n
 // What colleagues in other sessions wrote to this one since it last read the
 // board. A message never wakes its reader: it waits here, so two sessions
 // cannot talk each other into turns without end.
-export function inboxOf(me: Snapshot, snaps: Snapshot[]): string[] {
+export function inboxOf(me: Snapshot, snaps: Snapshot[], now: number): string[] {
+  const chiefs = chiefsOf(snaps, now)
   return snaps
     .filter((s) => s.sessionId !== me.sessionId)
     .flatMap((s) =>
@@ -740,20 +723,21 @@ export function inboxOf(me: Snapshot, snaps: Snapshot[]): string[] {
           const to = n.kind === "message" ? targetOf(n.to.name) : undefined
           return to !== undefined && n.at > (me.seen ?? me.startedAt) && isFor(to, me)
         })
-        .map((n) => ({ n, s })),
+        .map((n) => ({ n: shownNote(n, s, chiefs), s })),
     )
     .sort((a, b) => a.n.at - b.n.at)
-    .map(({ n, s }) => `${clockOf(n.at)} ${whoOf(s)} 的${n.from.name}（写给 ${n.to.name}）：${n.text}`)
+    .map(({ n, s }) => w().inboxLine(clockOf(n.at), whoOf(s), n.from.name, n.to.name, n.text))
 }
 
 // The board as a session reads it: the latest lines from every session, each
 // saying whose it is, since a title alone (部长) names one in every session.
-export function boardOf(snaps: Snapshot[], limit = BOARD_SHOWN): string[] {
+export function boardOf(snaps: Snapshot[], now: number, limit = BOARD_SHOWN): string[] {
+  const chiefs = chiefsOf(snaps, now)
   return snaps
-    .flatMap((s) => (s.board ?? []).map((n) => ({ n, s })))
+    .flatMap((s) => (s.board ?? []).map((n) => ({ n: shownNote(n, s, chiefs), s })))
     .sort((a, b) => a.n.at - b.n.at)
     .slice(-limit)
-    .map(({ n, s }) => `${clockOf(n.at)} ${whoOf(s)} 的${n.from.name} → ${n.to.name}：${n.text}`)
+    .map(({ n, s }) => w().boardLine(clockOf(n.at), whoOf(s), n.from.name, n.to.name, n.text))
 }
 
 // Free is finished: the manager waiting and none of its crew still at work, so
@@ -808,11 +792,11 @@ export function addresseesOf(snaps: Snapshot[], now: number, typed: string): { t
   const projects = [...new Set(here.map((s) => s.project))].sort()
   const teams = here.filter((s) => s.team !== undefined).sort((a, b) => whoOf(a).localeCompare(whoOf(b)))
   const rows = [
-    { name: "全体", description: `所有人，${here.length} 个组` },
-    ...projects.map((p) => ({ name: p, description: `${p} 部，${here.filter((s) => s.project === p).length} 个组` })),
+    { name: w().everyone, description: w().everyoneDesc(here.length) },
+    ...projects.map((p) => ({ name: p, description: w().deptDesc(p, here.filter((s) => s.project === p).length) })),
     ...teams.map((s) => ({
       name: s.team ?? "",
-      description: `${whoOf(s)} 组：${WORDS[lookOf(s.leader, now, false)] ?? s.leader.status}`,
+      description: w().teamDesc(whoOf(s), statusOf(lookOf(s.leader, now, false))),
     })),
   ]
   const query = typed.toLowerCase()
@@ -821,16 +805,13 @@ export function addresseesOf(snaps: Snapshot[], now: number, typed: string): { t
     .map((r) => ({ text: `@${r.name} `, description: r.description }))
 }
 
-const BTW =
-  "[螃蟹办公室 · 董事长顺便问一句（btw）：用中文几句话回答，像同事聊天，说清在干什么、进展如何、卡在哪；不要调用工具，也别因此改变手上的活]"
-
 // What the session's own thread is asked, through a fork of it: about itself, or
 // about a subagent of its whose own conversation can no longer be read.
 export function btwOf(crab: Crab, question: string): string {
-  if (crab.role === "leader") return `${BTW}\n${question}`
-  const tools = crab.tools.join("、") || "还没用工具"
-  const back = crab.answer ? `，交回了：${clip(crab.answer, 200)}` : ""
-  return `${BTW}\n问的是你派出去的${titleOf(crab.role)}「${crab.title}」（最近用了 ${tools}${back}），替它答：\n${question}`
+  if (crab.role === "leader") return `${w().btw}\n${question}`
+  const tools = crab.tools.join(", ") || w().noTools
+  const back = crab.answer ? clip(crab.answer, 200) : ""
+  return `${w().btw}\n${w().btwFor(titleOf(crab.role), crab.title, tools, back, question)}`
 }
 
 type Row = {
@@ -843,43 +824,55 @@ type Row = {
 // it runs long, read back to the model as its record.
 export function subagentBtwOf(crab: Crab, rows: readonly Row[], question: string, max = 24_000): { system: string; prompt: string } {
   const lines = rows.flatMap((m) => [
-    ...(m.text ? [`${m.role === "user" ? "收到" : "我"}：${m.text}`] : []),
+    ...(m.text ? [`${m.role === "user" ? w().recordGiven : w().recordMe}${m.text}`] : []),
     ...m.toolUses.map((u) => `[${u.tool}] ${clip(JSON.stringify(u.input), 200)}${u.text ? ` → ${clip(u.text, 300)}` : ""}`),
   ])
   const record = lines.join("\n")
   return {
-    system: `你是一个正在干活的子代理，职位是${titleOf(crab.role)}，任务是「${crab.title}」。下面是你到现在为止的工作记录。${BTW}`,
-    prompt: `${record.length > max ? `…${record.slice(-max)}` : record}\n\n董事长问：${question}`,
+    system: `${w().subagent(titleOf(crab.role), crab.title)} ${w().btw}`,
+    prompt: `${record.length > max ? `…${record.slice(-max)}` : record}\n\n${w().asks(question)}`,
   }
 }
 
+// A board line as shown now: its crabs titled as the drawing titles them, the
+// 大部长 included, in the words the office speaks now. A note keeps the names it
+// was written with, before anyone knew who would be 大部长.
+function shownNote(n: Note, s: Snapshot, chiefs: Set<string>): Note {
+  const shown = (sp: Speaker): Speaker => {
+    if (sp.id === s.sessionId) return { ...sp, name: managerTitleOf(s, chiefs) }
+    const crab = s.agents.find((a) => a.id === sp.id)
+    if (crab !== undefined) return { ...sp, name: titleOf(crab.role) }
+    return CHAIRMAN_NAMES.has(sp.name) ? { ...sp, name: w().chairman } : sp
+  }
+  return { ...n, from: shown(n.from), to: shown(n.to) }
+}
+
+// A session's title as the drawing gives it: its department's 大部长 is one.
+function managerTitleOf(s: Snapshot, chiefs: Set<string>): string {
+  return titleOf(chiefs.has(s.sessionId) ? CHIEF : roleOf(s.leader, s))
+}
+
 export function rosterOf(snaps: Snapshot[], me: Snapshot, now: number): string[] {
+  const chiefs = chiefsOf(snaps, now)
   return snaps
     .filter((s) => !isGoneOf(s, now))
     .map((s) => {
-      const title = titleOf(roleOf(s.leader, s))
-      const look = WORDS[lookOf(s.leader, now, false)] ?? s.leader.status
-      const task = s.leader.title ? `「${clip(s.leader.title, 40)}」` : ""
-      const crew = s.agents.length > 0 ? `，手下 ${s.agents.length} 人` : ""
-      const self = s.sessionId === me.sessionId ? "（你）" : ""
-      return `- ${whoOf(s)} ${title}${self}：${look}${task}${crew}`
+      const title = managerTitleOf(s, chiefs)
+      const look = statusOf(lookOf(s.leader, now, false))
+      const task = s.leader.title ? clip(s.leader.title, 40) : ""
+      return w().roster(whoOf(s), title, s.sessionId === me.sessionId, look, task, s.agents.length)
     })
 }
 
 // What a session is handed: the memo, who it is, its colleagues, and how to
 // take it on or pass, through the office_board tool.
 export function handoverOf(memo: Memo, me: Snapshot, snaps: Snapshot[], now: number): string {
-  const how =
-    memo.to.kind === "team"
-      ? "这是点名给你的：先用 office_board 工具认领（action: claim），然后开始做。"
-      : memo.to.kind === "all"
-        ? "这是发给全体的：先判断和你当前的项目、目录、任务有没有关系。有关就用 office_board 认领（action: claim）再做；无关就用 office_board 说一句为什么不接（action: post），然后停下，别做别的。"
-        : "这是一件待领的活，你正空着，先来看看：能接就用 office_board 认领（action: claim）再做；不合适就用 office_board 说一句为什么不接（action: post），然后停下，别做别的，下一位同事会接着看。认领时，别的会话就不会再接这件事；如果认领时发现已经有人接了，就停下。"
+  const how = w().handover[memo.to.kind === "team" ? "team" : memo.to.kind === "all" ? "all" : "open"]
   return [
-    `[螃蟹办公室 · 董事长在白板上的留言 · ${addresseeOf(memo.to)} · memo ${memo.id}]`,
+    w().handover.head(addresseeOf(memo.to), memo.id),
     memo.text,
     "",
-    `你是 ${whoOf(me)} 的${titleOf(roleOf(me.leader, me))}。公司里现在的同事：`,
+    w().handover.youAre(managerTitleOf(me, chiefsOf(snaps, now)), whoOf(me)),
     ...rosterOf(snaps, me, now),
     "",
     how,

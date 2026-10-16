@@ -1,3 +1,5 @@
+import { w as words } from "./words.ts"
+
 // The pixel office: every seat drawn into a buffer at quadrant resolution (two
 // pixels across and two down per terminal cell), then each cell turned into one
 // quadrant glyph of at most two colours, which is all a cell can show. Pure, so
@@ -40,7 +42,9 @@ export type Room = {
   // gold wall beside it, and "你在这" on its sign, or the title without one.
   here?: number
 }
-export type Company = { header?: string; rooms: Room[]; board?: BoardLine[] }
+// `lang`: the words the drawing's own labels are in, since a Client runs apart
+// from the hooks that chose them.
+export type Company = { header?: string; rooms: Room[]; board?: BoardLine[]; lang?: string }
 export type Cell = {
   ch: string
   fg?: string
@@ -111,7 +115,6 @@ const WIRE = "#8a7f72"
 const TITLE = "#e6e0d6"
 const MUTED = "#8f8b80"
 const HERE = "#e8c468" // the 大部长's crown
-const YOU_ARE_HERE = "◀你在这"
 const OAK = {
   edge: "#b8875a",
   top: "#966a45",
@@ -183,22 +186,10 @@ const TURNED: Record<string, [string, number, number][]> = {
   ],
 }
 
-const TITLES: Record<string, string> = {
-  // A session in the repository's own checkout heads the department; one in a
-  // worktree leads a team inside it; one 部长 in the company is the 大部长.
-  chief: "大部长",
-  leader: "部长",
-  lead: "组长",
-  Explore: "调研员",
-  Plan: "规划师",
-  "general-purpose": "工程师",
-  fork: "分身",
-  "claude-code-guide": "顾问",
-  verifier: "质检员",
-}
-
+// A session in the repository's own checkout heads the department; one in a
+// worktree leads a team inside it; one 部长 a department is the 大部长.
 export function titleOf(role: string): string {
-  return TITLES[role] ?? "实习生"
+  return words().titles[role] ?? words().intern
 }
 
 // Hats sit on the two pixel rows above the head. The crown is the 大部长's
@@ -562,7 +553,7 @@ function drawSeat(
     labels.push({
       x: cx + used,
       y: cy + 5,
-      str: isCheering ? "完成了！" : seat.task,
+      str: isCheering ? words().cheer : seat.task,
       fg: isGone ? GONE : isCheering ? DONE_GREEN : MUTED,
       bold: isCheering,
       max: SEAT_COLS - 1 - used,
@@ -692,7 +683,7 @@ function bandWidth(band: Block[]): number {
 
 function titleOfRoom(room: Room, isCheering: boolean): string {
   const isHereUnsigned = room.here !== undefined && !room.signs?.[room.here]
-  return `${room.title}${isHereUnsigned ? " · 你在这" : ""}${isCheering ? " ✓ 完成" : ""}`
+  return `${room.title}${isHereUnsigned ? words().hereSuffix : ""}${isCheering ? words().doneSuffix : ""}`
 }
 
 type Placed = { room: Room; x: number; y: number; w: number; h: number; bands: Block[][] }
@@ -757,6 +748,7 @@ const RUGS = [
   { floor: "#252b33", ink: "#8fb3db" },
   { floor: "#312725", ink: "#d99a8a" },
 ]
+// A checkout's own team, as memos and signs name it; shown as words().hq.
 export const HQ = "本部"
 
 function hashOf(text: string): number {
@@ -766,7 +758,7 @@ function hashOf(text: string): number {
 }
 
 function rugOf(sign: string): { floor: string; ink: string } {
-  if (sign === HQ) return { floor: FLOOR, ink: TITLE }
+  if (sign === words().hq) return { floor: FLOOR, ink: TITLE }
   return RUGS[hashOf(sign) % RUGS.length] ?? { floor: FLOOR, ink: TITLE }
 }
 
@@ -828,9 +820,9 @@ function board(
 ) {
   const h = 2 + Math.max(1, lines.length * 2)
   fill(b, 2, (y + 1) * 2, (w - 2) * 2, (h - 2) * 2, CHALKBOARD)
-  frame(labels, y, w, h, "共享白板", lines.length > 0 ? `最近 ${lines.length} 条` : "")
+  frame(labels, y, w, h, words().board, lines.length > 0 ? words().boardFooter(lines.length) : "")
   if (lines.length === 0) {
-    labels.push({ x: 2, y: y + 1, str: "还没有人说话", fg: MUTED })
+    labels.push({ x: 2, y: y + 1, str: words().boardEmpty, fg: MUTED })
     return
   }
   lines.forEach((line, i) => {
@@ -856,7 +848,7 @@ function board(
 // "还有 6 人" then a head for each, in its own colour; heads past the wall fold
 // into the count.
 function crowdLine(labels: Label[], x: number, y: number, w: number, crowd: SeatData[]) {
-  const head = `还有 ${crowd.length} 人 `
+  const head = words().crowd(crowd.length)
   labels.push({ x: x + 1, y, str: head, fg: MUTED })
   const room = Math.max(0, w - 2 - width(head))
   crowd.slice(0, room).forEach((seat, i) => {
@@ -985,9 +977,9 @@ function drawTeam(
     const rug = rugOf(sign)
     fill(b, at.x * 2, y * 2, w * 2, at.tall * 2, rug.floor)
     // On a narrow team the sign gives way to the marker, not the other way.
-    const shown = fit(`▍${sign}`, isHere ? w - 2 - width(YOU_ARE_HERE) : w - 1)
+    const shown = fit(`▍${sign}`, isHere ? w - 2 - width(words().youAreHere) : w - 1)
     labels.push({ x: at.x + 1, y, str: shown, fg: rug.ink, bold: true })
-    if (isHere) labels.push({ x: at.x + 2 + width(shown), y, str: YOU_ARE_HERE, fg: HERE, bold: true })
+    if (isHere) labels.push({ x: at.x + 2 + width(shown), y, str: words().youAreHere, fg: HERE, bold: true })
     y += 1
   }
   let managerMid: number | null = null

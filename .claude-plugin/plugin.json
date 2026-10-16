@@ -1,9 +1,29 @@
 {
   "name": "crab-office",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Every running Claude Code session and its subagents as a pixel-art office: departments by project, org-chart teams, a shared board they talk on, and btw questions to any crab",
-  "author": { "name": "Gavin Hao" },
+  "author": {
+    "name": "Gavin Hao"
+  },
   "homepage": "https://github.com/BlueTriangleG/crab-office",
   "repository": "https://github.com/BlueTriangleG/crab-office",
-  "keywords": ["mod", "subagents", "pixel-art", "dashboard"]
+  "license": "MIT",
+  "keywords": [
+    "mod",
+    "subagents",
+    "pixel-art",
+    "dashboard"
+  ],
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language",
+      "description": "The office's language: en for English, zh for Chinese",
+      "default": "en",
+      "options": [
+        "en",
+        "zh"
+      ]
+    }
+  }
 }

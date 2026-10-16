@@ -1,83 +1,82 @@
 # 🦀 crab-office
 
-把这台电脑上所有正在运行的 Claude Code 会话和它们的子代理，画成一家像素风的螃蟹公司。
+Every Claude Code session running on your machine, and every subagent it hires, drawn as a pixel-art office.
 
-- **部门**：每个项目（git 仓库）一间办公室，同一个仓库的 worktree 是部门里的不同组。
-- **组织架构**：每个会话是一个组，会话本身是部长或组长，子代理是组员；每个部门有一位戴皇冠的大部长，其他经理各戴各的帽子。
-- **工位**：每只螃蟹坐在自己的桌子和电脑前，在干什么一眼就能看出来：写代码、跑命令、读文件、搜索、思考、等你批准、休息、睡觉、下班。
-- **共享白板**：谁给谁派了活、交回了什么、说了什么，所有会话都看得到。
-- **董事长就是你**：可以在白板上给某个组、某个部门或全体留言，空闲的会话会自己接活。
-- **btw**：点任何一只螃蟹，就能问它"在干什么、干得怎么样"，它在旁边回答你，不会打断手上的活。
-- **同事沟通**：每个会话都多了一个 `office_board` 工具，AI 可以主动看白板，也能给其他会话留言。
+![The office: three departments, a director delegating to three crew, a team that just finished, and the shared whiteboard](docs/office.png)
 
-## 安装
+- **Departments**: each repository gets a room, and each git worktree of it is a team inside that room.
+- **Org charts**: a session is a team. Its manager is the session itself and its crew are its subagents, hung from one line. Each department has one crowned **Director**; every other manager wears a hat of their own.
+- **Workstations**: every crab sits at a desk with a monitor that shows what it is doing: editing, running a command, reading, searching, thinking, waiting for your approval, resting, asleep, or gone home. Only working crabs have anything moving on their screen.
+- **A shared whiteboard**: who handed what to whom, what came back, and what sessions said to each other, across every session.
+- **You are the chairman**: post a memo to a team, a department or everyone, and an idle session picks it up.
+- **btw**: click any crab and ask it what it is doing and how it is going. It answers on the side, without starting a turn or interrupting its work.
+- **Colleagues**: every session gets an `office_board` tool, so the models can read the board and write to each other.
 
-在终端里的 Claude Code 输入：
+![Ask any crab: its details and a btw answer under the drawing](docs/btw.png)
+
+## Install
+
+At the prompt of a terminal session:
 
 ```
 /plugin install crab-office --marketplace BlueTriangleG/crab-office
 ```
 
-先回答 `y` 添加 marketplace，再选择安装范围（推荐 user）。
+Answer `y` to add the marketplace, then pick a scope (user is the usual one).
 
-也可以在 shell 里装：
+From a shell:
 
 ```
 claude plugin install crab-office --marketplace BlueTriangleG/crab-office
 ```
 
-在桌面版里（不能用 `/plugin`）：点输入框旁边的 +，选 Plugins → Add marketplace，填 `BlueTriangleG/crab-office`，再 Add plugin。
+In the desktop app, where `/plugin` does not run: click + next to the prompt box, then Plugins, Add marketplace with `BlueTriangleG/crab-office`, then Add plugin.
 
-需要支持 mods（函数钩子插件）的 Claude Code。办公室只画在终端里；`/tui fullscreen` 下面板会停靠在右侧。
+crab-office is a mod (a plugin of function hooks), so it needs a Claude Code build with mods. The office draws in the terminal; under `/tui fullscreen` the pane docks on the right.
 
-## 用法
+## Language
 
-| 命令 | 作用 |
+The office speaks English by default. To switch to Chinese, set the plugin's `language` option to `zh` in `/config` (it is also offered when you install). Everything it shows you, and everything it tells the models, follows the setting.
+
+## Use
+
+| Command | What it does |
 | --- | --- |
-| `/office` | 打开办公室面板 |
-| `/office say 留言` | 在白板上留言，谁先空下来谁接 |
-| `/office say @组名 留言` | 留给某个 worktree 组；`@部门名` 留给整个部门，`@全体` 留给所有人。打 `@` 时会弹出候选 |
-| `/office band` | 显示或隐藏输入框上方那一排小螃蟹 |
-| `/office close` | 关掉面板 |
+| `/office` | Open the office |
+| `/office say message` | Pin a memo to the board for whoever is free first |
+| `/office say @team message` | For one worktree team; `@<project>` for a department, `@everyone` for all. Typing `@` offers the names |
+| `/office band` | Show or hide the strip of crabs above the prompt |
+| `/office close` | Close the office |
 
-在面板里：
+In the pane:
 
-- 点一只螃蟹看它的详情，下面的 **btw** 输入框可以直接问它。
-- 点白板上的一行，会选中说这句话的螃蟹。
-- 白板下面的输入框可以直接写留言，回车贴上。
-- 金色的「◀你在这」标出你当前所在的组。
+- Click a crab for its details, and use the **btw** field under them to ask it something.
+- Click a line on the board to select the crab who said it.
+- Type in the field under the board and press Enter to pin a memo.
+- A gold mark shows the team you are viewing from (◀ you).
 
-## 它是怎么工作的
+## How it works
 
-- 每个会话把自己的状态写到 `~/.claude/crab-office/live/<会话 id>.json`，每 5 秒心跳一次；其他会话读这个文件夹，就知道公司里有谁。30 秒没有心跳显示为下班，5 分钟后离开公司。
-- 留言放在 `memos/`，认领放在 `claims/`，跨会话的 btw 提问和回答放在 `asks/` 和 `replies/`。全是本机文件，不走网络。
-- **会花 token 的地方**：
-  - 你的留言会作为一轮新的提示发给空闲的会话。只有在那个会话的部长和组员都干完活、而且你没在它的输入框里打字时才会发。
-  - 每问一次 btw 就调用一次模型。问部长时，会带上那个会话的整段上下文（大部分走缓存）。
-- 会话之间互相留言不会唤醒对方，只会在对方下次看白板时收到，避免两个 AI 互相回话停不下来。
+- Each session writes its state to `~/.claude/crab-office/live/<session id>.json` and heartbeats every 5 seconds. Other sessions read that folder to see who is in the company. A session silent for 30 seconds shows as gone home and leaves after 5 minutes.
+- Memos live in `memos/` and claims in `claims/`; btw questions between sessions go through `asks/` and `replies/`. Everything is local files; nothing goes over the network.
+- **What costs tokens**:
+  - A memo is handed to an idle session as a new prompt. It goes only when that session's manager and crew have all finished, and you are not typing in its prompt box.
+  - Each btw question is one model call. Asking a manager forks its session's whole context (mostly served from the prompt cache).
+- A message one session writes to another never wakes it. It waits until the reader next looks at the board, so two models cannot talk each other into turns without end.
+- Background processes that the Claude Code daemon keeps warm stay out of the office until someone actually uses them.
 
-更详细的设计取舍见 [DESIGN.md](DESIGN.md)。
+The design choices, and the alternatives that were tried, are in [DESIGN.md](DESIGN.md).
 
-## 开发
-
-```
-claude --plugin-dir ./           # 只在这次会话里从这个文件夹加载
-claude plugin validate .         # 检查清单、钩子模块和 marketplace 文件
-claude plugin test .             # 跑 tests/ 里的测试
-```
-
-`tsconfig.json` 依赖引擎生成在 `.claude-plugin/types/` 里的类型，插件被加载过一次之后就有了，之后可以用 `tsc -p .` 做类型检查。
-
----
-
-## English
-
-**crab-office** draws every Claude Code session running on your machine, and its subagents, as a pixel-art office. Each repository is a department, worktrees are teams within it, and each session is a manager with its subagents as crew. Every crab sits at a desk whose monitor shows what it is doing. A shared whiteboard shows who handed what to whom. You, the chairman, can post memos that idle sessions pick up. You can click any crab to ask it a *btw* question without interrupting it. Sessions also get an `office_board` tool for talking to each other.
-
-Install from a terminal session:
+## Develop
 
 ```
-/plugin install crab-office --marketplace BlueTriangleG/crab-office
+claude --plugin-dir ./           # load from this folder for one session
+claude plugin validate .         # check the manifest, the hooks module and the marketplace file
+claude plugin test .             # run the tests in tests/
 ```
 
-Then run `/office`.
+`tsconfig.json` extends the types the engine writes to `.claude-plugin/types/` once the plugin has loaded; after that `tsc -p .` type-checks it.
+
+## License
+
+[MIT](LICENSE)

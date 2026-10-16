@@ -40,6 +40,11 @@ import {
 } from "../hooks/office.ts"
 import { LEADER_COLOR } from "../hooks/pixels.ts"
 
+import { setLanguage } from "../hooks/words.ts"
+
+// These tests read the office in Chinese, the words it was first written in.
+setLanguage("zh")
+
 const T0 = 1_000_000
 
 function hire(
@@ -381,7 +386,7 @@ test("the handover names the memo, who you are, your colleagues and how to take 
   expect(text).toContain("memo m1")
   expect(text).toContain("周五前把测试补齐")
   expect(text).toContain("web-app 部 · checkout-redesign 的组长")
-  expect(text).toContain("- web-app 部 · 本部 部长")
+  expect(text).toContain("- web-app 部 · 本部 大部长")
   expect(text).toContain("office_board")
   const board = companyOf([hq], "a", T0, { memos: [memo], claims: [{ memoId: "m1", at: T0, sessionId: "b", who: "web-app 部 · checkout-redesign" }] }).board
   expect(board?.at(-1)?.from.name).toBe("董事长")
@@ -421,16 +426,16 @@ test("a colleague's message waits in its addressee's inbox until the board is re
   messageSent(hq, undefined, "董事长", "做完了", T0 + 20)
   messageSent(api, undefined, "全体", "别动 main", T0 + 30)
   const snaps = [hq, wt, api]
-  const inbox = inboxOf(wt, snaps)
+  const inbox = inboxOf(wt, snaps, T0 + 100)
   expect(inbox).toHaveLength(2)
-  expect(inbox[0]).toContain("web-app 部 · 本部 的部长（写给 docs）：我改了 schema")
+  expect(inbox[0]).toContain("web-app 部 · 本部 的大部长（写给 docs）：我改了 schema")
   expect(inbox[1]).toContain("别动 main")
   // the chairman's line is the board's, nobody's inbox; a sender's own lines are not its mail
-  expect(inboxOf(hq, snaps)).toHaveLength(1)
-  expect(inboxOf(hq, snaps)[0]).toContain("别动 main")
+  expect(inboxOf(hq, snaps, T0 + 100)).toHaveLength(1)
+  expect(inboxOf(hq, snaps, T0 + 100)[0]).toContain("别动 main")
   wt.seen = T0 + 30
-  expect(inboxOf(wt, snaps)).toHaveLength(0)
-  const board = boardOf(snaps)
+  expect(inboxOf(wt, snaps, T0 + 100)).toHaveLength(0)
+  const board = boardOf(snaps, T0 + 100)
   expect(board).toHaveLength(3)
-  expect(board[2]).toContain("api-server 部 · 本部 的部长 → 全体：别动 main")
+  expect(board[2]).toContain("api-server 部 · 本部 的大部长 → 全体：别动 main")
 })

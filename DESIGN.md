@@ -4,6 +4,17 @@ Every running Claude Code session on this machine as a pixel-art company: you ar
 the chairman, each project a department, each session a team whose manager is the
 session itself and whose crew are its subagents.
 
+## Language
+
+Every word the office shows or says, to the person and to the model, is in
+`hooks/words.ts`, once in English and once in Chinese, chosen by the plugin's
+`language` option (`en` by default, `zh`; set in `/config`). The drawing runs
+in an environment of its own, so the company it is handed carries the
+language. Titles below are given in both: 大部长 Director, 部长 Head, 组长
+Lead, 本部 HQ. A board line names its crabs as the drawing names them now, in
+the words the office speaks now: a note keeps the names it was written with,
+before anyone knew which session would be 大部长.
+
 ## What it shows
 
 - **`/office` pane**: the whole company. A header line, then a framed room per
@@ -169,6 +180,11 @@ but never drew.
 - The mods API has no delete, so snapshots of closed sessions stay in `live/`; they
   are skipped by mtime. Delete the folder by hand if it ever matters.
 - Terminal only. A frame of a 128-row office takes about 3 ms to draw.
+- The Claude Code daemon keeps background processes warm for sessions nobody
+  has opened yet (`claude bg-spare`, `CLAUDE_CODE_SESSION_KIND=bg`). They load
+  plugins like any session, and one drew as a second crab beside the real
+  session in its folder. A background session stays out of the office until
+  its first turn: no snapshot and no memos until it is someone's.
 - A Client's tree may serialize to 100,000 characters, past which it draws
   nothing; carpet and furniture took a seven-session office past it. The pane
   draws the office as a stack of Clients, each a band of rows the hook sizes to

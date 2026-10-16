@@ -34,6 +34,7 @@ import {
 } from "./office.ts"
 import type { Ask, Claim, Memo, Reply, Snapshot } from "./office.ts"
 import { SEAT_COLS, heightOf, office as draw, slicesOf } from "./pixels.ts"
+import { setLanguage, w } from "./words.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
 // session's snapshot file, which is how the other sessions see it; the
@@ -76,6 +77,10 @@ const office = {
   asked: 0,
   // Asks from other sessions this one has taken up, so each is answered once.
   answered: new Set<string>(),
+  // A background process the daemon keeps warm for a session nobody has opened
+  // yet: it loads plugins like any session and drew as a second, phantom crab
+  // beside the real one. It joins the office at its first turn.
+  isSpare: false,
 }
 
 type Chat = { id: string; at: number; question: string; answer?: string; isRemote: boolean }
@@ -93,7 +98,7 @@ function idOf(now: number): string {
 // no longer be read, through its manager's fork.
 async function answer($: EngineInterface, crabId: string, question: string): Promise<string> {
   const found = office.me === undefined ? undefined : findCrab([office.me], crabId)
-  if (found === undefined) return "这只螃蟹已经不在了"
+  if (found === undefined) return w().crabGone
   const { crab } = found
   try {
     if (crab.role !== "leader") {
@@ -101,14 +106,14 @@ async function answer($: EngineInterface, crabId: string, question: string): Pro
       if (Array.isArray(rows)) {
         const model = crab.model ?? (await $.session.model())
         const r = await $.model.complete({ model, ...subagentBtwOf(crab, rows, question), maxTokens: 800 })
-        return r.isAnswered ? r.text : `没答上来（${r.reason}）`
+        return r.isAnswered ? r.text : w().noAnswer(r.reason)
       }
     }
     const r = await $.model.fork({ prompt: btwOf(crab, question) })
     if (r.isAnswered) return r.text
-    return r.reason === "nothing-to-fork" ? "还没开始干活，没什么可说的" : `没答上来（${r.reason}）`
+    return r.reason === "nothing-to-fork" ? w().notStartedYet : w().noAnswer(r.reason)
   } catch (err) {
-    return `没答上来（${err}）`
+    return w().noAnswer(String(err))
   }
 }
 
@@ -156,7 +161,7 @@ async function btw($: EngineInterface, now: number) {
       if (!chat.isRemote || chat.answer !== undefined) continue
       const text = await $.fs.read(`${office.base}/replies/${chat.id}.json`).catch(() => undefined)
       if (text !== undefined) heard($, crabId, chat.id, (JSON.parse(text) as Reply).text)
-      else if (now - chat.at > ASK_WAIT_MS) heard($, crabId, chat.id, "没回音：那边可能没装新版本，或者已经下班了")
+      else if (now - chat.at > ASK_WAIT_MS) heard($, crabId, chat.id, w().noReply)
     }
 }
 
@@ -164,17 +169,12 @@ async function say($: EngineInterface, text: string): Promise<string> {
   const now = Date.now()
   const id = `${now.toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`
   const memo = parseSay(text, id, now)
-  if (memo === undefined) return "要说什么？/office say [@组名|@全体] 留言"
+  if (memo === undefined) return w().sayUsage
   await $.fs.write(`${office.base}/memos/${memo.id}.json`, JSON.stringify(memo))
   office.memos = [...office.memos, memo]
   $.ui.invalidate("ui.render")
-  const to =
-    memo.to.kind === "all"
-      ? "全体"
-      : memo.to.kind === "team"
-        ? `${memo.to.name}`
-        : "待领，谁先空下来谁看"
-  return `已经贴到白板上（${to}）：${memo.text}`
+  const to = memo.to.kind === "all" ? w().everyone : memo.to.kind === "team" ? memo.to.name : w().toOpen
+  return w().posted(to, memo.text)
 }
 
 function changed($: EngineInterface) {
@@ -229,8 +229,7 @@ function announce($: EngineInterface, others: Snapshot[], now: number) {
     if (finished === undefined || now - finished > CHEER_MS) continue
     if (office.announced.get(s.sessionId) === finished) continue
     office.announced.set(s.sessionId, finished)
-    const team = s.team ? ` · ${s.team}` : ""
-    $.ui.toast(`✓ ${s.project} 部${team} 完成了`)
+    $.ui.toast(w().finished(whoOf(s)))
   }
 }
 
@@ -254,7 +253,7 @@ async function deliver($: EngineInterface, now: number) {
 
 async function tick($: EngineInterface) {
   const me = office.me
-  if (me === undefined) return
+  if (me === undefined || office.isSpare) return
   const now = Date.now()
   if (pruned(me, now)) changed($)
   if (office.isDirty || now - office.lastWrite >= HEARTBEAT_MS) {
@@ -294,9 +293,9 @@ async function claim(
   agentId: string | undefined,
 ): Promise<string> {
   const me = office.me
-  if (me === undefined) return "办公室还没准备好"
+  if (me === undefined) return w().tool.notReady
   const memo = office.memos.find((m) => m.id === memoId)
-  if (memo === undefined) return `白板上没有 memo ${memoId}`
+  if (memo === undefined) return w().tool.noMemo(memoId)
   // Only a memo for whoever is free is one session's: a named or everyone's
   // memo is each addressee's to take, so each claim is a file of its own.
   const isOpen = memo.to.kind === "open"
@@ -305,8 +304,8 @@ async function claim(
   if (prior !== undefined) {
     const by = JSON.parse(prior) as Claim
     return by.sessionId === me.sessionId
-      ? "你已经认领过了，继续做吧"
-      : `已经被 ${by.who} 认领了，停下，别做这件事`
+      ? w().tool.claimedAlready
+      : w().tool.claimedBy(by.who)
   }
   const claimed: Claim = {
     memoId,
@@ -316,20 +315,23 @@ async function claim(
   }
   await $.fs.write(file, JSON.stringify(claimed))
   office.claims = [...office.claims, claimed]
-  messageSent(me, agentId, "董事长", `我来接：${memo.text}`, Date.now())
-  return "认领成功，白板上大家都看得到是你接的。开始做吧，做完在白板上说一声。"
+  messageSent(me, agentId, w().chairman, w().tool.claimNote(memo.text), Date.now())
+  return w().tool.claimed
 }
 
-export const register: Register = (on) => {
+export const register: Register = (on, options) => {
+  setLanguage(typeof options.language === "string" ? options.language : undefined)
   on("session.start", async ($, e, next) => {
     const r = await next(e)
-    const [sessionId, root, model, configDir, home] = await Promise.all([
+    const [sessionId, root, model, configDir, home, kind] = await Promise.all([
       $.session.id(),
       $.session.root().catch(() => e.cwd),
       $.session.model().catch(() => undefined),
       $.env.get("CLAUDE_CONFIG_DIR"),
       $.env.get("HOME"),
+      $.env.get("CLAUDE_CODE_SESSION_KIND"),
     ])
+    office.isSpare = kind === "bg"
     office.base = `${configDir || `${home}/.claude`}/crab-office`
     // A worktree's `.git` is a file naming its repository; a checkout's is a
     // folder, which a read rejects.
@@ -346,22 +348,21 @@ export const register: Register = (on) => {
     office.isDirty = true
     await $.command.register({
       name: COMMAND,
-      description:
-        "Every session and its subagents as crabs in an office (close|band|say)",
-      argumentHint: "[close|band|say [@组名|@全体] 留言]",
+      description: w().commandDescription,
+      argumentHint: w().commandHint,
       immediate: true,
     })
     await $.tool.register({
       name: BOARD_TOOL,
       description:
-        "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活，白板他们都看得到。开工前、做完一件事、碰到和别的会话有关的事（要它配合、提醒它别动某处、告诉它你改了它会用到的东西）时用它。action=read 看白板最近的话和同事写给你的消息；action=post 写一句：to 写同事的组名（worktree 名）、部门名（项目名）或「全体」就是写给他们，他们下次看白板时收到，不会被打断；不写 to 就是写给董事长（用户）；action=colleagues 看同事都是谁、在干什么、能写给谁；action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。",
+        w().tool.description,
       inputSchema: {
         type: "object",
         properties: {
           action: { type: "string", enum: ["read", "post", "colleagues", "claim"] },
-          memo: { type: "string", description: "要认领的 memo id" },
-          text: { type: "string", description: "要写在白板上的话" },
-          to: { type: "string", description: "写给谁：同事的组名、部门名或「全体」；不写就是写给董事长" },
+          memo: { type: "string", description: w().tool.memo },
+          text: { type: "string", description: w().tool.text },
+          to: { type: "string", description: w().tool.to },
         },
         required: ["action"],
       },
@@ -391,6 +392,7 @@ export const register: Register = (on) => {
   })
 
   on("turn.start", ($, e, next) => {
+    if (e.agentId === undefined) office.isSpare = false
     if (office.me !== undefined) {
       turnStarted(office.me, e.agentId, e.text, Date.now())
       changed($)
@@ -441,39 +443,39 @@ export const register: Register = (on) => {
       agentId?: string
     }
     const me = office.me
-    if (me === undefined) return { result: "办公室还没准备好" }
+    if (me === undefined) return { result: w().tool.notReady }
     const now = Date.now()
     const snaps = [me, ...office.others]
     const names = addresseesOf(snaps, now, "").map((r) => r.text.trim()).join(" ")
     if (input.action === "read") {
-      const inbox = inboxOf(me, snaps)
+      const inbox = inboxOf(me, snaps, now)
       me.seen = now
       changed($)
       return {
         result: [
-          inbox.length > 0 ? `同事写给你的（${inbox.length} 条）：\n${inbox.join("\n")}` : "没有同事写给你的新消息。",
-          `白板最近的话：\n${boardOf(snaps).join("\n") || "（白板是空的）"}`,
+          inbox.length > 0 ? w().tool.inbox(inbox) : w().tool.noInbox,
+          w().tool.latest(boardOf(snaps, now)),
         ].join("\n\n"),
       }
     }
-    const unread = inboxOf(me, snaps).length
-    const nudge = unread > 0 ? `\n（同事给你写了 ${unread} 条还没看的消息，用 action=read 看）` : ""
+    const unread = inboxOf(me, snaps, now).length
+    const nudge = unread > 0 ? w().tool.unread(unread) : ""
     if (input.action === "claim")
       return { result: `${await claim($, input.memo ?? "", input.agentId)}${nudge}` }
     if (input.action === "post") {
-      if (!input.text) return { result: "要写的话是空的" }
-      const to = input.to?.trim() || "董事长"
+      if (!input.text) return { result: w().tool.empty }
+      const to = input.to?.trim() || w().chairman
       const target = targetOf(to)
       const reach = target === undefined ? [] : recipientsOf(target, me, snaps, now).map(whoOf)
       if (target !== undefined && reach.length === 0)
-        return { result: `现在没有叫 ${to} 的同事在岗，没写。能写给：${names}${nudge}` }
+        return { result: `${w().tool.nobody(to, names)}${nudge}` }
       messageSent(me, input.agentId, to, input.text, now)
       changed($)
-      const heard = target === undefined ? "董事长看得到" : `${reach.join("、")} 下次看白板时会收到，不会打断他们`
-      return { result: `已经写到白板上了，${heard}。${nudge}` }
+      const heard = target === undefined ? w().tool.heardByChairman : w().tool.heardBy(reach)
+      return { result: `${w().tool.written(heard)}${nudge}` }
     }
     return {
-      result: `${rosterOf(snaps, me, now).join("\n")}\n能写给：${names}${nudge}`,
+      result: `${rosterOf(snaps, me, now).join("\n")}\n${w().tool.canWriteTo(names)}${nudge}`,
     }
   })
 
@@ -541,33 +543,33 @@ export const register: Register = (on) => {
     if (arg === "close") {
       await $.ui.close({ id: PANE }).catch(() => undefined)
       office.isOpen = false
-      return { text: "办公室关了" }
+      return { text: w().closed }
     }
     if (arg === "band") {
       office.isBandHidden = !office.isBandHidden
       $.ui.invalidate("ui.render")
       return {
-        text: `输入框上方的螃蟹${office.isBandHidden ? "藏起来了" : "回来了"}`,
+        text: w().band(office.isBandHidden),
       }
     }
     if (arg.startsWith("say")) return { text: await say($, args.slice(3)) }
     try {
       await $.ui.open({
         id: PANE,
-        title: "螃蟹有限公司",
+        title: w().paneTitle,
         focus: true,
         columns: PANE_COLUMNS,
       })
     } catch (err) {
-      return { text: `面板没打开: ${err}` }
+      return { text: w().paneFailed(String(err)) }
     }
     office.isOpen = true
     office.others = await readOthers($, Date.now())
     $.ui.invalidate("ui.render")
     const hint = e.presentation.isFullscreen
-      ? "点一只螃蟹看详情"
-      : "画在输入框上方；/tui fullscreen 让它停靠在右侧"
-    return { text: `${hint} · /office say 在白板上留言 · /office close 关掉` }
+      ? w().hintFull
+      : w().hintInline
+    return { text: `${hint}${w().hintTail}` }
   })
 
   on("ui.input", { element: /^office-say-/ }, async ($, e, next) => {
@@ -636,19 +638,19 @@ export const register: Register = (on) => {
           <Box flexDirection="column" borderStyle="round" borderColor="#5d7a66" paddingX={1}>
             <Input
               key={`office-say-${office.said}`}
-              label="✎ 写在白板上 "
-              placeholder="比如：@全体 下班前把测试补齐"
-              submitLabel="贴上"
+              label={w().sayLabel}
+              placeholder={w().sayPlaceholder}
+              submitLabel={w().post}
               onSubmit={() => undefined}
             />
             <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-              <Text dimColor>点名</Text>
+              <Text dimColor>{w().call}</Text>
               {names.map((name) => (
                 <Text key={`to-${name}`} color="#e8c468" backgroundColor="#2e3a33">
                   {` ${name} `}
                 </Text>
               ))}
-              <Text dimColor>· 不点名就谁有空谁接</Text>
+              <Text dimColor>{w().uncalled}</Text>
             </Box>
           </Box>
           {chosen !== undefined &&
@@ -660,18 +662,18 @@ export const register: Register = (on) => {
           {chosen !== undefined &&
             (office.chats.get(chosen.crab.id) ?? []).flatMap((chat) => [
               <Text key={`ask-${chat.id}`} color="#e8c468" wrap="wrap">
-                {`你：${chat.question}`}
+                {`${w().you}${chat.question}`}
               </Text>,
               <Text key={`answer-${chat.id}`} wrap="wrap" dimColor={chat.answer === undefined}>
-                {`它：${chat.answer ?? "……正在想"}`}
+                {`${w().it}${chat.answer ?? w().thinkingDots}`}
               </Text>,
             ])}
           {chosen !== undefined && (
             <Input
               key={`office-btw-${office.asked}-${chosen.crab.id}`}
               label="btw "
-              placeholder="问它一句：在干什么？干得咋样？"
-              submitLabel="问"
+              placeholder={w().btwPlaceholder}
+              submitLabel={w().ask}
               onSubmit={() => undefined}
             />
           )}
@@ -712,18 +714,18 @@ export const register: Register = (on) => {
         {chosen !== undefined &&
           (office.chats.get(chosen.crab.id) ?? []).slice(-1).flatMap((chat) => [
             <Text key={`ask-${chat.id}`} color="#e8c468" wrap="truncate">
-              {`你：${chat.question}`}
+              {`${w().you}${chat.question}`}
             </Text>,
             <Text key={`answer-${chat.id}`} wrap="wrap" dimColor={chat.answer === undefined}>
-              {`它：${chat.answer ?? "……正在想"}`}
+              {`${w().it}${chat.answer ?? w().thinkingDots}`}
             </Text>,
           ])}
         {chosen !== undefined && (
           <Input
             key={`office-btw-band-${office.asked}-${chosen.crab.id}`}
             label="btw "
-            placeholder="问它一句：在干什么？干得咋样？"
-            submitLabel="问"
+            placeholder={w().btwPlaceholder}
+            submitLabel={w().ask}
             onSubmit={() => undefined}
           />
         )}

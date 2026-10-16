@@ -3,6 +3,11 @@ import { expect, test } from "claude-code/testing"
 import { SEAT_COLS, SEAT_ROWS, heightOf, lidOf, office, restingOf, runsOf, slicesOf } from "../hooks/pixels.ts"
 import type { Company, SeatData } from "../hooks/pixels.ts"
 
+import { setLanguage } from "../hooks/words.ts"
+
+// These tests read the office in Chinese, the words it was first written in.
+setLanguage("zh")
+
 const QUADRANTS = new Set([..." ▘▝▖▗▀▄▌▐▚▞▛▜▙▟█"])
 const LOOKS = [
   "thinking",
