@@ -1,0 +1,9 @@
+{
+  "name": "crab-office",
+  "version": "0.3.0",
+  "description": "Every running Claude Code session and its subagents as a pixel-art office: departments by project, org-chart teams, a shared board they talk on, and btw questions to any crab",
+  "author": { "name": "Gavin Hao" },
+  "homepage": "https://github.com/BlueTriangleG/crab-office",
+  "repository": "https://github.com/BlueTriangleG/crab-office",
+  "keywords": ["mod", "subagents", "pixel-art", "dashboard"]
+}

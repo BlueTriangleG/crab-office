@@ -1,0 +1,6 @@
+{
+  "name": "crab-office",
+  "description": "crab-office: your Claude Code sessions and subagents as a pixel-art office",
+  "owner": { "name": "Gavin Hao" },
+  "plugins": [{ "name": "crab-office", "source": "./" }]
+}
