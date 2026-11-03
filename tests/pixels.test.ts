@@ -1,6 +1,6 @@
 import { expect, test } from "claude-code/testing"
 
-import { SEAT_COLS, SEAT_ROWS, heightOf, lidOf, office, restingOf, runsOf, slicesOf } from "../hooks/pixels.ts"
+import { SEAT_COLS, SEAT_ROWS, drawPart, heightOf, lidOf, office, partOf, restingOf, runsOf, slicesOf } from "../hooks/pixels.ts"
 import type { Company, SeatData } from "../hooks/pixels.ts"
 
 import { setLanguage } from "../hooks/words.ts"
@@ -297,7 +297,56 @@ test("a big office splits into bands of rows, each tree well under the serialize
         runsOf(line).map((r) => ({ type: "Text", props: { color: r.fg, backgroundColor: r.bg, bold: r.bold }, children: [r.ch] })),
       )
       expect(JSON.stringify(tree).length).toBeLessThan(100_000)
+      expect(to - from).toBeLessThan(13)
+      // drawn alone, a band's rows are the whole office's rows
+      expect(JSON.stringify(office(company, cols, 3, null, [from, to]).cells.slice(from, to))).toBe(
+        JSON.stringify(drawn.cells.slice(from, to)),
+      )
     })
+  }
+})
+
+test("the pane's bands together carry about one office, not one each", async () => {
+  const teams = Array.from({ length: 16 }, (_, i) => [
+    seat(`m${i}`, "lead", "editing"),
+    ...Array.from({ length: 3 }, (_, j) => seat(`m${i}c${j}`, "Explore", "reading")),
+  ])
+  const one = (id: string) => [seat(id, "leader", "idle")]
+  const said = (i: number) => ({
+    key: `k${i}`,
+    time: "12:03",
+    kind: "say",
+    from: { name: "经理", color: "#d77757", id: "m0" },
+    to: { name: "调研员", color: "#6a9bcc" },
+    text: "话".repeat(400),
+  })
+  const company: Company = {
+    rooms: [
+      { title: "web-app 部", footer: "", signs: teams.map((_, i) => `w${i} 组`), teams },
+      { title: "api-server 部", footer: "", teams: [one("api")] },
+      { title: "web 部", footer: "", teams: [one("web")] },
+    ],
+    board: Array.from({ length: 8 }, (_, i) => said(i)),
+    boardView: { first: 3, last: 10, total: 12 },
+  }
+  for (const cols of [44, 140]) {
+    const drawn = office(company, cols, 3, "m0")
+    const slices = slicesOf(drawn.cells)
+    let carried = 0
+    for (const rows of slices) {
+      const props = JSON.stringify({ part: partOf(company, cols, rows), selected: "m0", rows })
+      carried += props.length
+      // drawn from its share alone, as the Client gets it, a band's rows are the whole office's rows
+      const part = (JSON.parse(props) as { part: ReturnType<typeof partOf> }).part
+      const alone = drawPart(part, cols, 3, "m0", rows)
+      expect(JSON.stringify(alone.cells.slice(...rows))).toBe(JSON.stringify(drawn.cells.slice(...rows)))
+      expect(alone.seats.every((s) => drawn.seats.some((d) => d.id === s.id && d.cy === s.cy))).toBe(true)
+    }
+    // every Client's props count against the pane's one tree of 100,000
+    // characters: a copy of the whole office per band ran past it, and the bands
+    // past the cut drew nothing
+    expect(slices.length * JSON.stringify(company).length).toBeGreaterThan(100_000)
+    expect(carried).toBeLessThan(40_000)
   }
 })
 

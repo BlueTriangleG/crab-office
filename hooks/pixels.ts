@@ -820,6 +820,12 @@ function envelope(
   })
 }
 
+// What a line's words show on the board: one row inside its frame. A line keeps
+// up to 500 characters for the note card; the board's Clients get only this.
+function textOf(line: BoardLine, w: number): string {
+  return fit(line.text, w - 6)
+}
+
 function board(
   b: Pixels,
   labels: Label[],
@@ -868,7 +874,7 @@ function board(
     say(line.from.name, line.from.color, true)
     say(" → ", MUTED)
     say(line.to.name, line.to.color, true)
-    labels.push({ x: 4, y: row + 1, str: line.text, fg: TITLE, max: w - 6 })
+    labels.push({ x: 4, y: row + 1, str: textOf(line, w), fg: TITLE })
   })
 }
 
@@ -1043,13 +1049,72 @@ function drawTeam(
     for (let r = at.y; r < at.y + at.tall; r++) labels.push({ x: at.x - 1, y: r, ch: "┃", fg: HERE, bold: true })
 }
 
+type PlacedTeam = { block: Block; x: number; y: number; tall: number }
+
+// One band's share of the office: the rooms, teams and board on its rows, each
+// where the whole office's layout puts it. The pane hands one to each of its
+// Clients, because every Client's props count against the pane's one tree of
+// 100,000 characters: the whole office in each of nine bands came to 73,000 with
+// three departments, and past the cut the later bands drew nothing.
+export type Part = {
+  rows: number
+  header?: string
+  lang?: string
+  rooms: { room: Room; x: number; y: number; w: number; h: number; lamp?: { from: number; row: number }; teams: PlacedTeam[] }[]
+  board?: { y: number; lines: BoardLine[]; view?: Company["boardView"] }
+}
+
+// `only`: the rows a Client shows; rooms, teams and the board outside them are
+// left out, so each Client carries and draws its own rows and no more. A room's
+// own `teams` are left out too, every team riding in its block instead.
+export function partOf(company: Company, cols: number, only?: [number, number]): Part {
+  const layout = layoutOf(company, cols)
+  const rows = layout.bottom + boardHeight(company)
+  const [from, to] = only ?? [0, rows]
+  const isShown = (y: number, h: number) => y < to && y + h > from
+  const rooms: Part["rooms"] = []
+  for (const { room, x: rx, y: cy, w, h, bands } of layout.rooms) {
+    if (!isShown(cy, h)) continue
+    const teams: PlacedTeam[] = []
+    let lamp: { from: number; row: number } | undefined
+    let y = room.bare ? cy : cy + 1
+    for (const band of bands) {
+      let x = room.bare ? rx : rx + 1 + Math.floor((w - 2 - bandWidth(band)) / 2)
+      const row = y + (room.signs?.[band[0]?.index ?? 0] ? 1 : 0)
+      if (!room.bare && band === bands[0]) lamp = { from: x, row }
+      for (const block of band) {
+        if (isShown(y, tallest(band))) teams.push({ block, x, y, tall: tallest(band) })
+        x += block.seats * SEAT_COLS + AISLE
+      }
+      y += tallest(band) + (room.bare ? 0 : 1)
+    }
+    rooms.push({ room: { ...room, teams: [] }, x: rx, y: cy, w, h, lamp, teams })
+  }
+  const isBoardShown = company.board !== undefined && isShown(layout.bottom, boardHeight(company))
+  return {
+    rows,
+    header: company.header,
+    lang: company.lang,
+    rooms,
+    board: isBoardShown
+      ? { y: layout.bottom, lines: (company.board ?? []).map((line) => ({ ...line, text: textOf(line, cols) })), view: company.boardView }
+      : undefined,
+  }
+}
+
 export function office(
   company: Company,
   cols: number,
   t: number,
   selected: string | null = null,
+  only?: [number, number],
 ): Drawn {
-  const rows = heightOf(company, cols)
+  return drawPart(partOf(company, cols, only), cols, t, selected, only)
+}
+
+export function drawPart(part: Part, cols: number, t: number, selected: string | null = null, only?: [number, number]): Drawn {
+  const { rows } = part
+  const [from, to] = only ?? [0, rows]
   const b: Pixels = {
     w: cols * 2,
     h: rows * 2,
@@ -1059,17 +1124,16 @@ export function office(
   const seats: Drawn["seats"] = []
   const links: Drawn["lines"] = []
   const pagers: Drawn["pagers"] = []
-  if (company.header)
+  if (part.header)
     labels.push({
       x: 0,
       y: 0,
-      str: company.header,
+      str: part.header,
       fg: TITLE,
       bold: true,
       max: cols,
     })
-  const layout = layoutOf(company, cols)
-  for (const { room, x: rx, y: cy, w, h, bands } of layout.rooms) {
+  for (const { room, x: rx, y: cy, w, h, lamp: light, teams } of part.rooms) {
     if (room.bare) fill(b, rx * 2, cy * 2, w * 2, h * 2, FLOOR)
     else {
       carpet(b, { x: rx + 1, y: cy + 1, w: w - 2, h: h - 2 })
@@ -1078,22 +1142,13 @@ export function office(
       const accent = room.isCheering ? (Math.floor(t / 2) % 2 === 0 ? DONE_GREEN : WALL) : undefined
       walls(b, labels, { x: rx, y: cy, w, h }, titleOfRoom(room, room.isCheering === true), room.footer, accent)
     }
-    let y = room.bare ? cy : cy + 1
-    for (const band of bands) {
-      let x = room.bare ? rx : rx + 1 + Math.floor((w - 2 - bandWidth(band)) / 2)
-      const row = y + (room.signs?.[band[0]?.index ?? 0] ? 1 : 0)
-      if (!room.bare && band === bands[0]) lamp(b, rx, { from: x, row })
-      for (const block of band) {
-        drawTeam(b, labels, seats, room, block, { x, y, tall: tallest(band) }, t, selected)
-        x += block.seats * SEAT_COLS + AISLE
-      }
-      y += tallest(band) + (room.bare ? 0 : 1)
-    }
+    if (light !== undefined) lamp(b, rx, light)
+    for (const { block, x, y, tall } of teams) drawTeam(b, labels, seats, room, block, { x, y, tall }, t, selected)
   }
-  if (company.board !== undefined) {
-    board(b, labels, layout.bottom, cols, company.board, company.boardView, selected, links, pagers)
+  if (part.board !== undefined) {
+    board(b, labels, part.board.y, cols, part.board.lines, part.board.view, selected, links, pagers)
   }
-  return { cols, rows, cells: toCells(b, cols, rows, labels), seats, lines: links, pagers }
+  return { cols, rows, cells: toCells(b, cols, rows, labels, from, to), seats, lines: links, pagers }
 }
 
 // A row as the drawing sends it: one run per stretch of cells alike in colour.
@@ -1113,14 +1168,17 @@ export function runsOf(line: Cell[]): Cell[] {
 // since a row's runs change from frame to frame as the crabs move.
 const SLICE_BUDGET = 60_000
 const RUN_COST = 80
+// And each Client draws only its own rows, so a band this tall bounds its frame
+// as well as its tree: a whole office a frame ran past the one-second budget.
+const SLICE_ROWS = 12
 
-export function slicesOf(cells: Cell[][], budget = SLICE_BUDGET): [number, number][] {
+export function slicesOf(cells: Cell[][], budget = SLICE_BUDGET, most = SLICE_ROWS): [number, number][] {
   const slices: [number, number][] = []
   let from = 0
   let size = 0
   cells.forEach((line, y) => {
     const row = runsOf(line).reduce((n, run) => n + run.ch.length + RUN_COST, 0)
-    if (y > from && size + row > budget) {
+    if (y > from && (size + row > budget || y - from >= most)) {
       slices.push([from, y])
       from = y
       size = 0
@@ -1171,48 +1229,83 @@ function nearer(c: string, a: string, b: string): string {
 // Every cell becomes one glyph and at most two colours: a lone colour over the
 // terminal's own background, or two with the commoner as background. A third
 // colour, which the drawings avoid, takes the nearer of the two.
-function toCells(
-  b: Pixels,
-  cols: number,
-  rows: number,
-  labels: Label[],
-): Cell[][] {
+//
+// Allocation-free, with a short way for a cell of one colour, which most are:
+// the drawing runs where every operation is metered, and the first version, a
+// Map, a sort and four arrays a cell, ran past the Client's one-second budget.
+// `from`/`to`: the rows a Client shows; the rest stay empty.
+function toCells(b: Pixels, cols: number, rows: number, labels: Label[], from = 0, to = rows): Cell[][] {
   const cells: Cell[][] = []
+  const quad: (string | null)[] = [null, null, null, null]
+  const vals: (string | null)[] = [null, null, null, null]
+  const counts = [0, 0, 0, 0]
+  const BITS = [8, 4, 2, 1]
   for (let r = 0; r < rows; r++) {
     const line: Cell[] = []
+    cells.push(line)
+    if (r < from || r >= to) continue
     for (let c = 0; c < cols; c++) {
-      const at = (dx: number, dy: number) =>
-        b.px[(2 * r + dy) * b.w + 2 * c + dx] ?? null
-      const quad = [at(0, 0), at(1, 0), at(0, 1), at(1, 1)]
-      const counts = new Map<string | null, number>()
-      for (const p of quad) counts.set(p, (counts.get(p) ?? 0) + 1)
-      const ranked = [...counts.entries()]
-        .sort((a, z) => z[1] - a[1])
-        .map(([p]) => p)
-      const isCrowded = ranked.length > 2
-      const opaque = ranked.filter((p): p is string => p !== null)
-      const first = isCrowded ? opaque[0] : ranked[0]
-      const second = isCrowded ? opaque[1] : ranked[1]
+      const i = 2 * r * b.w + 2 * c
+      quad[0] = b.px[i] ?? null
+      quad[1] = b.px[i + 1] ?? null
+      quad[2] = b.px[i + b.w] ?? null
+      quad[3] = b.px[i + b.w + 1] ?? null
+      if (quad[0] === quad[1] && quad[1] === quad[2] && quad[2] === quad[3]) {
+        const only = quad[0]
+        line.push(only === null ? { ch: " ", fg: undefined, bg: undefined } : { ch: "█", fg: only, bg: undefined })
+        continue
+      }
+      // Distinct colours by count, most first, a tie kept in the order seen.
+      let n = 0
+      for (let q = 0; q < 4; q++) {
+        let k = 0
+        while (k < n && vals[k] !== quad[q]) k++
+        if (k === n) {
+          vals[n] = quad[q] ?? null
+          counts[n] = 0
+          n++
+        }
+        counts[k] = (counts[k] ?? 0) + 1
+      }
+      for (let a = 1; a < n; a++)
+        for (let z = a; z > 0 && (counts[z] ?? 0) > (counts[z - 1] ?? 0); z--) {
+          const [cv, vv] = [counts[z] ?? 0, vals[z] ?? null]
+          counts[z] = counts[z - 1] ?? 0
+          vals[z] = vals[z - 1] ?? null
+          counts[z - 1] = cv
+          vals[z - 1] = vv
+        }
+      const isCrowded = n > 2
+      let first: string | null | undefined
+      let second: string | null | undefined
+      if (isCrowded) {
+        for (let k = 0; k < n; k++) {
+          const v = vals[k] ?? null
+          if (v === null) continue
+          if (first === undefined) first = v
+          else if (second === undefined) second = v
+        }
+      } else {
+        first = vals[0]
+        second = n > 1 ? vals[1] : undefined
+      }
       let fg: string | undefined
       let bg: string | undefined
       if (first === undefined || first === null) fg = second ?? undefined
       else if (second === undefined || second === null) fg = first
       else [bg, fg] = [first, second]
-      const mapped = quad.map((p) => {
-        if (!isCrowded || first == null || second == null) return p
-        if (p === null) return first
-        return p === first || p === second ? p : nearer(p, first, second)
-      })
-      const mask = mapped.reduce<number>(
-        (m, p, i) =>
-          fg !== undefined && p === fg ? m | ([8, 4, 2, 1][i] ?? 0) : m,
-        0,
-      )
+      let mask = 0
+      for (let q = 0; q < 4; q++) {
+        let px = quad[q] ?? null
+        if (isCrowded && first != null && second != null)
+          px = px === null ? first : px === first || px === second ? px : nearer(px, first, second)
+        if (fg !== undefined && px === fg) mask |= BITS[q] ?? 0
+      }
       line.push({ ch: GLYPH[mask] ?? " ", fg, bg })
     }
-    cells.push(line)
   }
   for (const label of labels) {
+    if (label.y < from || label.y >= to) continue
     const row = cells[label.y]
     if (row === undefined) continue
     const text = label.ch ?? fit(label.str ?? "", label.max ?? cols)

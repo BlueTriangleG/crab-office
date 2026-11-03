@@ -37,7 +37,7 @@ import {
 } from "./office.ts"
 import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
 import type { BoardLine } from "./pixels.ts"
-import { SEAT_COLS, heightOf, office as draw, slicesOf } from "./pixels.ts"
+import { SEAT_COLS, heightOf, office as draw, partOf, slicesOf } from "./pixels.ts"
 import { setLanguage, w } from "./words.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
@@ -755,7 +755,12 @@ export const register: Register = (on, options) => {
 
   on("ui.message", ($, e, next) => {
     if (!e.element.startsWith("crab-office") && e.element !== "crab-band") return next(e)
-    const data = e.data as { select?: unknown; drawn?: unknown; board?: unknown; note?: unknown } | null
+    const data = e.data as { select?: unknown; drawn?: unknown; board?: unknown; note?: unknown; ms?: unknown } | null
+    // A drawing's frame time, kept in the snapshot beside its first frame.
+    if (typeof data?.ms === "number") {
+      if (office.me !== undefined) office.me.drawn = { ...office.me.drawn, [`${e.element}:ms`]: data.ms }
+      return next(e)
+    }
     // A drawing's first frame reports itself, so the snapshot shows the
     // surface module really drew in this session.
     if (data?.drawn === true) {
@@ -807,7 +812,7 @@ export const register: Register = (on, options) => {
             <Client
               key={`crab-office-${i}`}
               module="./crabs.tsx"
-              props={{ company, selected: office.selected, rows }}
+              props={{ part: partOf(company, e.props.bodyColumns, rows), selected: office.selected, rows }}
               width={e.props.bodyColumns}
               height={rows[1] - rows[0]}
             />
@@ -869,7 +874,7 @@ export const register: Register = (on, options) => {
         <Client
           key="crab-band"
           module="./crabs.tsx"
-          props={{ company: band, selected: office.selected }}
+          props={{ part: partOf(band, 0), selected: office.selected }}
           height={heightOf(band, 0)}
           flexGrow={1}
         />

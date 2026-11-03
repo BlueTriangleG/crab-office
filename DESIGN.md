@@ -212,6 +212,21 @@ but never drew.
 - A Client's tree may serialize to 100,000 characters, past which it draws
   nothing; carpet and furniture took a seven-session office past it. The pane
   draws the office as a stack of Clients, each a band of rows the hook sizes to
-  about 60,000 by counting its runs, and every band reads the wall clock for its
-  frame so a crab cut between two moves as one. `Raster` would have been one
+  about 60,000 by counting its runs and to at most twelve rows, and every band
+  reads the wall clock for its frame so a crab cut between two moves as one.
+- A Client also has a one-second budget a frame, in an environment that meters
+  every operation: a frame locally a few milliseconds ran past it there. Each
+  band draws only the rooms on its own rows and turns only its own rows into
+  cells, and that turning allocates nothing a cell (it was a Map, a sort and
+  four arrays). Each band reports its frame time now and then, kept in the
+  snapshot's `drawn` as `<key>:ms`. `Raster` would have been one
   element, but it takes only width-1 characters and the office writes Chinese.
+- Every Client's props count against the pane's one tree, which draws the
+  first 100,000 characters of it and leaves a Client past that empty. Each
+  band carried the whole office, so the total grew as bands times office: nine
+  bands of a three-department office came to 73,000, and an office left running
+  with more sessions went past it and the later bands drew nothing. The hook
+  now lays the office out once and hands each band only its share (`partOf`):
+  the rooms, teams and board on its rows, placed, with each board line cut to
+  the row it shows. That office comes to 16,000, and the total grows with the
+  office, by how many bands a team spans, not by how many bands there are.
