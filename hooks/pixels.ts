@@ -17,6 +17,9 @@ export type SeatData = {
   finish?: "cheer" | "done"
   // A manager's own hat, one of MANAGER_HATS; anyone else wears its role's.
   hat?: string
+  // Just wrote to another crab, or was written to: a ✉ by its head, across
+  // sessions as well as within one.
+  letter?: boolean
 }
 // Who said a board line; `id` is the crab's, so a click on the line finds it.
 export type Speaker = { name: string; color: string; id?: string }
@@ -536,6 +539,8 @@ function drawSeat(
   if (!isGone)
     for (const mark of finishBadges(seat.finish, t) ?? badges(look, t, ph, body))
       labels.push({ ...mark, x: cx + mark.x, y: cy })
+  // Left of the head, where only a cheer's spark goes, which keeps its place.
+  if (seat.letter && !isGone && seat.finish !== "cheer") labels.push({ x: cx, y: cy, ch: "✉", fg: NAMEPLATE, bold: true })
   const title = titleOf(seat.role)
   const nameColor = isGone ? GONE : body
   if (isSelected) {

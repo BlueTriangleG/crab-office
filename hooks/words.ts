@@ -158,10 +158,10 @@ const EN = {
   // the office_board tool, which the model reads
   tool: {
     description:
-      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and they all see the board. Use it before you start, when you finish something, and whenever your work touches another session's (you need it to help, to warn it off something, or to tell it you changed something it uses). action=read shows the board's latest lines and what colleagues wrote to you; action=post writes a line: with `to` set to a colleague's team (worktree name), department (project name) or \"everyone\" it is written to them, and they get it next time they read the board, without being interrupted; with no `to` it is written to the chairman (the user); action=colleagues lists who is at work on what and whom you can write to; action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it.",
+      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it.",
     memo: "the id of the memo to claim",
     text: "what to write on the board",
-    to: 'who it is for: a colleague\'s team, department, or "everyone"; left out, the chairman',
+    to: 'who it is for: a department (project name) or "everyone"; left out, the chairman',
     notReady: "The office isn't ready yet",
     noMemo: (id: string) => `No memo ${id} on the board`,
     claimedAlready: "You already claimed it; carry on",
@@ -184,7 +184,9 @@ const EN = {
     heardBy: (who: string[]) =>
       `${who.join(", ")} will get it next time they read the board, without being interrupted`,
     written: (heard: string) => `Written on the board; ${heard}.`,
-    canWriteTo: (names: string) => `You can write to: ${names}`,
+    oneSession: (to: string, name: string | undefined) =>
+      `${to} is one session, so write to it with SendMessage${name ? ` (to: "${name}")` : ""}: it reaches that session now, says whether it did, and shows on this board too. Nothing was written.`,
+    actions: "action is read, post or claim. ListAgents lists the other sessions; SendMessage writes to one.",
   },
 }
 
@@ -310,10 +312,10 @@ const ZH: Words = {
   uncalled: "· 不点名就谁有空谁接",
   tool: {
     description:
-      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活，白板他们都看得到。开工前、做完一件事、碰到和别的会话有关的事（要它配合、提醒它别动某处、告诉它你改了它会用到的东西）时用它。action=read 看白板最近的话和同事写给你的消息；action=post 写一句：to 写同事的组名（worktree 名）、部门名（项目名）或「全体」就是写给他们，他们下次看白板时收到，不会被打断；不写 to 就是写给董事长（用户）；action=colleagues 看同事都是谁、在干什么、能写给谁；action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。",
+      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。",
     memo: "要认领的 memo id",
     text: "要写在白板上的话",
-    to: "写给谁：同事的组名、部门名或「全体」；不写就是写给董事长",
+    to: "写给谁：部门名（项目名）或「全体」；不写就是写给董事长",
     notReady: "办公室还没准备好",
     noMemo: (id) => `白板上没有 memo ${id}`,
     claimedAlready: "你已经认领过了，继续做吧",
@@ -333,7 +335,9 @@ const ZH: Words = {
     heardByChairman: "董事长看得到",
     heardBy: (who) => `${who.join("、")} 下次看白板时会收到，不会打断他们`,
     written: (heard) => `已经写到白板上了，${heard}。`,
-    canWriteTo: (names) => `能写给：${names}`,
+    oneSession: (to, name) =>
+      `${to} 是一个会话，单独找它请用 SendMessage${name ? `（to: "${name}"）` : ""}：马上送到、会告诉你送没送到，白板上也看得到。这次没有写上白板。`,
+    actions: "action 只有 read、post、claim。ListAgents 列出别的会话，SendMessage 单独写给一个。",
   },
 }
 

@@ -132,6 +132,9 @@ export const DONE_KEEP_MS = 60_000
 export const SLEEP_MS = 10 * 60_000
 export const MAIL_MS = 3_000
 export const CHEER_MS = 15_000
+// How long a ✉ stays by both crabs of a message, so the pane shows who just
+// talked to whom, across sessions as well as within one.
+export const LETTER_MS = 15_000
 const TEXT_MAX = 500
 const TOOLS_KEPT = 5
 // Enough of a session's lines to page back through, and no more: every session
@@ -331,11 +334,16 @@ export function messageSent(
   to: string,
   text: string,
   now: number,
+  // The session a SendMessage reached, found in the engine's register (peerOf):
+  // its crab is the line's other end, named as the drawing names it.
+  session?: string,
 ) {
   const sender = crabOf(s, agentId) ?? s.leader
   const target = [s.leader, ...s.agents].find((c) => c.id === to)
   const recipient =
-    target === undefined ? { name: to, color: OUTSIDER } : speakerOf(target, s)
+    target === undefined
+      ? { name: to, color: OUTSIDER, ...(session === undefined ? {} : { id: session }) }
+      : speakerOf(target, s)
   noted(s, {
     at: now,
     kind: "message",
@@ -523,7 +531,7 @@ function finishOf(crab: Crab, now: number, isGone: boolean): SeatData["finish"] 
   return now - crab.finishedAt < CHEER_MS ? "cheer" : "done"
 }
 
-export function seatOf(crab: Crab, now: number, isGone: boolean): SeatData {
+export function seatOf(crab: Crab, now: number, isGone: boolean, hasLetter = false): SeatData {
   const mail = isGone ? undefined : mailOf(crab, now)
   const finish = finishOf(crab, now, isGone)
   return {
@@ -534,14 +542,22 @@ export function seatOf(crab: Crab, now: number, isGone: boolean): SeatData {
     color: colorOf(crab),
     ...(mail === undefined ? {} : { mail }),
     ...(finish === undefined ? {} : { finish }),
+    ...(hasLetter && !isGone ? { letter: true } : {}),
   }
+}
+
+// Both ends of every message of the last LETTER_MS: the crab who sent it and,
+// where the line names one, the crab it went to, in this session or another.
+function lettersOf(snaps: Snapshot[], now: number): Set<string> {
+  const recent = snaps.flatMap((s) => (s.board ?? []).filter((n) => n.kind === "message" && now - n.at < LETTER_MS))
+  return new Set(recent.flatMap((n) => [n.from.id, n.to.id]).filter((id): id is string => id !== undefined))
 }
 
 // A manager with no task yet goes by its worktree's name, so two idle teams of
 // one department can be told apart.
-function teamOf(s: Snapshot, now: number, hat: string | undefined): SeatData[] {
+function teamOf(s: Snapshot, now: number, hat: string | undefined, letters = new Set<string>()): SeatData[] {
   const isGone = isGoneOf(s, now)
-  const [leader, ...crew] = [s.leader, ...s.agents].map((c) => seatOf(c, now, isGone))
+  const [leader, ...crew] = [s.leader, ...s.agents].map((c) => seatOf(c, now, isGone, letters.has(c.id)))
   if (leader === undefined) return crew
   const task = leader.task || s.team || ""
   if (hat === CHIEF) return [{ ...leader, role: CHIEF, task }, ...crew]
@@ -621,6 +637,7 @@ export function companyOf(
     isMine(a) === isMine(b) ? a.localeCompare(b) : isMine(a) ? -1 : 1,
   )
   const hats = hatsOf(present, now)
+  const letters = lettersOf(present, now)
   const rooms: Room[] = projects.map((project) => {
     // The 大部长's team first, which the drawing seats alone on the top row;
     // the rest by seniority.
@@ -628,7 +645,7 @@ export function companyOf(
       .filter((s) => s.project === project)
       .sort((a, b) => Number(hats.get(b.sessionId) === CHIEF) - Number(hats.get(a.sessionId) === CHIEF) || bySeniority(a, b))
     const here = sessions.findIndex((s) => s.sessionId === mine)
-    const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId)))
+    const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId), letters))
     const isCheering = teams.some((team) => team[0]?.finish === "cheer")
     // Signs only where a department has more than one team to tell apart.
     const signs = sessions.length > 1 ? sessions.map((s) => (s.team ? w().teamSign(s.team) : w().hq)) : undefined
@@ -655,9 +672,16 @@ export function companyOf(
     }
   })
   const chiefs = chiefsOf(present, now)
-  const all = [...present.flatMap((s) => (s.board ?? []).map((n) => shownNote(n, s, chiefs))), ...memoNotes].sort(
-    (a, b) => a.at - b.at,
-  )
+  // A line between two sessions names the sender's too, since a title alone
+  // (部长) is one in every session; the session reads its own lines as its own.
+  const across = (n: Note, s: Snapshot): Note =>
+    n.to.id !== undefined && n.to.id !== s.sessionId && present.some((o) => o.sessionId === n.to.id)
+      ? { ...n, from: { ...n.from, name: `${whoOf(s)} ${n.from.name}` } }
+      : n
+  const all = [
+    ...present.flatMap((s) => (s.board ?? []).map((n) => across(shownNote(n, s, chiefs, present), s))),
+    ...memoNotes,
+  ].sort((a, b) => a.at - b.at)
   // `older`: how many lines back from the newest the board is paged.
   const last = all.length - Math.min(older, Math.max(0, all.length - BOARD_SHOWN))
   const board: BoardLine[] = all.slice(Math.max(0, last - BOARD_SHOWN), last).map((n) => ({
@@ -681,7 +705,7 @@ export function bandOf(s: Snapshot, snaps: Snapshot[], now: number): Company {
         footer: "",
         bare: true,
         flat: true,
-        teams: [teamOf(s, now, hatsOf(snaps, now).get(s.sessionId))],
+        teams: [teamOf(s, now, hatsOf(snaps, now).get(s.sessionId), lettersOf(snaps, now))],
       },
     ],
     lang: w().lang,
@@ -786,6 +810,40 @@ export function recipientsOf(to: Target, me: Snapshot, snaps: Snapshot[], now: n
   return snaps.filter((s) => s.sessionId !== me.sessionId && !isGoneOf(s, now) && isFor(to, s))
 }
 
+// A post on the board names a department, everyone, or the chairman. A team
+// that is one session is SendMessage's, which reaches it at once, says whether
+// it did, and shows on the board too: the session such a team names, if any.
+export function oneSessionOf(to: Target, me: Snapshot, snaps: Snapshot[], now: number): Snapshot | undefined {
+  if (to.kind !== "team" || snaps.some((s) => s.project === to.name)) return undefined
+  const reach = recipientsOf(to, me, snaps, now)
+  return reach.length === 1 ? reach[0] : undefined
+}
+
+// A session on this machine as the engine registers it in
+// `<config>/sessions/<pid>.json`: the name ListAgents lists and SendMessage
+// takes, and the socket a reply is addressed to.
+export type Peer = { sessionId: string; name?: string; messagingSocketPath?: string }
+
+function isPeer(p: unknown): p is Peer {
+  return typeof p === "object" && p !== null && typeof (p as Peer).sessionId === "string"
+}
+
+// The session a SendMessage address names, however it was spelled: a name as
+// ListAgents lists it, with or without its [ref], the `uds:` socket a reply
+// goes back to, `bridge:` and a session id, or the id alone.
+export function peerOf(peers: unknown[], to: string): Peer | undefined {
+  const name = to.replace(/\s*\[[0-9a-f]+\]$/, "")
+  return peers
+    .filter(isPeer)
+    .find(
+      (p) =>
+        p.name === name ||
+        p.sessionId === to ||
+        `bridge:${p.sessionId}` === to ||
+        (p.messagingSocketPath !== undefined && `uds:${p.messagingSocketPath}` === to),
+    )
+}
+
 // What colleagues in other sessions wrote to this one since it last read the
 // board. A message never wakes its reader: it waits here, so two sessions
 // cannot talk each other into turns without end.
@@ -799,7 +857,7 @@ export function inboxOf(me: Snapshot, snaps: Snapshot[], now: number): string[] 
           const to = n.kind === "message" ? targetOf(n.to.name) : undefined
           return to !== undefined && n.at > (me.seen ?? me.startedAt) && isFor(to, me)
         })
-        .map((n) => ({ n: shownNote(n, s, chiefs), s })),
+        .map((n) => ({ n: shownNote(n, s, chiefs, snaps), s })),
     )
     .sort((a, b) => a.n.at - b.n.at)
     .map(({ n, s }) => w().inboxLine(clockOf(n.at), whoOf(s), n.from.name, n.to.name, n.text))
@@ -810,7 +868,7 @@ export function inboxOf(me: Snapshot, snaps: Snapshot[], now: number): string[] 
 export function boardOf(snaps: Snapshot[], now: number, limit = BOARD_SHOWN): string[] {
   const chiefs = chiefsOf(snaps, now)
   return snaps
-    .flatMap((s) => (s.board ?? []).map((n) => ({ n: shownNote(n, s, chiefs), s })))
+    .flatMap((s) => (s.board ?? []).map((n) => ({ n: shownNote(n, s, chiefs, snaps), s })))
     .sort((a, b) => a.n.at - b.n.at)
     .slice(-limit)
     .map(({ n, s }) => w().boardLine(clockOf(n.at), whoOf(s), n.from.name, n.to.name, n.text))
@@ -912,12 +970,17 @@ export function subagentBtwOf(crab: Crab, rows: readonly Row[], question: string
 
 // A board line as shown now: its crabs titled as the drawing titles them, the
 // 大部长 included, in the words the office speaks now. A note keeps the names it
-// was written with, before anyone knew who would be 大部长.
-function shownNote(n: Note, s: Snapshot, chiefs: Set<string>): Note {
+// was written with, before anyone knew who would be 大部长. One sent to another
+// session names that session's crab by its department and team, not by the
+// name SendMessage took (web-app-e0, or a reply's socket).
+function shownNote(n: Note, s: Snapshot, chiefs: Set<string>, snaps: Snapshot[] = []): Note {
   const shown = (sp: Speaker): Speaker => {
     if (sp.id === s.sessionId) return { ...sp, name: managerTitleOf(s, chiefs) }
     const crab = s.agents.find((a) => a.id === sp.id)
     if (crab !== undefined) return { ...sp, name: titleOf(crab.role) }
+    const other = snaps.find((o) => o.sessionId === sp.id)
+    if (other !== undefined)
+      return { ...sp, name: `${whoOf(other)} ${managerTitleOf(other, chiefs)}`, color: colorOf(other.leader) }
     return CHAIRMAN_NAMES.has(sp.name) ? { ...sp, name: w().chairman } : sp
   }
   return { ...n, from: shown(n.from), to: shown(n.to) }

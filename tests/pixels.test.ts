@@ -350,6 +350,14 @@ test("the pane's bands together carry about one office, not one each", async () 
   }
 })
 
+test("a crab who has just written to, or heard from, another has a ✉ by its head", async () => {
+  const bandOf = (s: SeatData): Company => ({ rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[s]] }] })
+  const plain = seat("s", "leader", "thinking")
+  const at = office(bandOf(plain), 40, 0).seats[0]!
+  expect(office(bandOf({ ...plain, letter: true }), 40, 0).cells[at.cy]![at.cx]!.ch).toBe("✉")
+  expect(office(bandOf(plain), 40, 0).cells[at.cy]![at.cx]!.ch).not.toBe("✉")
+})
+
 test("a resting crab's monitor stands still; a working crab's moves", async () => {
   const monitorOf = (look: string, t: number) => {
     const band: Company = { rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[seat("s", "Plan", look)]] }] }

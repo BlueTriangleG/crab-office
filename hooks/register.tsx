@@ -13,6 +13,7 @@ import {
   btwOf,
   inboxOf,
   memoFor,
+  oneSessionOf,
   orderPromptOf,
   ordersFor,
   recipientsOf,
@@ -22,9 +23,9 @@ import {
   parseSay,
   addresseesOf,
   parseSnapshot,
+  peerOf,
   placeOf,
   pruned,
-  rosterOf,
   spawned,
   talkOf,
   toolAsked,
@@ -63,6 +64,8 @@ const PANE_COLUMNS = SEAT_COLS * 3 + 2
 const office = {
   me: undefined as Snapshot | undefined,
   base: "",
+  // The engine's register of this machine's sessions, one `<pid>.json` each.
+  sessions: "",
   isDirty: true,
   lastWrite: 0,
   isOpen: false,
@@ -482,6 +485,7 @@ export const register: Register = (on, options) => {
     ])
     office.isSpare = kind === "bg"
     office.base = `${configDir || `${home}/.claude`}/crab-office`
+    office.sessions = `${configDir || `${home}/.claude`}/sessions`
     // A worktree's `.git` is a file naming its repository; a checkout's is a
     // folder, which a read rejects.
     const gitFile = await $.fs.read(`${root}/.git`).catch(() => undefined)
@@ -509,7 +513,7 @@ export const register: Register = (on, options) => {
       inputSchema: {
         type: "object",
         properties: {
-          action: { type: "string", enum: ["read", "post", "colleagues", "claim"] },
+          action: { type: "string", enum: ["read", "post", "claim"] },
           memo: { type: "string", description: w().tool.memo },
           text: { type: "string", description: w().tool.text },
           to: { type: "string", description: w().tool.to },
@@ -577,13 +581,17 @@ export const register: Register = (on, options) => {
   })
 
   // Every SendMessage from any of this session's loops, to its own crabs or to
-  // another session, goes up on the shared board.
-  on("session.send", ($, e, next) => {
-    if (office.me !== undefined) {
-      messageSent(office.me, e.agentId, e.to, e.text, Date.now())
+  // another session, goes up on the shared board once it is delivered. One to
+  // another session names that session's crab, found in the engine's register
+  // by the name or socket it was sent to.
+  on("session.send", async ($, e, next) => {
+    const r = await next(e)
+    if (office.me !== undefined && r.isDelivered) {
+      const peer = peerOf(await readJsonDir<unknown>($, office.sessions), e.to)
+      messageSent(office.me, e.agentId, e.to, e.text, Date.now(), peer?.sessionId)
       changed($)
     }
-    return next(e)
+    return r
   })
 
   // The board tool the model calls to take up a memo, say something, or see
@@ -601,7 +609,15 @@ export const register: Register = (on, options) => {
     if (me === undefined) return { result: w().tool.notReady }
     const now = Date.now()
     const snaps = [me, ...office.others]
-    const names = addresseesOf(snaps, now, "").map((r) => r.text.trim()).join(" ")
+    // What a post may name: everyone and each department, a team that is one
+    // session left to SendMessage.
+    const names = addresseesOf(snaps, now, "")
+      .map((r) => r.text.trim())
+      .filter((name) => {
+        const target = targetOf(name)
+        return target === undefined || oneSessionOf(target, me, snaps, now) === undefined
+      })
+      .join(" ")
     if (input.action === "read") {
       const inbox = inboxOf(me, snaps, now)
       me.seen = now
@@ -621,6 +637,11 @@ export const register: Register = (on, options) => {
       if (!input.text) return { result: w().tool.empty }
       const to = input.to?.trim() || w().chairman
       const target = targetOf(to)
+      const one = target === undefined ? undefined : oneSessionOf(target, me, snaps, now)
+      if (one !== undefined) {
+        const peer = peerOf(await readJsonDir<unknown>($, office.sessions), one.sessionId)
+        return { result: `${w().tool.oneSession(to, peer?.name)}${nudge}` }
+      }
       const reach = target === undefined ? [] : recipientsOf(target, me, snaps, now).map(whoOf)
       if (target !== undefined && reach.length === 0)
         return { result: `${w().tool.nobody(to, names)}${nudge}` }
@@ -629,9 +650,7 @@ export const register: Register = (on, options) => {
       const heard = target === undefined ? w().tool.heardByChairman : w().tool.heardBy(reach)
       return { result: `${w().tool.written(heard)}${nudge}` }
     }
-    return {
-      result: `${rosterOf(snaps, me, now).join("\n")}\n${w().tool.canWriteTo(names)}${nudge}`,
-    }
+    return { result: `${w().tool.actions}${nudge}` }
   })
 
   on("tool.call", async ($, e, next) => {

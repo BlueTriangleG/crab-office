@@ -79,8 +79,16 @@ before anyone knew which session would be 大部长.
 - **Shared board (共享白板)**: a chalkboard under the departments with the latest
   eight things anyone said to anyone, from every session: work handed down
   (`agent.spawn`), work handed back (a crew member's `turn.complete`) and every
-  SendMessage (`session.send`), to a crab of this session or to another session.
-  Each line is two rows, who to whom in their own colours, then the words.
+  SendMessage (`session.send`) that was delivered, to a crab of this session or
+  to another session. Each line is two rows, who to whom in their own colours,
+  then the words. A SendMessage to another session names both ends by
+  department and team (`web-app 部 · 本部 部长 → api-server 部 · docs 组长`), not by
+  the name it was sent to (`web-app-e0`, or a reply's `uds:` socket): the
+  sending session looks the address up in the engine's own register of this
+  machine's sessions, `<config>/sessions/<pid>.json`, which holds each one's
+  ListAgents name, socket and session id, and keeps the id on the line.
+- **✉ by both crabs**: for 15 s after any message, the crab who sent it and the
+  crab it went to, in this session or another, have a ✉ left of their heads.
   Click a line to select the crab who said it and to show the line whole under
   the drawing; a selected crab's lines carry ▸. With more lines than it
   shows, the board pages: ▲ older on its top edge and ▼ newer on its bottom
@@ -163,16 +171,21 @@ as a lid of darker body on the eye's own pixel.
 
 ## How sessions talk to each other
 
-Every session has the `office_board` tool, whose description tells the model
-its colleagues are the other sessions on this machine and when to use it:
-before starting, after finishing something, and whenever its work touches
-another session's. `read` gives the messages written to it since it last read
-and the board's latest lines, each naming its session; `post` writes to the
-chairman, or with `to` to a team, a department or 全体; `colleagues` lists who
-is at work on what and whom it can write to. Every answer mentions unread
-messages. A colleague's message never wakes its reader: it waits in the inbox
-until the reader next looks, so two sessions cannot talk each other into turns
-without end. Only the chairman's memos start a turn.
+One session to another is Claude Code's own SendMessage, found with ListAgents:
+it reaches that session at its next tool call, says whether it was delivered,
+and reaches sessions on other machines. The office does not duplicate it; it
+shows it, on the board and with the ✉.
+
+What the office adds is the `office_board` tool, for what SendMessage has no
+form for: `post` to a whole department, to everyone, or to the chairman, and
+`read`, which gives what was written to this session since it last read and
+the board's latest lines, each naming its session; `claim` takes a memo. A post
+never wakes its reader: it waits in the inbox until the reader next looks, so
+two sessions cannot talk each other into turns without end, and only the
+chairman's memos start a turn. A post that names a team which is one session
+is refused with that session's SendMessage name, and nothing is written; a
+`colleagues` action that listed the sessions went with it, since ListAgents
+does that.
 
 ## How sessions see each other
 

@@ -3,6 +3,7 @@ import { expect, test } from "claude-code/testing"
 import {
   CHEER_MS,
   CREW_COLORS,
+  LETTER_MS,
   DONE_KEEP_MS,
   LEAVE_MS,
   MAIL_MS,
@@ -23,11 +24,13 @@ import {
   handoverOf,
   hatsOf,
   memoFor,
+  oneSessionOf,
   orderPromptOf,
   ordersFor,
   parseSay,
   messageSent,
   parseSnapshot,
+  peerOf,
   placeOf,
   promptOf,
   pruned,
@@ -450,6 +453,49 @@ test("a colleague's message waits in its addressee's inbox until the board is re
   const board = boardOf(snaps, T0 + 100)
   expect(board).toHaveLength(3)
   expect(board[2]).toContain("api-server 部 · 本部 的大部长 → 全体：别动 main")
+})
+
+test("a SendMessage between two sessions names both on the board and puts a ✉ by both crabs", async () => {
+  const hq = createSnapshot("a", "web-app", undefined, T0)
+  const api = createSnapshot("c", "api-server", undefined, T0)
+  for (const s of [hq, api]) s.updatedAt = T0
+  // the engine's register of this machine's sessions, read as it lies on disk
+  const peers = [
+    { pid: 11, sessionId: "a", name: "web-app-8b", messagingSocketPath: "/tmp/cc-socks/11.sock" },
+    { pid: 12, sessionId: "c", name: "api-server-e0", messagingSocketPath: "/tmp/cc-socks/12.sock" },
+    { pid: 13 },
+    null,
+  ]
+  // however the model addressed it: a ListAgents name, with its ref, a reply's socket, a bridge
+  for (const to of ["api-server-e0", "api-server-e0 [0dd89d]", "uds:/tmp/cc-socks/12.sock", "bridge:c"])
+    expect(peerOf(peers, to)?.sessionId).toBe("c")
+  expect(peerOf(peers, "nobody-00")).toBeUndefined()
+  messageSent(hq, undefined, "api-server-e0", "你那边的 /token 挂了", T0 + 10, peerOf(peers, "api-server-e0")?.sessionId)
+  const line = companyOf([hq, api], "a", T0 + 20).board?.at(-1)
+  expect(line?.from.name).toBe("web-app 部 · 本部 大部长")
+  expect(line?.to.name).toBe("api-server 部 · 本部 大部长")
+  expect(boardOf([hq, api], T0 + 20).at(-1)).toContain("web-app 部 · 本部 的大部长 → api-server 部 · 本部 大部长：你那边的 /token 挂了")
+  const lettered = (now: number) =>
+    companyOf([hq, api], "a", now).rooms.flatMap((r) => r.teams.flat()).filter((s) => s.letter).map((s) => s.id)
+  expect(lettered(T0 + 20).sort()).toEqual(["a", "c"])
+  expect(lettered(T0 + 10 + LETTER_MS)).toEqual([])
+  // a line to a session nobody can place keeps the name it was sent to
+  messageSent(hq, undefined, "uds:/tmp/cc-socks/99.sock", "在吗", T0 + 30)
+  expect(companyOf([hq, api], "a", T0 + 40).board?.at(-1)?.to.name).toBe("uds:/tmp/cc-socks/99.sock")
+})
+
+test("a post on the board names a department, everyone or the chairman; one session is SendMessage's", async () => {
+  const hq = createSnapshot("a", "web-app", undefined, T0)
+  const wt = createSnapshot("b", "web-app", undefined, T0, "docs")
+  const api = createSnapshot("c", "api-server", undefined, T0)
+  for (const s of [hq, wt, api]) s.updatedAt = T0
+  const snaps = [hq, wt, api]
+  expect(oneSessionOf(targetOf("docs")!, hq, snaps, T0)?.sessionId).toBe("b")
+  // a department, everyone, or 本部 across departments, is more than one session
+  expect(oneSessionOf(targetOf("web-app")!, api, snaps, T0)).toBeUndefined()
+  expect(oneSessionOf(targetOf("api-server")!, hq, snaps, T0)).toBeUndefined()
+  expect(oneSessionOf(targetOf("全体")!, hq, snaps, T0)).toBeUndefined()
+  expect(oneSessionOf(targetOf("本部")!, wt, snaps, T0)).toBeUndefined()
 })
 
 test("the board pages back eight lines at a time and keeps a long line whole", async () => {
