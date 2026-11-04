@@ -44,9 +44,11 @@ import {
   turnFinished,
   turnStarted,
 } from "../hooks/office.ts"
-import { LEADER_COLOR } from "../hooks/pixels.ts"
+import { LEADER_COLOR, office as draw } from "../hooks/pixels.ts"
+import { orgOf } from "../hooks/org.ts"
+import { jobsOf } from "../hooks/jobs.ts"
 
-import { setLanguage } from "../hooks/words.ts"
+import { setLanguage, w } from "../hooks/words.ts"
 
 // These tests read the office in Chinese, the words it was first written in.
 setLanguage("zh")
@@ -210,8 +212,8 @@ test("a click finds the crab and its detail carries what passed between them", a
     { label: "收到", text: "List every package" },
     { label: "交回", text: "seven" },
   ])
-  // the manager's card names it as the drawing does: alone in its department, 大部长
-  expect(detailOf(s.leader, s, T0 + 2, [s]).title).toBe("大部长")
+  // the manager's card names it as the drawing does: alone in its department, 部长
+  expect(detailOf(s.leader, s, T0 + 2, [s]).title).toBe("部长")
 })
 
 test("a snapshot file that is not one is ignored", async () => {
@@ -226,10 +228,10 @@ test("the shared board hears work handed down, handed back and messages passed",
   messageSent(s, "a1", "s1", "one more thing", T0 + 6)
   messageSent(s, undefined, "reviewer", "please look", T0 + 7)
   expect(s.board?.map((n) => [n.kind, n.from.name, n.to.name, n.text])).toEqual([
-    ["assign", "部长", "调研员", "map packages"],
-    ["report", "调研员", "部长", "seven packages"],
-    ["message", "调研员", "部长", "one more thing"],
-    ["message", "部长", "reviewer", "please look"],
+    ["assign", "组长", "调研员", "map packages"],
+    ["report", "调研员", "组长", "seven packages"],
+    ["message", "调研员", "组长", "one more thing"],
+    ["message", "组长", "reviewer", "please look"],
   ])
 })
 
@@ -283,10 +285,10 @@ test("worktree teams are led by 组长 under their own sign; the checkout's head
   expect(alone?.signs).toBeUndefined()
 })
 
-test("each department crowns its 大部长, seated first; every other manager a hat of its own", async () => {
+test("each department crowns its 部长, seated first; every other manager a hat of its own", async () => {
   const big = withAgent()
   const second = createSnapshot("s2", "web-app", undefined, T0 + 5)
-  // the longest-serving of web-app, but a worktree's 组长, so not its 大部长
+  // the longest-serving of web-app, but a worktree's 组长, so not its 部长
   const wt = createSnapshot("w1", "web-app", undefined, T0 - 20, "docs")
   const api = createSnapshot("a", "api-server", undefined, T0 - 10)
   // a department of worktrees alone crowns its longest-serving
@@ -298,12 +300,12 @@ test("each department crowns its 大部长, seated first; every other manager a 
   const others = ["s2", "w1"].map((id) => hats.get(id))
   expect(new Set(others).size).toBe(2)
   expect(others).not.toContain("chief")
-  // viewed from s2: the 大部长 first all the same, then by seniority
+  // viewed from s2: the 部长 first all the same, then by seniority
   const room = companyOf(snaps, "s2", T0 + 10).rooms[0]
   expect(room?.teams.map((team) => [team[0]?.role, team[0]?.hat])).toEqual([
     ["chief", undefined],
     ["lead", hats.get("w1")],
-    ["leader", hats.get("s2")],
+    ["lead", hats.get("s2")],
   ])
   expect(room?.here).toBe(2)
 })
@@ -401,7 +403,7 @@ test("the handover names the memo, who you are, your colleagues and how to take 
   expect(text).toContain("memo m1")
   expect(text).toContain("周五前把测试补齐")
   expect(text).toContain("web-app 部 · checkout-redesign 的组长")
-  expect(text).toContain("- web-app 部 · 本部 大部长")
+  expect(text).toContain("- web-app 部 · 本部 部长")
   expect(text).toContain("office_board")
   const board = companyOf([hq], "a", T0, { memos: [memo], claims: [{ memoId: "m1", at: T0, sessionId: "b", who: "web-app 部 · checkout-redesign" }] }).board
   expect(board?.at(-1)?.from.name).toBe("董事长")
@@ -443,7 +445,7 @@ test("a colleague's message waits in its addressee's inbox until the board is re
   const snaps = [hq, wt, api]
   const inbox = inboxOf(wt, snaps, T0 + 100)
   expect(inbox).toHaveLength(2)
-  expect(inbox[0]).toContain("web-app 部 · 本部 的大部长（写给 docs）：我改了 schema")
+  expect(inbox[0]).toContain("web-app 部 · 本部 的部长（写给 docs）：我改了 schema")
   expect(inbox[1]).toContain("别动 main")
   // the chairman's line is the board's, nobody's inbox; a sender's own lines are not its mail
   expect(inboxOf(hq, snaps, T0 + 100)).toHaveLength(1)
@@ -452,7 +454,7 @@ test("a colleague's message waits in its addressee's inbox until the board is re
   expect(inboxOf(wt, snaps, T0 + 100)).toHaveLength(0)
   const board = boardOf(snaps, T0 + 100)
   expect(board).toHaveLength(3)
-  expect(board[2]).toContain("api-server 部 · 本部 的大部长 → 全体：别动 main")
+  expect(board[2]).toContain("api-server 部 · 本部 的部长 → 全体：别动 main")
 })
 
 test("a SendMessage between two sessions names both on the board and puts a ✉ by both crabs", async () => {
@@ -472,9 +474,9 @@ test("a SendMessage between two sessions names both on the board and puts a ✉ 
   expect(peerOf(peers, "nobody-00")).toBeUndefined()
   messageSent(hq, undefined, "api-server-e0", "你那边的 /token 挂了", T0 + 10, peerOf(peers, "api-server-e0")?.sessionId)
   const line = companyOf([hq, api], "a", T0 + 20).board?.at(-1)
-  expect(line?.from.name).toBe("web-app 部 · 本部 大部长")
-  expect(line?.to.name).toBe("api-server 部 · 本部 大部长")
-  expect(boardOf([hq, api], T0 + 20).at(-1)).toContain("web-app 部 · 本部 的大部长 → api-server 部 · 本部 大部长：你那边的 /token 挂了")
+  expect(line?.from.name).toBe("web-app 部 · 本部 部长")
+  expect(line?.to.name).toBe("api-server 部 · 本部 部长")
+  expect(boardOf([hq, api], T0 + 20).at(-1)).toContain("web-app 部 · 本部 的部长 → api-server 部 · 本部 部长：你那边的 /token 挂了")
   const lettered = (now: number) =>
     companyOf([hq, api], "a", now).rooms.flatMap((r) => r.teams.flat()).filter((s) => s.letter).map((s) => s.id)
   expect(lettered(T0 + 20).sort()).toEqual(["a", "c"])
@@ -548,4 +550,103 @@ test("the chairman's instructions reach only the session they name, once", async
   expect(ordersFor(other, orders, T0 + 30).map((o) => o.id)).toEqual(["o3"])
   // taken up, an instruction is its session's task as it was written
   expect(promptOf(`The crab-office plugin sent a message: ${orderPromptOf("再跑一遍测试")}`)).toBe("再跑一遍测试")
+})
+
+const working = () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0, "docs")
+  const c = createSnapshot("c", "api-server", undefined, T0)
+  const snaps = [a, b, c]
+  for (const s of snaps) s.updatedAt = T0 + 100
+  const org = orgOf([{ kind: "ceo", sessionId: "c", at: T0, by: "chairman" }], snaps, T0 + 100)
+  const jobs = jobsOf(
+    [
+      { id: "j1", at: T0, by: "c", to: "b", task: "fix the login test" },
+      { id: "j2", at: T0, by: "c", to: "a", task: "write the docs" },
+      { id: "j3", at: T0, by: "c", to: "b", task: "old work" },
+    ],
+    [
+      { id: "j2", n: 1, at: T0 + 10, from: "a", text: "written" },
+      { id: "j3", n: 1, at: T0 + 10, from: "b", text: "done" },
+    ],
+    [{ id: "j3", n: 1, at: T0 + 20, by: "c", ok: true, note: "" }],
+  )
+  return { a, b, c, snaps, org, jobs }
+}
+
+test("the header names the CEO with its open and waiting jobs", async () => {
+  const { snaps, org, jobs } = working()
+  const header = companyOf(snaps, "a", T0 + 100, { memos: [], claims: [], org, jobs }).header ?? ""
+  expect(header).toContain("CEO：api-server 部 · 本部")
+  expect(header).toContain("在办 2")
+  expect(header).toContain("待验收 1")
+  expect(companyOf(snaps, "a", T0 + 100).header).not.toContain("CEO")
+})
+
+test("a card lists the jobs given to its session, the CEO's card all it gave", async () => {
+  const { a, b, c, snaps, org, jobs } = working()
+  const rows = (s: typeof a) => detailOf(s.leader, s, T0 + 100, snaps, org, jobs).rows.filter((r) => r.label === "派活")
+  expect(rows(b).map((r) => r.text)).toEqual([expect.stringContaining("#j1 fix the login test · 已派")])
+  expect(rows(a).map((r) => r.text)).toEqual([expect.stringContaining("#j2 write the docs · 待验收")])
+  expect(rows(c).map((r) => r.text.split(" ")[0])).toEqual(["#j1", "#j2"])
+})
+
+test("open work goes to whoever is free, the CEO taking it or passing it on like anyone", async () => {
+  const { c, snaps, org } = working()
+  const open = parseSay("看一下首页", "o", T0 + 50)!
+  const text = handoverOf(open, c, snaps, T0 + 100, org)
+  expect(text).toContain("下一位同事")
+  expect(text).not.toContain("assign")
+})
+
+test("a job left to the chairman stays on its cards", async () => {
+  const { a, b, snaps, org } = working()
+  const jobs = jobsOf(
+    [{ id: "j9", at: T0, by: "c", to: "b", task: "flaky deploy" }],
+    [{ id: "j9", n: 1, at: T0 + 1, from: "b", text: "tried" }],
+    [1, 2, 3, 4].map((n) => ({ id: "j9", n, at: T0 + 1 + n, by: "c", ok: false, note: "no" })),
+  )
+  const rows = detailOf(b.leader, b, T0 + 100, snaps, org, jobs).rows.filter((r) => r.label === "派活")
+  expect(rows.map((r) => r.text)).toEqual([expect.stringContaining("交董事长定")])
+  expect(detailOf(a.leader, a, T0 + 100, snaps, org, jobs).rows.filter((r) => r.label === "派活")).toEqual([])
+})
+
+test("the office's own prompts read as short tasks on a card, in either language", async () => {
+  for (const lang of ["zh", "en"]) {
+    setLanguage(lang)
+    const tasks = [
+      promptOf(`${w().ceoHandoverHead}\n${w().roleCeo}`),
+      promptOf(`${w().nudgeHead}\n- #j1 fix it (web-app · docs): 12 min and no report`),
+      promptOf(w().jobEnvelope("j1", "fix the login test", "green on CI", "web-app · HQ")),
+      promptOf(w().reportEnvelope("j1", "fix the login test", "fixed", "web-app · docs")),
+      promptOf(w().rejectEnvelope("j1", "still red")),
+      promptOf(w().withdrawEnvelope("j1", "")),
+    ]
+    expect(tasks).toEqual([
+      w().ceoTask,
+      w().nudgeTask,
+      "#j1 fix the login test",
+      w().judgeTask("j1", "fix the login test"),
+      w().sentBackTask("j1"),
+      w().withdrawnTask("j1"),
+    ])
+  }
+  setLanguage("zh")
+})
+
+test("the CEO sits alone at the top of the office, in a room of its own, out of its department", async () => {
+  const { a, b, c, snaps, org } = working()
+  const company = companyOf(snaps, "a", T0 + 100, { memos: [], claims: [], org })
+  const [top, ...rest] = company.rooms
+  expect(top?.title).toBe("CEO 办公室")
+  expect(top?.teams.map((team) => team[0]?.id)).toEqual(["c"])
+  expect(rest.flatMap((r) => r.teams.flat()).some((s) => s.id === "c")).toBe(false)
+  // c was api-server's only session: that department has no one left in it
+  expect(rest.map((r) => r.title)).toEqual(["web-app 部"])
+  const drawn = draw(company, 60, 0)
+  const at = (id: string) => drawn.seats.find((s) => s.id === id)!
+  expect(at("c").cy).toBeLessThan(Math.min(at("a").cy, at("b").cy))
+  expect(drawn.seats.filter((s) => s.cy === at("c").cy).map((s) => s.id)).toEqual(["c"])
+  void a
+  void b
 })

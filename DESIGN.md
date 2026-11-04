@@ -10,10 +10,10 @@ Every word the office shows or says, to the person and to the model, is in
 `hooks/words.ts`, once in English and once in Chinese, chosen by the plugin's
 `language` option (`en` by default, `zh`; set in `/config`). The drawing runs
 in an environment of its own, so the company it is handed carries the
-language. Titles below are given in both: 大部长 Director, 部长 Head, 组长
-Lead, 本部 HQ. A board line names its crabs as the drawing names them now, in
-the words the office speaks now: a note keeps the names it was written with,
-before anyone knew which session would be 大部长.
+language. Titles below are given in both: CEO, 部长 Head, 组长 Lead, 本部 HQ.
+A board line names its crabs as the drawing names them now, in the words the
+office speaks now: a note keeps the names it was written with, before anyone
+knew which session would be 部长.
 
 ## What it shows
 
@@ -67,8 +67,9 @@ before anyone knew which session would be 大部长.
   prompt submitted while a turn runs waits for the turn to end, so an
   instruction never interrupts work. Each session keeps the ids it has taken
   up (`obeyed`), so none runs twice, and the card marks each one delivered or
-  still waiting. Only the person gives instructions: the model has no way to,
-  so sessions cannot set one another to work.
+  still waiting. Only the person, and the CEO the person appointed, set a
+  session to work: no other model has a way to, so sessions cannot set one
+  another to work.
 - **btw**: under a clicked crab, a field to ask it something. The answer never
   starts a turn or interrupts the work: a manager answers through a fork of its
   session's own thread (`$.model.fork`, as `/btw` does), a subagent from its own
@@ -96,8 +97,8 @@ before anyone knew which session would be 大部长.
   keeps its last forty lines and each line its first 400 characters: every
   session reads every other's snapshot each second, so the history is bounded.
 - **The chairman's memos**: `/office say [@组名|@全体] 留言`, or the framed field
-  under the board in the pane (click it, type, Enter, the names it can call
-  shown as tags beneath), pins a memo to the board. `@<worktree>` (or `@本部`) is for that team, `@全体` for every team,
+  under the board in the pane (click it, type, Enter; one dim line beneath says
+  whom it can call, and where a memo with no @ goes), pins a memo to the board. `@<worktree>` (or `@本部`) is for that team, `@全体` for every team,
   no `@` for whoever is free first. Typing `@` after `/office say` lists them
   in the typeahead, each team with what it is doing. A session takes a memo when it is finished, its manager waiting and none
   of its crew at work, with nothing typed in its prompt box, and
@@ -125,15 +126,21 @@ colours, which is all a terminal cell can show.
 - **Clawd** is drawn from Claude Code's own parts (arms, eyes, feet, turned
   frames; body `rgb(215,119,87)` for managers, eyes `clawd_background`). Crew
   colours come in hiring order so a team never repeats one.
-- **A crown a department**: each department's 大部长 is its longest-serving
-  session in the repository's own checkout, or in a worktree where none is, and
-  wears its crown; the 大部长's team sits alone on the department's top row,
-  centred, the other teams below. Every other 部长 and 组长 wears a hat of its
+- **A head a department**: each department's 部长 is the session the chairman
+  or the CEO appointed, else its longest-serving session in the repository's
+  own checkout, or in a worktree where none is, never the CEO; it wears the
+  silver top hat, and its team sits alone on the department's top row,
+  centred, the other teams below. Every other session's crab is 组长 and wears a hat of its
   own, handed out by seniority so a newcomer never takes an old hand's:
   mortarboard, chef's hat, viking helmet, pom beanie, bunny ears, cowboy hat,
-  propeller cap; an eighth manager starts the list again. A crown on every 部长
-  said nothing, and one crown for the whole company left every other
-  repository headless.
+  propeller cap; an eighth manager starts the list again. A crown on every
+  manager said nothing; the one crown is the CEO's.
+- **The CEO**: the crown and the title CEO, in an office of its own (CEO 办公室)
+  on a row to itself at the very top, its subagents with it and out of its
+  department, since it is where the chairman looks first. The header leads with its work
+  (jobs open, jobs to judge), then names it; a card lists the open jobs its
+  session was given, and the CEO's card the jobs it gave. Its appointments,
+  jobs, reports and verdicts are lines on the board, with the ✉ on both crabs.
 - **Hats and titles by role**: managers as above, Explore safari hat 调研员,
   Plan cap 规划师, general-purpose hard hat 工程师, fork sprout 分身,
   claude-code-guide 顾问, verifier 质检员, any other 实习生 with no hat.
@@ -176,6 +183,26 @@ it reaches that session at its next tool call, says whether it was delivered,
 and reaches sessions on other machines. The office does not duplicate it; it
 shows it, on the board and with the ✉.
 
+A session's SendMessage name is derived from its process, so it changes when
+the session restarts or resumes (one CEO went 38, 39, 12 in an afternoon), and
+a name kept for later stops reaching it. Its session id does not change. So a
+session may hold one job title (`office_board title`: one word, set by the
+session itself, its repository's head or the CEO; `titles/<writer>.json`,
+keyed by session id). A model's SendMessage to a job title, or to `CEO`, in any
+case, is delivered by a `tool.call` hook to that session by its id
+(`$.session.send`) and answered as SendMessage answers (`{ success, message }`);
+it is not readdressed. Auto mode reviews a tool call server-side as the model
+wrote it, before any hook, and refuses one whose input a hook changed ("a hook
+changed this call's input after auto mode reviewed it"): a readdress at
+`session.send` failed so, and one at the tool call too; refusing with the real
+name to send again cost every such message a failed call. A title nobody at
+work holds, or two do, is refused with a reason,
+never guessed, and a real name, socket or id always passes untouched. A title must
+not clash with another at work, with a real name, or with `CEO`; a clash is
+refused, not numbered. The title is on the crab's name plate, in `staff`, in
+every reply naming the session, and on board lines between sessions. A name
+the person sets with `/rename` is the engine's own and stays.
+
 What the office adds is the `office_board` tool, for what SendMessage has no
 form for: `post` to a whole department, to everyone, or to the chairman, and
 `read`, which gives what was written to this session since it last read and
@@ -186,6 +213,104 @@ chairman's memos start a turn. A post that names a team which is one session
 is refused with that session's SendMessage name, and nothing is written; a
 `colleagues` action that listed the sessions went with it, since ListAgents
 does that.
+
+## Meetings
+
+When three or more sessions must agree on something, one SendMessage at a time
+splits the talk: B's answer to A never reaches C unless B copies C, and a
+model does not copy everyone every time. Any session may call a meeting
+(`office_board meet`: a one-word name, the colleagues, the topic and the result
+wanted); any member brings more in with the same name. A word to the whole
+meeting is a SendMessage to the meeting's name, which a `tool.call` hook passes
+to every other member through `$.session.send` and answers itself, as
+SendMessage answers (`{ success, message }`), since the call names no session;
+the input is never changed, which auto mode refuses. To one colleague alone, a
+session writes to its own name as ever. The members settle the result; whoever
+called the meeting closes it (`office_board close` with the conclusion), which
+goes to every member and onto the board, and the instructions ask it to close
+only once everyone agrees.
+
+Unlike a post, a meeting's words wake their readers, so code ends it, not the
+models: 15 minutes with nobody speaking, or one member left in the company, and
+it is over with no conclusion (its caller's tick closes it and says so on the
+board); after 30 words it passes on no more and waits for its conclusion. A
+meeting's name means nothing else: not `CEO`, no session's name or title, no
+live meeting's. A meeting is a file per meeting and member,
+`meetings/<id>.<sessionId>.json`, one writer each: the caller's opens and
+closes it, each member's holds whom it brought and how many words it said.
+While one is live its members sit in a room of their own at the top of the
+office, under the meeting's name and topic, each team under its department's
+sign, and not at their desks; a session at two sits at the earlier.
+
+## The CEO and the heads
+
+The chairman appoints a CEO (a card's button, or `/office ceo @<who>|off`); the
+CEO appoints a 部长 per repository (`office_board appoint`), and the chairman
+may too (`/office head @<who>`, `/office head off [@<who or repository>]`), the
+chairman's pick standing over the CEO's, and the chairman's revoke clearing
+every pick made before it. The CEO is never a head. Each session writes its
+own appointments to `org/<sessionId>.json`, keeping the latest of each kind,
+repository and appointer (`prunedRecords`: keeping the last twenty of any kind
+let head appointments push the CEO's out); everyone works the same answer out
+of all of them, the latest standing (`orgOf`). Only a person appoints from
+`/office`: a run that did not come from the prompt box or the person's own
+remote client is refused. An appointment lapses when its
+session leaves the company; a CEO that lapses is said in a toast.
+
+Each session is told its rank in its system prompt (`prompt.compose`, after
+the cache boundary): the CEO how to run the office, a head what it may do,
+everyone else who the CEO and its head are and how to report; and every
+session, under a CEO or not, that it goes to a colleague directly with
+SendMessage, may have a colleague review its work before reporting, and may
+call a meeting. Only who holds which post goes in, so the text moves only when
+an appointment does. A newly appointed CEO is handed, when free, the staff list
+and the reports waiting. The CEO is the last check, not the hand-out: a memo
+for whoever is free goes to whoever is free, CEO or not, and sessions ask each
+other and meet without routing through it.
+
+The CEO runs the work through `office_board`, each action judged by
+`refusalOf` before anything is written: `staff` (who is at work, their
+SendMessage names, duties and open jobs), `assign`, `accept`, `reject`,
+`amend` (adds to a job still being done, kept with the job and sent to its
+session; a reported job is sent back with `reject` instead), `withdraw`,
+`appoint` (the CEO's), `duty` (the CEO's, or a head's for its own
+repository), `report` (only the session the job was given to). The CEO's
+actions are refused to its subagents, which share its session id. `withdraw`
+closes an open job and tells its session to stop; without it a job whose
+session had gone was put to the CEO every half hour for a week. A job is four kinds of file,
+one writer each: `jobs/<id>.json` by the assigning CEO, `amends/<id>.<n>.json`
+by the CEO (an addition sent only as a message was not kept with the job, so
+the report and the verdict went by two standards), `reports/<id>.<n>.json`
+by the session doing it, `verdicts/<id>.<n>.json` by the judging CEO. Delivery
+goes through the engine's own cross-session channel (`$.session.send`), at
+once, busy or not, so whatever the engine holds back (a session in another
+permission mode) stays held; the office never submits a prompt into another
+session on a model's word. A job rejected more than three times is the
+chairman's to decide, and stays on its cards. Files untouched for a week are
+no longer read.
+
+A watchdog in the CEO's tick, code and not the CEO's model, checks open jobs
+every 30 s: given 10 min ago and not started; waiting 5 min for approval (a
+toast to the chairman at once, who alone can approve, and the CEO when free);
+the session gone; 60 min and
+no report; reported 10 min ago and not judged. Each job and rule is put to the
+CEO at most once in 30 min, as one prompt when it is free; what to do is the
+CEO's to decide. The decisions behind all of this are in
+`docs/specs/2026-11-04-manager-design.md` (the dev copy only).
+
+## The chairman's list
+
+What only the chairman can decide (an approval, a choice between plans, a
+meeting's conclusion left to the chairman) any session puts on the chairman's
+list with `office_board ask`; kept until then in the asker's own context, a
+compaction lost the detail and no other session saw what was stuck on the
+chairman. The list is at the very bottom of the pane, who is waiting (its job
+title, else its place) and on what, each with a ✓ that takes it off; `read`
+carries it too. Once the chairman has answered, the session that asked, or the
+CEO, takes it off with `office_board settle`. `decisions/<id>.json` is the
+asker's, `settled/<id>.<writer>.json` whoever settled it, so each file has one
+writer; a session that left keeps its item on the list, since what it asked may
+still need deciding.
 
 ## How sessions see each other
 
@@ -205,10 +330,14 @@ but never drew.
 
 ## Limits
 
-- Observes, except for memos, instructions and btw: every hook passes its event
-  on unchanged; it hands a memo the chairman wrote to a finished session and an
-  instruction to the session it names as prompts, and answers a btw with one
-  side call to the model. No network, no processes.
+- Observes, except for memos, instructions, btw and the CEO's work: every hook
+  passes its event on unchanged but `prompt.compose`, which adds a session's
+  rank, and SendMessage's `tool.call`, which refuses a send to a job title or
+  to CEO with the name to send to; it hands a memo the chairman wrote to a finished session, an
+  instruction to the session it names, and the CEO its handover and the
+  watchdog's nudges as prompts, sends the CEO's jobs and the reports through
+  the engine's cross-session channel, and answers a btw with one side call to
+  the model. No network, no processes.
 - "Waiting for approval" comes from the classic `PermissionRequest` event, skipped in
   auto mode. `tool.check` answering `ask` was tried first and raised a hand on most
   calls in auto mode, where the classifier answers and nobody is asked. Where an

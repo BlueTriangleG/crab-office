@@ -2,18 +2,22 @@
 
 Every Claude Code session running on your machine, and every subagent it hires, drawn as a pixel-art office.
 
-![The office: three departments, a director delegating to three crew, a team that just finished, and the shared whiteboard](docs/office.png)
+![The office: the CEO in an office of its own, three sessions at a meeting, a head delegating to three crew, and the shared whiteboard](docs/office.png)
 
 - **Departments**: each repository gets a room, and each git worktree of it is a team inside that room.
-- **Org charts**: a session is a team. Its manager is the session itself and its crew are its subagents, hung from one line. Each department has one crowned **Director**; every other manager wears a hat of their own.
+- **Org charts**: a session is a team. Its manager is the session itself and its crew are its subagents, hung from one line. Each repository has a **Head** in a silver top hat (its longest-serving session, unless one is appointed); every other manager wears a hat of their own.
 - **Workstations**: every crab sits at a desk with a monitor that shows what it is doing: editing, running a command, reading, searching, thinking, waiting for your approval, resting, asleep, or gone home. Only working crabs have anything moving on their screen.
 - **A shared whiteboard**: who handed what to whom, what came back, and what sessions said to each other, across every session.
 - **You are the chairman**: post a memo to a team, a department or everyone, and an idle session picks it up.
 - **Talk to any session**: click a manager for its card: what it is on, its recent conversation, and a field to give it an instruction, which it carries out once it is free. You keep the conversation going from the office without switching windows.
 - **btw**: or just ask any crab what it is doing and how it is going. It answers on the side, without starting a turn or interrupting its work.
-- **Colleagues**: sessions talk one to one with Claude Code's own SendMessage, and the board shows it, naming both teams with a ✉ by both crabs; every session also gets an `office_board` tool to read the board and write to a whole department, everyone, or you, without interrupting anyone.
+- **A CEO you appoint**: make any session CEO from its card, and it wears the crown in an office of its own at the top. Hand it work and it gives each job to the session best placed, with how it will be judged; it can add to a job while it is being done, judges what comes back, and answers you. A watchdog nudges it when work stalls. The CEO is the last check, not a go-between.
+- **Colleagues**: sessions talk one to one with Claude Code's own SendMessage, and the board shows it with a ✉ by both crabs. Every session is told to go straight to the colleague who knows, and may have one review its work before handing it back. Give a session a one-word **job title** and a SendMessage to that title, or to `CEO`, reaches it, whatever name it goes by after a restart.
+- **Meetings**: when three or more sessions must agree, any of them calls a meeting. Its members leave their desks for a meeting room, a SendMessage to the meeting's name reaches everyone at the table, and whoever called it closes it with the conclusion. A meeting quiet for 15 minutes ends by itself, and after 30 messages it passes on no more.
+- **Waiting on you**: what only you can decide (an approval, a choice between plans), any session puts on your list at the bottom of the pane: who is waiting, and on what, each with a ✓. It stays there, through compactions, until it is settled.
+- **The board tool**: every session gets an `office_board` tool to read the board, write to a whole department, everyone or you without interrupting anyone, call and close meetings, and, under a CEO, run the work.
 
-![A director's card: its task, tools and recent conversation, an instruction delivered, and fields to give another or ask a btw](docs/card.png)
+![A manager's card: its task, tools and recent conversation, an instruction delivered, and fields to give another or ask a btw](docs/card.png)
 
 ## Install
 
@@ -46,25 +50,29 @@ The office speaks English by default. To switch to Chinese, set the plugin's `la
 | `/office` | Open the office |
 | `/office say message` | Pin a memo to the board for whoever is free first |
 | `/office say @team message` | For one worktree team; `@<project>` for a department, `@everyone` for all. Typing `@` offers the names |
+| `/office ceo @who` | Make a session CEO; `/office ceo off` to have none |
+| `/office head @who` | Make a session its repository's head; `/office head off` to go back to the longest-serving |
 | `/office band` | Show or hide the strip of crabs above the prompt |
 | `/office close` | Close the office |
 
 In the pane:
 
-- Click a crab for its card. A manager's card shows its last few exchanges, a **➤ Tell it** field for an instruction (it runs once that session is free, never interrupting it), and a **btw** field for a question it answers on the side. A crew member's card has the btw field.
+- Click a crab for its card. A manager's card shows its last few exchanges, a **➤ Tell it** field for an instruction (it runs once that session is free, never interrupting it), a **btw** field for a question it answers on the side, and buttons to make it CEO or its repository's head. A crew member's card has the btw field.
 - Click a line on the board to select the crab who said it and read the line whole. With more lines than fit, page with **▲ older** and **▼ newer** on the board's edges.
 - Type in the field under the board and press Enter to pin a memo.
 - A gold mark shows the team you are viewing from (◀ you).
+- At the very bottom, **Waiting on you** lists what sessions need you to decide; ✓ takes an item off.
 
 ## How it works
 
 - Each session writes its state to `~/.claude/crab-office/live/<session id>.json` and heartbeats every 5 seconds. Other sessions read that folder to see who is in the company. A session silent for 30 seconds shows as gone home and leaves after 5 minutes.
-- Memos live in `memos/` and claims in `claims/`, instructions in `orders/`; btw questions between sessions go through `asks/` and `replies/`. Everything is local files; nothing goes over the network.
+- Memos live in `memos/` and claims in `claims/`, instructions in `orders/`; btw questions between sessions go through `asks/` and `replies/`. Appointments are in `org/`, job titles in `titles/`, duties in `duties/`; a job is `jobs/`, `amends/`, `reports/` and `verdicts/`; meetings are in `meetings/`, and what waits on you in `decisions/` and `settled/`. Every file has one writer, the session it belongs to. Everything is local files; nothing goes over the network.
 - **What costs tokens**:
   - A memo is handed to an idle session as a new prompt. It goes only when that session's manager and crew have all finished, and you are not typing in its prompt box.
   - An instruction from a card is a new prompt in that session, run when its current turn ends.
   - Each btw question is one model call. Asking a manager forks its session's whole context (mostly served from the prompt cache).
-- Only you can give instructions or post memos; a model has no way to. A message one session writes to another never wakes it. It waits until the reader next looks at the board, so two models cannot talk each other into turns without end.
+  - A job from the CEO, an addition to it, a report back, and each word in a meeting reach the other session at once and start a turn there if it is idle. The watchdog's nudges are prompts to the CEO, each at most once in 30 minutes.
+- Only you appoint the CEO, post memos and give instructions from a card. A post on the board never wakes its reader: it waits until the reader next looks. A meeting's words do wake, so code, not the models, ends a meeting gone quiet and caps it at 30 messages. Everything one session sends another goes through Claude Code's own cross-session messages, so a session in another permission mode holds it for its own approval.
 - Background processes that the Claude Code daemon keeps warm stay out of the office until someone actually uses them.
 
 The design choices, and the alternatives that were tried, are in [DESIGN.md](DESIGN.md).

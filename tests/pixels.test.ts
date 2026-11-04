@@ -264,7 +264,7 @@ test("a department of several teams has a row to itself; one-team departments sh
   expect(narrow.find((s) => s.id === "web")!.cy).toBeGreaterThan(narrow.find((s) => s.id === "api")!.cy)
 })
 
-test("a 大部长 sits alone on the department's top row, centred, the other teams below", async () => {
+test("a 部长 sits alone on the department's top row, centred, the other teams below", async () => {
   const one = (id: string, role: string) => [seat(id, role, "idle")]
   const company: Company = {
     rooms: [{ title: "web-app 部", footer: "", signs: ["本部", "a 组", "b 组"], teams: [one("hq", "chief"), one("a", "lead"), one("b", "lead")] }],
@@ -275,7 +275,7 @@ test("a 大部长 sits alone on the department's top row, centred, the other tea
   expect(at("a").cy).toBeGreaterThan(at("hq").cy + SEAT_ROWS)
   // centred over the row below
   expect(at("hq").cx + SEAT_COLS / 2).toBe((at("a").cx + at("b").cx + SEAT_COLS) / 2)
-  expect(drawn.cells[at("hq").cy + 5]!.map((c) => c.ch).join("")).toContain("大部长")
+  expect(drawn.cells[at("hq").cy + 5]!.map((c) => c.ch).join("")).toContain("部长")
 })
 
 test("a big office splits into bands of rows, each tree well under the serialized bound", async () => {
@@ -358,6 +358,28 @@ test("a crab who has just written to, or heard from, another has a ✉ by its he
   expect(office(bandOf(plain), 40, 0).cells[at.cy]![at.cx]!.ch).not.toBe("✉")
 })
 
+test("the CEO's hat is not the 部长's", async () => {
+  const bandOf = (s: SeatData): Company => ({ rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[s]] }] })
+  const ceo = office(bandOf({ ...seat("s", "ceo", "idle"), hat: "ceo" }), 40, 0)
+  const head = office(bandOf(seat("s", "chief", "idle")), 40, 0)
+  const at = ceo.seats[0]!
+  const row = (d: typeof ceo) => JSON.stringify(d.cells[at.cy]!.slice(at.cx, at.cx + SEAT_COLS))
+  expect(row(ceo)).not.toBe(row(head))
+  expect(row(ceo)).not.toBe(row(office(bandOf(seat("s", "lead", "idle")), 40, 0)))
+})
+
+test("the CEO wears the crown; a 部长 the top hat", async () => {
+  const bandOf = (s: SeatData): Company => ({ rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[s]] }] })
+  const hatRow = (s: SeatData) => {
+    const drawn = office(bandOf(s), 40, 0)
+    const at = drawn.seats[0]!
+    return drawn.cells[at.cy]!.slice(at.cx + 1, at.cx + 7).flatMap((c) => [c.fg, c.bg])
+  }
+  const GOLD = "#e8c468"
+  expect(hatRow({ ...seat("s", "ceo", "editing"), hat: "ceo" })).toContain(GOLD)
+  expect(hatRow(seat("s", "chief", "editing"))).not.toContain(GOLD)
+})
+
 test("a resting crab's monitor stands still; a working crab's moves", async () => {
   const monitorOf = (look: string, t: number) => {
     const band: Company = { rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[seat("s", "Plan", look)]] }] }
@@ -384,4 +406,46 @@ test("a board with more lines than it shows has a way back and a way forward", a
   expect(drawn.lines.map((l) => l.key)).toEqual(company.board!.map((l) => l.key))
   const newest = office({ ...company, boardView: { first: 23, last: 30, total: 30 } }, 60, 0)
   expect(newest.pagers.map((p) => p.dir)).toEqual(["older"])
+})
+
+test("the CEO's crown stands out from the floor, at work or at rest", async () => {
+  const lum = (hex: string | undefined) => {
+    const n = parseInt((hex ?? "#000000").slice(1), 16)
+    return 0.3 * (n >> 16) + 0.59 * ((n >> 8) & 255) + 0.11 * (n & 255)
+  }
+  for (const look of ["idle", "editing"]) {
+    const band: Company = { rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[{ ...seat("s", "ceo", look), hat: "ceo" }]] }] }
+    const drawn = office(band, 40, 0)
+    const at = drawn.seats[0]!
+    const floor = lum(drawn.cells[at.cy]![at.cx]!.fg)
+    const hat = drawn.cells[at.cy]!.slice(at.cx + 1, at.cx + 7).flatMap((c) => [c.fg, c.bg])
+    expect(hat.some((c) => c !== undefined && Math.abs(lum(c) - floor) > 60)).toBe(true)
+  }
+})
+
+test("a band's share is plain data: no undefined anywhere, or the engine refuses the Client", async () => {
+  const undefinedAt = (value: unknown, path = "part"): string[] => {
+    if (value === undefined) return [path]
+    if (value === null || typeof value !== "object") return []
+    return Object.entries(value).flatMap(([k, v]) => undefinedAt(v, `${path}.${k}`))
+  }
+  const teams = Array.from({ length: 6 }, (_, i) => [seat(`m${i}`, "lead", "editing"), seat(`m${i}c`, "Explore", "reading")])
+  const said = { key: "k", time: "12:03", kind: "say", from: { name: "经理", color: "#d77757" }, to: { name: "调研员", color: "#6a9bcc" }, text: "好" }
+  const company: Company = {
+    rooms: [
+      { title: "web-app 部", footer: "", signs: teams.map((_, i) => `w${i} 组`), teams },
+      { title: "api-server 部", footer: "", teams: [[seat("api", "chief", "idle")]] },
+    ],
+    board: [said],
+  }
+  for (const rows of slicesOf(office(company, 44, 0).cells)) expect(undefinedAt(partOf(company, 44, rows))).toEqual([])
+  const band: Company = { rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[seat("s", "lead", "idle")]] }] }
+  expect(undefinedAt(partOf(band, 0))).toEqual([])
+})
+
+test("a crab with a job title wears it on its name plate", async () => {
+  const band = (s: SeatData): Company => ({ rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[s]] }] })
+  const text = (s: SeatData) => office(band(s), 40, 0).cells.map((l) => l.map((c) => c.ch).join("")).join("\n")
+  expect(text({ ...seat("s", "lead", "idle"), post: "voice" })).toContain("voice")
+  expect(text(seat("s", "lead", "idle"))).not.toContain("voice")
 })

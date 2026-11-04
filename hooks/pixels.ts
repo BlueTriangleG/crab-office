@@ -20,6 +20,8 @@ export type SeatData = {
   // Just wrote to another crab, or was written to: a ✉ by its head, across
   // sessions as well as within one.
   letter?: boolean
+  // A session's job title, worn on its name plate in place of its rank's.
+  post?: string
 }
 // Who said a board line; `id` is the crab's, so a click on the line finds it.
 export type Speaker = { name: string; color: string; id?: string }
@@ -46,6 +48,9 @@ export type Room = {
   // The team, by its place in `teams`, of the session whose pane this is: a
   // gold wall beside it, and "你在这" on its sign, or the title without one.
   here?: number
+  // The CEO's office: a row of its own at the very top, never shared with the
+  // one-team departments that otherwise pair up.
+  top?: boolean
 }
 // `lang`: the words the drawing's own labels are in, since a Client runs apart
 // from the hooks that chose them.
@@ -206,10 +211,13 @@ export function titleOf(role: string): string {
   return words().titles[role] ?? words().intern
 }
 
-// Hats sit on the two pixel rows above the head. The crown is the 大部长's
-// alone; when every manager wore one, a crown said nothing.
+// Hats sit on the two pixel rows above the head. The crown is the CEO's alone,
+// and the silver top hat each repository's 部长's; when every manager wore a
+// crown, it said nothing.
 const HATS: Record<string, { color: string; rows: [string, string] }> = {
-  chief: { color: "#e8c468", rows: ["   █  █  █   ", "   ███████   "] },
+  ceo: { color: "#e8c468", rows: ["   █  █  █   ", "   ███████   "] },
+  // Silver: a black hat vanished into the dark floors.
+  chief: { color: "#c9ced6", rows: ["    █████    ", "  █████████  "] },
   mortarboard: { color: "#3fa598", rows: [" ███████████ ", "    █████ █  "] },
   chef: { color: "#efe9dc", rows: ["   ███████   ", "    █████    "] },
   viking: { color: "#b7c3d3", rows: ["█           █", " ███████████ "] },
@@ -493,7 +501,7 @@ function drawSeat(
   const isGone = look === "gone"
   const isResting = (look === "idle" || look === "asleep") && seat.finish !== "cheer"
   const body = isGone ? GONE : isResting ? restingOf(seat.color) : seat.color
-  const isManager = seat.role === "chief" || seat.role === "leader" || seat.role === "lead"
+  const isManager = seat.role === "ceo" || seat.role === "chief" || seat.role === "leader" || seat.role === "lead"
   const desk = isManager ? WALNUT : OAK
 
   if (isGone) {
@@ -541,7 +549,7 @@ function drawSeat(
       labels.push({ ...mark, x: cx + mark.x, y: cy })
   // Left of the head, where only a cheer's spark goes, which keeps its place.
   if (seat.letter && !isGone && seat.finish !== "cheer") labels.push({ x: cx, y: cy, ch: "✉", fg: NAMEPLATE, bold: true })
-  const title = titleOf(seat.role)
+  const title = seat.post ?? titleOf(seat.role)
   const nameColor = isGone ? GONE : body
   if (isSelected) {
     const line = fit(`${title} ${seat.task}`, SEAT_COLS - 1)
@@ -711,7 +719,7 @@ type Placed = { room: Room; x: number; y: number; w: number; h: number; bands: B
 // grow as it cheers.
 function layoutOf(company: Company, cols: number): { rooms: Placed[]; bottom: number } {
   const insideOf = (w: number) => w - 2 - 2 * PAD
-  const isShared = (room: Room) => !room.bare && room.teams.length <= 1
+  const isShared = (room: Room) => !room.bare && room.top !== true && room.teams.length <= 1
   const shared = company.rooms.filter(isShared)
   const least = Math.max(
     0,
@@ -1093,17 +1101,19 @@ export function partOf(company: Company, cols: number, only?: [number, number]):
       }
       y += tallest(band) + (room.bare ? 0 : 1)
     }
-    rooms.push({ room: { ...room, teams: [] }, x: rx, y: cy, w, h, lamp, teams })
+    rooms.push({ room: { ...room, teams: [] }, x: rx, y: cy, w, h, ...(lamp === undefined ? {} : { lamp }), teams })
   }
   const isBoardShown = company.board !== undefined && isShown(layout.bottom, boardHeight(company))
+  const lines = (company.board ?? []).map((line) => ({ ...line, text: textOf(line, cols) }))
+  const view = company.boardView === undefined ? {} : { view: company.boardView }
+  // Plain data only, no key left undefined: a Client's props are checked as
+  // JSON, and one with an undefined anywhere was refused, the whole pane blank.
   return {
     rows,
-    header: company.header,
-    lang: company.lang,
+    ...(company.header === undefined ? {} : { header: company.header }),
+    ...(company.lang === undefined ? {} : { lang: company.lang }),
     rooms,
-    board: isBoardShown
-      ? { y: layout.bottom, lines: (company.board ?? []).map((line) => ({ ...line, text: textOf(line, cols) })), view: company.boardView }
-      : undefined,
+    ...(isBoardShown ? { board: { y: layout.bottom, lines, ...view } } : {}),
   }
 }
 
