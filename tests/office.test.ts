@@ -45,6 +45,8 @@ import {
   turnStarted,
 } from "../hooks/office.ts"
 import { LEADER_COLOR } from "../hooks/pixels.ts"
+import { orgOf } from "../hooks/org.ts"
+import { jobsOf } from "../hooks/jobs.ts"
 
 import { setLanguage } from "../hooks/words.ts"
 
@@ -563,4 +565,43 @@ test("with a CEO, a memo for whoever is free goes to the CEO alone", async () =>
   expect(snaps.map((s) => memoFor(s, snaps, [all], [], now, "b")?.id)).toEqual(["all", "all"])
   // with no CEO, the first free by id takes it, as before
   expect(memoFor(hq, snaps, [open], [], now)?.id).toBe("o")
+})
+
+const working = () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0, "docs")
+  const c = createSnapshot("c", "api-server", undefined, T0)
+  const snaps = [a, b, c]
+  for (const s of snaps) s.updatedAt = T0 + 100
+  const org = orgOf([{ kind: "ceo", sessionId: "c", at: T0, by: "chairman" }], snaps, T0 + 100)
+  const jobs = jobsOf(
+    [
+      { id: "j1", at: T0, by: "c", to: "b", task: "fix the login test" },
+      { id: "j2", at: T0, by: "c", to: "a", task: "write the docs" },
+      { id: "j3", at: T0, by: "c", to: "b", task: "old work" },
+    ],
+    [
+      { id: "j2", n: 1, at: T0 + 10, from: "a", text: "written" },
+      { id: "j3", n: 1, at: T0 + 10, from: "b", text: "done" },
+    ],
+    [{ id: "j3", n: 1, at: T0 + 20, by: "c", ok: true, note: "" }],
+  )
+  return { a, b, c, snaps, org, jobs }
+}
+
+test("the header names the CEO with its open and waiting jobs", async () => {
+  const { snaps, org, jobs } = working()
+  const header = companyOf(snaps, "a", T0 + 100, { memos: [], claims: [], org, jobs }).header ?? ""
+  expect(header).toContain("CEO：api-server 部 · 本部")
+  expect(header).toContain("在办 2")
+  expect(header).toContain("待验收 1")
+  expect(companyOf(snaps, "a", T0 + 100).header).not.toContain("CEO")
+})
+
+test("a card lists the jobs given to its session, the CEO's card all it gave", async () => {
+  const { a, b, c, snaps, org, jobs } = working()
+  const rows = (s: typeof a) => detailOf(s.leader, s, T0 + 100, snaps, org, jobs).rows.filter((r) => r.label === "派活")
+  expect(rows(b).map((r) => r.text)).toEqual([expect.stringContaining("#j1 fix the login test · 已派")])
+  expect(rows(a).map((r) => r.text)).toEqual([expect.stringContaining("#j2 write the docs · 待验收")])
+  expect(rows(c).map((r) => r.text.split(" ")[0])).toEqual(["#j1", "#j2"])
 })

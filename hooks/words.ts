@@ -33,7 +33,12 @@ const EN = {
   crowd: (n: number) => `+${n} more `,
   hq: "HQ",
   // the company
-  header: (n: number) => `Crab Co.  Chairman: you  ${n} on duty`,
+  // With a CEO the counts come first: the pane is 44 columns wide and the header
+  // is cut at its edge.
+  header: (n: number, ceo?: { who: string; open: number; waiting: number }) =>
+    ceo
+      ? `Crab Co.  ${ceo.open} open · ${ceo.waiting} to judge  CEO: ${ceo.who}  ${n} on duty`
+      : `Crab Co.  Chairman: you  ${n} on duty`,
   dept: (project: string) => project,
   teamSign: (team: string) => team,
   who: (project: string, team: string) => `${project} · ${team}`,
@@ -61,7 +66,8 @@ const EN = {
   } as Record<string, string>,
   noTools: "no tools yet",
   notStarted: "not started",
-  labels: { task: "Task", given: "Given", tools: "Tools", back: "Back" },
+  labels: { task: "Task", given: "Given", tools: "Tools", back: "Back", job: "Job" },
+  jobStatus: { assigned: "given", reported: "to judge", rejected: "sent back", accepted: "accepted", chairman: "yours to decide" } as Record<string, string>,
   orderHead: "[crab-office · from the chairman]",
   orderLabel: "➤ Tell it ",
   orderPlaceholder: "an instruction; it does it once it's free",
@@ -303,7 +309,10 @@ const ZH: Words = {
   boardEmpty: "还没有人说话",
   crowd: (n) => `还有 ${n} 人 `,
   hq: "本部",
-  header: (n) => `螃蟹有限公司  董事长：你  在岗 ${n} 人`,
+  header: (n, ceo) =>
+    ceo
+      ? `螃蟹有限公司  在办 ${ceo.open} · 待验收 ${ceo.waiting}  CEO：${ceo.who}  在岗 ${n} 人`
+      : `螃蟹有限公司  董事长：你  在岗 ${n} 人`,
   dept: (project) => `${project} 部`,
   teamSign: (team) => `${team} 组`,
   who: (project, team) => `${project} 部 · ${team}`,
@@ -331,7 +340,8 @@ const ZH: Words = {
   },
   noTools: "还没用工具",
   notStarted: "还没开始",
-  labels: { task: "任务", given: "收到", tools: "工具", back: "交回" },
+  labels: { task: "任务", given: "收到", tools: "工具", back: "交回", job: "派活" },
+  jobStatus: { assigned: "已派", reported: "待验收", rejected: "已退回", accepted: "已验收", chairman: "交董事长定" },
   orderHead: "[螃蟹办公室 · 董事长交代]",
   orderLabel: "➤ 交代 ",
   orderPlaceholder: "给它一个指示，它空下来就去做",

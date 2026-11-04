@@ -6,6 +6,7 @@ import { HQ, LEADER_COLOR, MANAGER_HATS, titleOf } from "./pixels.ts"
 import { CHAIRMAN_NAMES, HQ_NAMES, w } from "./words.ts"
 import type { BoardLine, Company, Room, SeatData, Speaker } from "./pixels.ts"
 import type { Org } from "./org.ts"
+import type { Job } from "./jobs.ts"
 
 export type Status =
   | "thinking"
@@ -645,7 +646,7 @@ export function companyOf(
   snaps: Snapshot[],
   mine: string,
   now: number,
-  desk: { memos: Memo[]; claims: Claim[]; org?: Org } = { memos: [], claims: [] },
+  desk: { memos: Memo[]; claims: Claim[]; org?: Org; jobs?: Job[] } = { memos: [], claims: [] },
   older = 0,
 ): Company {
   const org = desk.org ?? NONE
@@ -714,7 +715,11 @@ export function companyOf(
     text: n.text,
   }))
   const boardView = { first: last - board.length + 1, last, total: all.length }
-  return { header: w().header(onDuty), rooms, board, boardView, lang: w().lang }
+  // The CEO's work at a glance: jobs still open, and of them those waiting to be judged.
+  const ceo = present.find((s) => s.sessionId === org.ceo)
+  const live = (desk.jobs ?? []).filter(isLive)
+  const run = ceo === undefined ? undefined : { who: whoOf(ceo), open: live.length, waiting: live.filter((j) => j.status === "reported").length }
+  return { header: w().header(onDuty, run), rooms, board, boardView, lang: w().lang }
 }
 
 // The strip above the prompt: this session's team on one row of desks.
@@ -757,7 +762,17 @@ export type Detail = { title: string; where: string; state: string; color: strin
 const DETAIL_MAX = 160
 
 // `snaps`, the company, so a 大部长's card names it as the drawing does.
-export function detailOf(crab: Crab, snap: Snapshot, now: number, snaps: Snapshot[] = [snap], org: Org = NONE): Detail {
+const isLive = (j: Job) => j.status !== "accepted" && j.status !== "chairman"
+
+// A session's card lists the open jobs it was given; the CEO's, those it gave.
+export function detailOf(
+  crab: Crab,
+  snap: Snapshot,
+  now: number,
+  snaps: Snapshot[] = [snap],
+  org: Org = NONE,
+  jobs: Job[] = [],
+): Detail {
   const look = lookOf(crab, now, isGoneOf(snap, now))
   const tools = crab.tools.slice(-3).join(" · ")
   const label = w().labels
@@ -766,6 +781,9 @@ export function detailOf(crab: Crab, snap: Snapshot, now: number, snaps: Snapsho
     { label: isLeader ? label.task : label.given, text: clip(crab.prompt ?? "", DETAIL_MAX) || w().notStarted },
     ...(tools ? [{ label: label.tools, text: tools }] : []),
     ...(!isLeader && crab.answer ? [{ label: label.back, text: clip(crab.answer, DETAIL_MAX) }] : []),
+    ...(isLeader ? jobs : [])
+      .filter((j) => isLive(j) && (org.ceo === snap.sessionId ? j.by === snap.sessionId : j.to === snap.sessionId))
+      .map((j) => ({ label: label.job, text: `#${j.id} ${clip(j.task, 60)} · ${w().jobStatus[j.status]} · ${elapsed(now - j.since)}` })),
   ]
   return {
     title: isLeader ? managerTitleOf(snap, ranksOf(snaps, now, org)) : titleOf(roleOf(crab, snap)),

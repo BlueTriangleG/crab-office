@@ -1123,7 +1123,7 @@ export const register: Register = (on, options) => {
         snaps,
         me?.sessionId ?? "",
         now,
-        { memos: office.memos, claims: office.claims, org: office.org },
+        { memos: office.memos, claims: office.claims, org: office.org, jobs: office.jobs },
         office.boardOlder,
       )
       // Paged past the oldest line kept, the count comes back to where it shows.
@@ -1165,7 +1165,7 @@ export const register: Register = (on, options) => {
           {chosen !== undefined &&
             crabCard(
               { Box, Text, Input, Button },
-              detailOf(chosen.crab, chosen.snap, now, snaps, office.org),
+              detailOf(chosen.crab, chosen.snap, now, snaps, office.org, office.jobs),
               office.chats.get(chosen.crab.id) ?? [],
               `office-btw-${office.asked}-${chosen.crab.id}`,
               chosen.crab.role === "leader"
@@ -1213,7 +1213,7 @@ export const register: Register = (on, options) => {
         {chosen !== undefined &&
           crabCard(
             { Box, Text, Input, Button },
-            detailOf(chosen.crab, chosen.snap, now, [me, ...office.others], office.org),
+            detailOf(chosen.crab, chosen.snap, now, [me, ...office.others], office.org, office.jobs),
             (office.chats.get(chosen.crab.id) ?? []).slice(-1),
             `office-btw-band-${office.asked}-${chosen.crab.id}`,
             chosen.crab.role === "leader"
