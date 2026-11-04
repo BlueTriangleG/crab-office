@@ -1,7 +1,7 @@
 import { expect, test } from "claude-code/testing"
 
-import { LEAVE_MS, chiefsOf, companyOf, createSnapshot } from "../hooks/office.ts"
-import { orgOf } from "../hooks/org.ts"
+import { LEAVE_MS, chairman, chiefsOf, companyOf, createSnapshot } from "../hooks/office.ts"
+import { appointedNote, orgOf, parseAppoint, sessionNamed } from "../hooks/org.ts"
 import type { Appointment } from "../hooks/org.ts"
 import { titleOf } from "../hooks/pixels.ts"
 import { setLanguage } from "../hooks/words.ts"
@@ -64,4 +64,42 @@ test("the CEO wears its own hat and title; a 部长 the crown; everyone else is 
   expect(at("b")?.role).toBe("lead")
   expect(at("c")?.role).toBe("chief")
   expect(["ceo", "chief", "lead"].map(titleOf)).toEqual(["CEO", "部长", "组长"])
+})
+
+test("/office ceo and /office head name a session or say off", async () => {
+  expect(parseAppoint("ceo @docs")).toEqual({ kind: "ceo", name: "docs", isOff: false })
+  expect(parseAppoint("ceo off")).toEqual({ kind: "ceo", name: null, isOff: true })
+  expect(parseAppoint("head @api-server-e0")).toEqual({ kind: "head", name: "api-server-e0", isOff: false })
+  expect(parseAppoint("head off @web-app")).toEqual({ kind: "head", name: "web-app", isOff: true })
+  expect(parseAppoint("head off")).toEqual({ kind: "head", name: null, isOff: true })
+  expect(parseAppoint("ceo")).toBeUndefined()
+  expect(parseAppoint("say hi")).toBeUndefined()
+})
+
+test("a name that fits two sessions names neither", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0, "docs")
+  const b = createSnapshot("b", "web-app", undefined, T0, "docs")
+  const c = createSnapshot("c", "api-server", undefined, T0)
+  for (const s of [a, b, c]) s.updatedAt = T0
+  const snaps = [a, b, c]
+  const peers = [{ sessionId: "c", name: "api-server-e0" }]
+  const docs = sessionNamed("docs", snaps, peers, T0)
+  expect(docs.one).toBeUndefined()
+  expect(docs.many.map((s) => s.sessionId).sort()).toEqual(["a", "b"])
+  expect(sessionNamed("api-server-e0", snaps, peers, T0).one?.sessionId).toBe("c")
+  expect(sessionNamed("@本部", snaps, peers, T0).one?.sessionId).toBe("c")
+  expect(sessionNamed("api-server 部 · 本部", snaps, peers, T0).one?.sessionId).toBe("c")
+  expect(sessionNamed("nobody", snaps, peers, T0).many).toEqual([])
+})
+
+test("an appointment is a line on the board naming who and what", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "api-server", undefined, T0)
+  for (const s of [a, b]) s.updatedAt = T0
+  const made = appointedNote(chairman(), b, "ceo", false, T0 + 1)
+  expect([made.kind, made.from.name, made.to.id, made.text]).toEqual(["message", "董事长", "b", "任命为 CEO"])
+  expect(appointedNote(chairman(), b, "head", true, T0 + 2).text).toBe("撤销部长")
+  // written where the chairman clicked, it names the session it is about
+  a.board = [made]
+  expect(companyOf([a, b], "a", T0 + 3).board?.at(-1)?.to.name).toContain("api-server 部 · 本部")
 })

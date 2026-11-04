@@ -35,10 +35,15 @@ import {
   turnFinished,
   turnStarted,
   whoOf,
+  chairman,
+  noted,
 } from "./office.ts"
 import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
 import type { BoardLine } from "./pixels.ts"
-import { SEAT_COLS, heightOf, office as draw, partOf, slicesOf } from "./pixels.ts"
+import { SEAT_COLS, heightOf, office as draw, partOf, slicesOf, titleOf } from "./pixels.ts"
+import type { Speaker } from "./pixels.ts"
+import { NO_ORG, appointedNote, orgOf, parseAppoint, sessionNamed } from "./org.ts"
+import type { Appointment, Org } from "./org.ts"
 import { setLanguage, w } from "./words.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
@@ -66,6 +71,12 @@ const office = {
   base: "",
   // The engine's register of this machine's sessions, one `<pid>.json` each.
   sessions: "",
+  // Every session's appointments (`org/<sessionId>.json`), and who runs the
+  // office as they come to; the CEO's who while present, for the toast when it
+  // leaves.
+  records: [] as Appointment[],
+  org: NO_ORG as Org,
+  ceoWho: "",
   isDirty: true,
   lastWrite: 0,
   isOpen: false,
@@ -127,13 +138,16 @@ function noteCard(el: Pick<ClientElements, "Box" | "Text">, note: BoardLine) {
 // its task and tools, then the btw asked of it and the field to ask again. The
 // pane and the band draw the same card.
 function crabCard(
-  el: Pick<ClientElements, "Box" | "Text" | "Input">,
+  el: Pick<ClientElements, "Box" | "Text" | "Input" | "Button">,
   detail: Detail,
   chats: Chat[],
   inputKey: string,
   orders?: { key: string; obeyed: string[]; talk: Talk[] },
+  // A session's own crab in the pane: whether it is CEO, or its repository's
+  // appointed head, so each button offers the other way.
+  appointed?: { isCeo: boolean; isHead: boolean },
 ) {
-  const { Box, Text, Input } = el
+  const { Box, Text, Input, Button } = el
   const given = chats.filter((chat) => chat.kind === "order")
   return (
     <Box key="crab-card" flexDirection="column" borderStyle="round" borderColor={detail.color} paddingX={1}>
@@ -192,6 +206,18 @@ function crabCard(
         </Text>,
       ])}
       <Input key={inputKey} label="btw " placeholder={w().btwPlaceholder} submitLabel={w().ask} onSubmit={() => undefined} />
+      {appointed !== undefined && (
+        <Box flexDirection="row" columnGap={2}>
+          <Button key="office-appoint-ceo" label={appointed.isCeo ? w().revokeCeo : w().appointCeo} onPress={() => undefined} />
+          {!appointed.isCeo && (
+            <Button
+              key="office-appoint-head"
+              label={appointed.isHead ? w().revokeHead : w().appointHead}
+              onPress={() => undefined}
+            />
+          )}
+        </Box>
+      )}
     </Box>
   )
 }
@@ -392,7 +418,7 @@ async function deliver($: EngineInterface, now: number) {
   if (memo === undefined) return
   // Whoever is typing in this session is at work in it, waiting or not.
   if ((await $.prompt.read()).text.trim() !== "") return
-  const text = handoverOf(memo, me, snaps, now)
+  const text = handoverOf(memo, me, snaps, now, office.org)
   me.handled = [...(me.handled ?? []), memo.id]
   // Busy in the same write that says it took the memo, so no other session
   // reads it as having passed before its turn starts.
@@ -413,6 +439,10 @@ async function tick($: EngineInterface) {
     await $.fs.write(liveOf(me.sessionId), JSON.stringify(me))
   }
   office.others = await readOthers($, now)
+  office.records = (await readJsonDir<Appointment[]>($, `${office.base}/org`)).flat()
+  const org = orgOf(office.records, [me, ...office.others], now)
+  lapsed($, org)
+  office.org = org
   office.memos = await readJsonDir<Memo>($, `${office.base}/memos`)
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
   await deliver($, now)
@@ -421,6 +451,64 @@ async function tick($: EngineInterface) {
   if (office.isOpen) announce($, office.others, now)
   // The elapsed times on screen move every second.
   if (office.isOpen || me.agents.length > 0) $.ui.invalidate("ui.render")
+}
+
+// A CEO that left the company while still appointed, said once where the pane
+// is open: a revocation is the chairman's own doing and needs no word.
+function lapsed($: EngineInterface, org: Org) {
+  const was = office.org.ceo
+  const ceo = org.ceo === undefined ? undefined : [office.me, ...office.others].find((s) => s?.sessionId === org.ceo)
+  if (ceo !== undefined) office.ceoWho = whoOf(ceo)
+  if (was === undefined || org.ceo !== undefined) return
+  const last = office.records.filter((r) => r.kind === "ceo").sort((a, b) => b.at - a.at)[0]
+  if (last?.sessionId === was && office.isOpen) $.ui.toast(w().ceoLapsed(office.ceoWho))
+}
+
+// An appointment by the chairman, from /office or a card: written to this
+// session's own file, and a line on its board naming whom it is about.
+async function appoint(
+  $: EngineInterface,
+  a: { kind: "ceo" | "head"; name: string | null; isOff: boolean },
+  chosen?: Snapshot,
+): Promise<string> {
+  const me = office.me
+  if (me === undefined) return w().tool.notReady
+  const now = Date.now()
+  const snaps = [me, ...office.others]
+  let target = chosen
+  if (target === undefined && a.name !== null) {
+    const found = sessionNamed(a.name, snaps, await readJsonDir<unknown>($, office.sessions), now)
+    if (found.many.length > 1) return w().ambiguous(found.many.map(whoOf))
+    // A head is revoked by naming its repository as well as the head.
+    target = found.one ?? (a.kind === "head" && a.isOff ? snaps.find((s) => s.project === a.name) : undefined)
+    if (target === undefined) return w().nobodyNamed(a.name)
+  }
+  const project = target?.project ?? me.project
+  const holder = a.kind === "ceo" ? office.org.ceo : office.org.heads[project]
+  const about = a.isOff ? snaps.find((s) => s.sessionId === holder) ?? target : target
+  if (about === undefined) return a.kind === "ceo" ? w().noCeo : w().nobodyNamed(project)
+  const record: Appointment = {
+    kind: a.kind,
+    ...(a.kind === "head" ? { project } : {}),
+    sessionId: a.isOff ? null : about.sessionId,
+    at: now,
+    by: "chairman",
+  }
+  await recordAppointment($, record, chairman(), about)
+  return w().appointDone(whoOf(about), titleOf(a.kind === "ceo" ? "ceo" : "chief"), a.isOff)
+}
+
+async function recordAppointment($: EngineInterface, record: Appointment, by: Speaker, about: Snapshot) {
+  const me = office.me
+  if (me === undefined) return
+  const file = `${office.base}/org/${me.sessionId}.json`
+  const mine = await $.fs.read(file).then((text) => JSON.parse(text) as Appointment[]).catch(() => [])
+  await $.fs.write(file, JSON.stringify([...mine, record].slice(-20)))
+  office.records = [...office.records, record]
+  office.org = orgOf(office.records, [me, ...office.others], record.at)
+  noted(me, appointedNote(by, about, record.kind, record.sessionId === null, record.at))
+  changed($)
+  $.ui.invalidate("ui.render")
 }
 
 // A reload starts the module over; the board and the memos already handed are
@@ -619,17 +707,17 @@ export const register: Register = (on, options) => {
       })
       .join(" ")
     if (input.action === "read") {
-      const inbox = inboxOf(me, snaps, now)
+      const inbox = inboxOf(me, snaps, now, office.org)
       me.seen = now
       changed($)
       return {
         result: [
           inbox.length > 0 ? w().tool.inbox(inbox) : w().tool.noInbox,
-          w().tool.latest(boardOf(snaps, now)),
+          w().tool.latest(boardOf(snaps, now, undefined, office.org)),
         ].join("\n\n"),
       }
     }
-    const unread = inboxOf(me, snaps, now).length
+    const unread = inboxOf(me, snaps, now, office.org).length
     const nudge = unread > 0 ? w().tool.unread(unread) : ""
     if (input.action === "claim")
       return { result: `${await claim($, input.memo ?? "", input.agentId)}${nudge}` }
@@ -728,6 +816,8 @@ export const register: Register = (on, options) => {
       }
     }
     if (arg.startsWith("say")) return { text: await say($, args.slice(3)) }
+    const appointing = parseAppoint(args)
+    if (appointing !== undefined) return { text: await appoint($, appointing) }
     try {
       await $.ui.open({
         id: PANE,
@@ -758,6 +848,18 @@ export const register: Register = (on, options) => {
     if (e.kind !== "submit" || office.selected === null) return next(e)
     const found = findCrab([...(office.me ? [office.me] : []), ...office.others], office.selected)
     if (found?.crab.role === "leader") void order($, found.snap.sessionId, e.value)
+    return next(e)
+  })
+
+  // A card's appointment buttons, the chairman's: each toggles.
+  on("ui.press", { element: /^office-appoint-/ }, async ($, e, next) => {
+    const me = office.me
+    const found = office.selected === null ? undefined : findCrab([...(me ? [me] : []), ...office.others], office.selected)
+    if (found === undefined || found.crab.role !== "leader") return next(e)
+    const kind = e.element === "office-appoint-ceo" ? "ceo" : "head"
+    const id = found.snap.sessionId
+    const isOff = kind === "ceo" ? office.org.ceo === id : office.org.heads[found.snap.project] === id
+    $.ui.toast(await appoint($, { kind, name: null, isOff }, found.snap))
     return next(e)
   })
 
@@ -807,7 +909,7 @@ export const register: Register = (on, options) => {
     async ($, e, next) => {
       // Only the terminal has a Client to draw the crabs with.
       if (e.surface !== "terminal") return next(e)
-      const { Box, Text, Client, Input } = $.ui.resolve(e)
+      const { Box, Text, Client, Input, Button } = $.ui.resolve(e)
       const now = Date.now()
       const me = office.me
       const snaps = me !== undefined ? [me, ...office.others] : office.others
@@ -816,7 +918,7 @@ export const register: Register = (on, options) => {
         snaps,
         me?.sessionId ?? "",
         now,
-        { memos: office.memos, claims: office.claims },
+        { memos: office.memos, claims: office.claims, org: office.org },
         office.boardOlder,
       )
       // Paged past the oldest line kept, the count comes back to where it shows.
@@ -857,8 +959,8 @@ export const register: Register = (on, options) => {
           {note !== undefined && noteCard({ Box, Text }, note)}
           {chosen !== undefined &&
             crabCard(
-              { Box, Text, Input },
-              detailOf(chosen.crab, chosen.snap, now, snaps),
+              { Box, Text, Input, Button },
+              detailOf(chosen.crab, chosen.snap, now, snaps, office.org),
               office.chats.get(chosen.crab.id) ?? [],
               `office-btw-${office.asked}-${chosen.crab.id}`,
               chosen.crab.role === "leader"
@@ -866,6 +968,12 @@ export const register: Register = (on, options) => {
                     key: `office-order-${office.asked}-${chosen.crab.id}`,
                     obeyed: chosen.snap.obeyed ?? [],
                     talk: chosen.snap.talk ?? [],
+                  }
+                : undefined,
+              chosen.crab.role === "leader"
+                ? {
+                    isCeo: office.org.ceo === chosen.snap.sessionId,
+                    isHead: office.org.heads[chosen.snap.project] === chosen.snap.sessionId,
                   }
                 : undefined,
             )}
@@ -883,9 +991,9 @@ export const register: Register = (on, options) => {
       me.agents.length === 0 ||
       e.surface !== "terminal"
     if (isQuiet) return next(e)
-    const { Box, Text, Client, Input } = $.ui.resolve(e)
+    const { Box, Text, Client, Input, Button } = $.ui.resolve(e)
     const now = Date.now()
-    const band = bandOf(me, [me, ...office.others], now)
+    const band = bandOf(me, [me, ...office.others], now, office.org)
     const chosen =
       office.selected !== null ? findCrab([me], office.selected) : undefined
     return (
@@ -899,8 +1007,8 @@ export const register: Register = (on, options) => {
         />
         {chosen !== undefined &&
           crabCard(
-            { Box, Text, Input },
-            detailOf(chosen.crab, chosen.snap, now, [me, ...office.others]),
+            { Box, Text, Input, Button },
+            detailOf(chosen.crab, chosen.snap, now, [me, ...office.others], office.org),
             (office.chats.get(chosen.crab.id) ?? []).slice(-1),
             `office-btw-band-${office.asked}-${chosen.crab.id}`,
             chosen.crab.role === "leader"

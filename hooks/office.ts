@@ -236,7 +236,7 @@ function speakerOf(crab: Crab, s: Snapshot): Speaker {
   return { name: titleOf(roleOf(crab, s)), color: colorOf(crab), id: crab.id }
 }
 
-function noted(s: Snapshot, note: Note) {
+export function noted(s: Snapshot, note: Note) {
   s.board = [...(s.board ?? []), note].slice(-BOARD_KEPT)
 }
 
@@ -775,7 +775,7 @@ export function detailOf(crab: Crab, snap: Snapshot, now: number, snaps: Snapsho
 // The chairman's memos: who they are for, who takes them, and what a session is
 // handed when one reaches it.
 
-const chairman = (): Speaker => ({ name: w().chairman, color: "#e8c468" })
+export const chairman = (): Speaker => ({ name: w().chairman, color: "#e8c468" })
 const NAMEPLATE_INK = "#e6e0d6"
 export const MEMO_TTL_MS = 24 * 60 * 60_000
 const EVERYONE = new Set(["全体", "所有人", "大家", "all", "everyone"])
