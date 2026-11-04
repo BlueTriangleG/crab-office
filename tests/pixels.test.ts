@@ -410,3 +410,23 @@ test("the CEO's top hat stands out from the floor, at work or at rest", async ()
     expect(hat.some((c) => c !== undefined && Math.abs(lum(c) - floor) > 60)).toBe(true)
   }
 })
+
+test("a band's share is plain data: no undefined anywhere, or the engine refuses the Client", async () => {
+  const undefinedAt = (value: unknown, path = "part"): string[] => {
+    if (value === undefined) return [path]
+    if (value === null || typeof value !== "object") return []
+    return Object.entries(value).flatMap(([k, v]) => undefinedAt(v, `${path}.${k}`))
+  }
+  const teams = Array.from({ length: 6 }, (_, i) => [seat(`m${i}`, "lead", "editing"), seat(`m${i}c`, "Explore", "reading")])
+  const said = { key: "k", time: "12:03", kind: "say", from: { name: "经理", color: "#d77757" }, to: { name: "调研员", color: "#6a9bcc" }, text: "好" }
+  const company: Company = {
+    rooms: [
+      { title: "web-app 部", footer: "", signs: teams.map((_, i) => `w${i} 组`), teams },
+      { title: "api-server 部", footer: "", teams: [[seat("api", "chief", "idle")]] },
+    ],
+    board: [said],
+  }
+  for (const rows of slicesOf(office(company, 44, 0).cells)) expect(undefinedAt(partOf(company, 44, rows))).toEqual([])
+  const band: Company = { rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[seat("s", "lead", "idle")]] }] }
+  expect(undefinedAt(partOf(band, 0))).toEqual([])
+})

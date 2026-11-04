@@ -1096,17 +1096,19 @@ export function partOf(company: Company, cols: number, only?: [number, number]):
       }
       y += tallest(band) + (room.bare ? 0 : 1)
     }
-    rooms.push({ room: { ...room, teams: [] }, x: rx, y: cy, w, h, lamp, teams })
+    rooms.push({ room: { ...room, teams: [] }, x: rx, y: cy, w, h, ...(lamp === undefined ? {} : { lamp }), teams })
   }
   const isBoardShown = company.board !== undefined && isShown(layout.bottom, boardHeight(company))
+  const lines = (company.board ?? []).map((line) => ({ ...line, text: textOf(line, cols) }))
+  const view = company.boardView === undefined ? {} : { view: company.boardView }
+  // Plain data only, no key left undefined: a Client's props are checked as
+  // JSON, and one with an undefined anywhere was refused, the whole pane blank.
   return {
     rows,
-    header: company.header,
-    lang: company.lang,
+    ...(company.header === undefined ? {} : { header: company.header }),
+    ...(company.lang === undefined ? {} : { lang: company.lang }),
     rooms,
-    board: isBoardShown
-      ? { y: layout.bottom, lines: (company.board ?? []).map((line) => ({ ...line, text: textOf(line, cols) })), view: company.boardView }
-      : undefined,
+    ...(isBoardShown ? { board: { y: layout.bottom, lines, ...view } } : {}),
   }
 }
 
