@@ -778,11 +778,13 @@ export function companyOf(
     }
   })
   const ranks = ranksOf(present, now, org)
-  // A line between two sessions names the sender's too, since a title alone
-  // (部长) is one in every session; the session reads its own lines as its own.
-  // A session with a job title goes by it alone: it is unique, and short.
+  // A line out of a session (to another, to a meeting, to the chairman or a
+  // department) names the sender's session too, since a title alone (部长) is
+  // one in every session; a line to its own crew stays as it is. A session
+  // with a job title goes by it alone: it is unique, and short.
   const across = (n: Note, s: Snapshot): Note => {
-    if (n.to.id === undefined || n.to.id === s.sessionId || !present.some((o) => o.sessionId === n.to.id)) return n
+    const isOut = n.to.id === undefined || present.some((o) => o.sessionId === n.to.id)
+    if (!isOut || n.to.id === s.sessionId || n.kind !== "message") return n
     const post = titles[s.sessionId]
     const name = n.from.id === s.sessionId && post !== undefined ? post : `${post ?? whoOf(s)} ${n.from.name}`
     return { ...n, from: { ...n.from, name } }

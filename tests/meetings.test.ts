@@ -1,6 +1,6 @@
 import { expect, test } from "claude-code/testing"
 
-import { LEAVE_MS, companyOf, createSnapshot, promptOf } from "../hooks/office.ts"
+import { LEAVE_MS, companyOf, createSnapshot, messageSent, promptOf, whoOf } from "../hooks/office.ts"
 import { MEETING, closeRefusal, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "../hooks/meetings.ts"
 import type { MeetingFile } from "../hooks/meetings.ts"
 import { setLanguage, w } from "../hooks/words.ts"
@@ -120,4 +120,13 @@ test("a meeting's own prompts read as short tasks on a card, in either language"
     ]).toEqual([w().meetingTask("api-contract"), w().meetingTask("api-contract"), w().meetingTask("api-contract")])
   }
   setLanguage("zh")
+})
+
+test("a line to a meeting or to the chairman names the session that said it, by its title if it has one", async () => {
+  const { a, b, snaps } = office()
+  messageSent(b, undefined, w().meetingTask("api-contract"), "totals in cents", T0 + 60)
+  messageSent(a, undefined, w().chairman, "to decide: version now?", T0 + 61)
+  const board = companyOf(snaps, "a", T0 + 100, { memos: [], claims: [], titles: { b: "api" } }).board ?? []
+  expect(board.find((l) => l.text === "totals in cents")?.from.name).toBe("api")
+  expect(board.find((l) => l.text === "to decide: version now?")?.from.name).toContain(whoOf(a))
 })
