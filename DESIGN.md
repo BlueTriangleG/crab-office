@@ -198,9 +198,14 @@ does that.
 The chairman appoints a CEO (a card's button, or `/office ceo @<who>|off`); the
 CEO appoints a 部长 per repository (`office_board appoint`), and the chairman
 may too (`/office head @<who>`, `/office head off [@<who or repository>]`), the
-chairman's pick standing over the CEO's. Each session writes its own
-appointments to `org/<sessionId>.json`; everyone works the same answer out of
-all of them, the latest standing (`orgOf`). An appointment lapses when its
+chairman's pick standing over the CEO's, and the chairman's revoke clearing
+every pick made before it. The CEO is never a head. Each session writes its
+own appointments to `org/<sessionId>.json`, keeping the latest of each kind,
+repository and appointer (`prunedRecords`: keeping the last twenty of any kind
+let head appointments push the CEO's out); everyone works the same answer out
+of all of them, the latest standing (`orgOf`). Only a person appoints from
+`/office`: a run that did not come from the prompt box or the person's own
+remote client is refused. An appointment lapses when its
 session leaves the company; a CEO that lapses is said in a toast.
 
 Each session is told its rank in its system prompt (`prompt.compose`, after
@@ -213,19 +218,24 @@ With a CEO, a memo for whoever is free goes to the CEO alone.
 The CEO runs the work through `office_board`, each action judged by
 `refusalOf` before anything is written: `staff` (who is at work, their
 SendMessage names, duties and open jobs), `assign`, `accept`, `reject`,
-`appoint` (the CEO's), `duty` (the CEO's, or a head's for its own repository),
-`report` (only the session the job was given to). A job is three kinds of file,
+`withdraw`, `appoint` (the CEO's), `duty` (the CEO's, or a head's for its own
+repository), `report` (only the session the job was given to). The CEO's
+actions are refused to its subagents, which share its session id. `withdraw`
+closes an open job and tells its session to stop; without it a job whose
+session had gone was put to the CEO every half hour for a week. A job is three kinds of file,
 one writer each: `jobs/<id>.json` by the assigning CEO, `reports/<id>.<n>.json`
 by the session doing it, `verdicts/<id>.<n>.json` by the judging CEO. Delivery
 goes through the engine's own cross-session channel (`$.session.send`), at
 once, busy or not, so whatever the engine holds back (a session in another
 permission mode) stays held; the office never submits a prompt into another
 session on a model's word. A job rejected more than three times is the
-chairman's to decide. Files untouched for a week are no longer read.
+chairman's to decide, and stays on its cards. Files untouched for a week are
+no longer read.
 
 A watchdog in the CEO's tick, code and not the CEO's model, checks open jobs
 every 30 s: given 10 min ago and not started; waiting 5 min for approval (a
-toast to the chairman, who alone can approve); the session gone; 60 min and
+toast to the chairman at once, who alone can approve, and the CEO when free);
+the session gone; 60 min and
 no report; reported 10 min ago and not judged. Each job and rule is put to the
 CEO at most once in 30 min, as one prompt when it is free; what to do is the
 CEO's to decide. The decisions behind all of this are in

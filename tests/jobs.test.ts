@@ -96,3 +96,29 @@ test("the watchdog: idle 10 min, waiting for approval 5 min, gone, working 60 mi
   for (const status of ["accepted", "chairman"] as const)
     expect(rules([{ ...open("j", "x"), status }], [], T0 + WATCH.workingMs * 2)).toEqual([])
 })
+
+test("the CEO may withdraw an open job, which closes it and quiets the watchdog", async () => {
+  const withdrawn = jobsOf([job("j1", "b")], [], [{ ...verdict("j1", 1, T0 + 5, false), isWithdrawn: true }])[0]
+  expect(withdrawn?.status).toBe("withdrawn")
+  expect(nudgesOf(withdrawn ? [withdrawn] : [], [], T0 + WATCH.workingMs * 2, {})).toEqual([])
+  const ctx = { myProject: "web-app", org: NO_ORG }
+  const as = (status: Job["status"]): Job => ({ ...job("j1", "b"), status, since: T0, reports: [], verdicts: [] })
+  expect(refusalOf("withdraw", "a", "ceo", { ...ctx, job: as("assigned") })).toBeUndefined()
+  expect(refusalOf("withdraw", "a", "ceo", { ...ctx, job: as("reported") })).toBeUndefined()
+  expect(refusalOf("withdraw", "b", "staff", { ...ctx, job: as("assigned") })).toBeDefined()
+  for (const status of ["accepted", "chairman", "withdrawn"] as const)
+    expect(refusalOf("withdraw", "a", "ceo", { ...ctx, job: as(status) })).toBeDefined()
+})
+
+test("the CEO's subagents cannot act as the CEO", async () => {
+  const b = createSnapshot("b", "web-app", undefined, T0, "docs")
+  const ctx = { myProject: "web-app", org: NO_ORG, isSubagent: true }
+  const reported: Job = { ...job("j1", "b"), status: "reported", since: T0, reports: [], verdicts: [] }
+  for (const action of ["assign", "appoint", "duty"] as const)
+    expect(refusalOf(action, "a", "ceo", { ...ctx, target: b })).toBeDefined()
+  for (const action of ["accept", "reject", "withdraw"] as const)
+    expect(refusalOf(action, "a", "ceo", { ...ctx, job: reported })).toBeDefined()
+  // a subagent doing the job may still report it, and anyone may read the staff
+  expect(refusalOf("report", "b", "staff", { ...ctx, job: { ...reported, status: "assigned" } })).toBeUndefined()
+  expect(refusalOf("staff", "a", "ceo", ctx)).toBeUndefined()
+})

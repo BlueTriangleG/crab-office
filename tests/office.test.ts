@@ -605,3 +605,23 @@ test("a card lists the jobs given to its session, the CEO's card all it gave", a
   expect(rows(a).map((r) => r.text)).toEqual([expect.stringContaining("#j2 write the docs · 待验收")])
   expect(rows(c).map((r) => r.text.split(" ")[0])).toEqual(["#j1", "#j2"])
 })
+
+test("the CEO is handed an open memo to hand out, not to pass on", async () => {
+  const { c, snaps, org } = working()
+  const open = parseSay("看一下首页", "o", T0 + 50)!
+  const text = handoverOf(open, c, snaps, T0 + 100, org)
+  expect(text).toContain("assign")
+  expect(text).not.toContain("下一位同事")
+})
+
+test("a job left to the chairman stays on its cards", async () => {
+  const { a, b, snaps, org } = working()
+  const jobs = jobsOf(
+    [{ id: "j9", at: T0, by: "c", to: "b", task: "flaky deploy" }],
+    [{ id: "j9", n: 1, at: T0 + 1, from: "b", text: "tried" }],
+    [1, 2, 3, 4].map((n) => ({ id: "j9", n, at: T0 + 1 + n, by: "c", ok: false, note: "no" })),
+  )
+  const rows = detailOf(b.leader, b, T0 + 100, snaps, org, jobs).rows.filter((r) => r.label === "派活")
+  expect(rows.map((r) => r.text)).toEqual([expect.stringContaining("交董事长定")])
+  expect(detailOf(a.leader, a, T0 + 100, snaps, org, jobs).rows.filter((r) => r.label === "派活")).toEqual([])
+})

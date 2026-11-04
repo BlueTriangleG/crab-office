@@ -67,7 +67,7 @@ const EN = {
   noTools: "no tools yet",
   notStarted: "not started",
   labels: { task: "Task", given: "Given", tools: "Tools", back: "Back", job: "Job" },
-  jobStatus: { assigned: "given", reported: "to judge", rejected: "sent back", accepted: "accepted", chairman: "yours to decide" } as Record<string, string>,
+  jobStatus: { assigned: "given", reported: "to judge", rejected: "sent back", accepted: "accepted", chairman: "yours to decide", withdrawn: "withdrawn" } as Record<string, string>,
   orderHead: "[crab-office · from the chairman]",
   orderLabel: "➤ Tell it ",
   orderPlaceholder: "an instruction; it does it once it's free",
@@ -88,6 +88,12 @@ const EN = {
   rejectEnvelope: (id: string, reason: string) =>
     `[crab-office · job #${id} sent back by the CEO]\nWhy: ${reason}\n\nFix it, then report again with office_board (action: report, assignment: ${id}).`,
   jobLine: (id: string, task: string) => `job #${id}: ${task}`,
+  escalatedLine: (id: string, note: string) => `left to the chairman #${id}${note ? `: ${note}` : ""}`,
+  withdrawLine: (id: string, note: string) => `withdrawn #${id}${note ? `: ${note}` : ""}`,
+  withdrawEnvelope: (id: string, note: string) => `[crab-office · job #${id} withdrawn by the CEO]${note ? `\n${note}` : ""}\n\nStop work on it; nothing more is needed.`,
+  noCeoToast: (who: string, id: string) => `${who} reported #${id}, and there is no CEO to judge it`,
+  ceoCantHead: "The CEO cannot be a head as well",
+  notByPerson: "Only you can appoint, from the prompt",
   reportLine: (id: string, text: string) => `reported #${id}: ${text}`,
   verdictLine: (id: string, ok: boolean, note: string) => `${ok ? "accepted" : "sent back"} #${id}${note ? `: ${note}` : ""}`,
   toChairmanToast: (id: string, task: string) => `Job #${id} (${task}) was rejected too many times: it is yours to decide`,
@@ -99,6 +105,7 @@ const EN = {
     "To learn about a repository, ask its head with SendMessage. Where there are many sessions, appoint a head for each repository with office_board appoint; with few, manage them yourself.",
     "When a report comes back, judge it against the standard you set; if unsure, assign a review to a session that has worked on something similar. Record your verdict with office_board accept or reject (assignment, text), then answer the chairman yourself, in this session, for all of it.",
     "When the chairman asks who is doing something, find it with office_board staff and answer, or pass it on.",
+    "A job you no longer want done, or whose session has gone, take back with office_board withdraw (assignment), so the watchdog stops asking about it; give it to someone else with assign.",
     "Never ask a session to do what your own session may not do.",
   ].join("\n"),
   roleHead: (project: string, ceo: string) =>
@@ -128,7 +135,7 @@ const EN = {
     ][rule]
     return `- #${id} ${task.slice(0, 60)} (${who}): ${what}`
   },
-  nudgeTail: "Decide what to do: ask it, give the job to another session, ask its head, or tell the chairman.",
+  nudgeTail: "Decide what to do: ask it, withdraw it and give it to another session, ask its head, or tell the chairman.",
   approvalToast: (id: string, who: string, minutes: number) => `Job #${id}: ${who} has waited ${minutes} min for your approval`,
   ceoWaiting: "Reported and waiting for your verdict:",
   waitingLine: (id: string, task: string, who: string) => `- #${id} ${task} (from ${who})`,
@@ -170,6 +177,7 @@ const EN = {
     team: "This one names you: claim it with the office_board tool (action: claim), then do it.",
     all: "This one is for everyone: first judge whether it bears on your project, folder and task. If it does, claim it with office_board (action: claim) and do it; if not, say why on office_board (action: post), then stop and do nothing else.",
     open: "This is open work and you are free, so take a look: if you can take it, claim it with office_board (action: claim) and do it; if it is not for you, say why on office_board (action: post), then stop and do nothing else, and the next colleague will look at it. Once it is claimed no other session takes it; if your claim says someone already has, stop.",
+    ceoOpen: "This is open work, and as CEO it is yours to hand out: claim it with office_board (action: claim), then give it to the session best placed with office_board assign, or do it yourself if nobody fits better, or ask the chairman. Do not pass it on: no one else will look at it.",
   },
   // btw
   btw: "[crab-office · a btw from the chairman: answer in a few sentences, like a colleague chatting: what you are doing, how it is going, where you are stuck. Do not call tools, and do not change the work in hand because of this]",
@@ -229,7 +237,7 @@ const EN = {
   // the office_board tool, which the model reads
   tool: {
     description:
-      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=duty writes what a session is responsible for (to, text); action=appoint makes a session its repository's head (to).",
+      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=withdraw takes an open job back (assignment); action=duty writes what a session is responsible for (to, text); action=appoint makes a session its repository's head (to).",
     memo: "the id of the memo to claim",
     text: "what to write: the post, the job (assign), the result (report), a note or reason (accept, reject), or the duty",
     assignment: "the job's id (report, accept, reject)",
@@ -276,7 +284,11 @@ const EN = {
     written: (heard: string) => `Written on the board; ${heard}.`,
     oneSession: (to: string, name: string | undefined) =>
       `${to} is one session, so write to it with SendMessage${name ? ` (to: "${name}")` : ""}: it reaches that session now, says whether it did, and shows on this board too. Nothing was written.`,
-    actions: "action is read, post or claim. ListAgents lists the other sessions; SendMessage writes to one.",
+    actions: "action is read, post or claim, and with a CEO appointed also staff, assign, report, accept, reject, withdraw, duty or appoint, as your instructions allow. ListAgents lists the other sessions; SendMessage writes to one.",
+    notFromSubagent: "Only the CEO's own conversation can do that, not one of its subagents",
+    closed: "That job is already closed",
+    withdrawn: (id: string) => `Job #${id} withdrawn; its session was told to stop.`,
+    overruled: (who: string) => `Recorded, but the chairman's own pick, ${who}, stands as head.`,
   },
 }
 
@@ -341,7 +353,7 @@ const ZH: Words = {
   noTools: "还没用工具",
   notStarted: "还没开始",
   labels: { task: "任务", given: "收到", tools: "工具", back: "交回", job: "派活" },
-  jobStatus: { assigned: "已派", reported: "待验收", rejected: "已退回", accepted: "已验收", chairman: "交董事长定" },
+  jobStatus: { assigned: "已派", reported: "待验收", rejected: "已退回", accepted: "已验收", chairman: "交董事长定", withdrawn: "已撤回" },
   orderHead: "[螃蟹办公室 · 董事长交代]",
   orderLabel: "➤ 交代 ",
   orderPlaceholder: "给它一个指示，它空下来就去做",
@@ -360,6 +372,12 @@ const ZH: Words = {
   rejectEnvelope: (id, reason) =>
     `[螃蟹办公室 · #${id} 被 CEO 退回]\n原因：${reason}\n\n改好后再用 office_board 交差（action: report，assignment: ${id}）。`,
   jobLine: (id, task) => `派活 #${id}：${task}`,
+  escalatedLine: (id, note) => `交董事长定 #${id}${note ? `：${note}` : ""}`,
+  withdrawLine: (id, note) => `撤回 #${id}${note ? `：${note}` : ""}`,
+  withdrawEnvelope: (id, note) => `[螃蟹办公室 · CEO 撤回了 #${id}]${note ? `\n${note}` : ""}\n\n这件活不用再做了，停下即可。`,
+  noCeoToast: (who, id) => `${who} 交差了 #${id}，现在没有 CEO 验收`,
+  ceoCantHead: "CEO 不能同时当部长",
+  notByPerson: "只有你本人能在输入框里任命",
   reportLine: (id, text) => `交差 #${id}：${text}`,
   verdictLine: (id, ok, note) => `${ok ? "验收通过" : "退回"} #${id}${note ? `：${note}` : ""}`,
   toChairmanToast: (id, task) => `#${id}（${task}）退回次数太多，交给你决定`,
@@ -371,6 +389,7 @@ const ZH: Words = {
     "想了解某个 repo，用 SendMessage 问它的部长。会话多时用 office_board appoint 给每个 repo 任命部长；会话少时你自己直接管。",
     "收到交差后按你定的标准验收；拿不准就 assign 一个复核给做过类似部分的会话。用 office_board accept 或 reject（assignment、text）记下结论，然后在你自己的会话里统一回复董事长。",
     "董事长问某件事谁在做，用 office_board staff 查了回答，或者转过去。",
+    "不再需要的活，或者做它的会话已经下线了，用 office_board withdraw（assignment）撤回，督促就不会再问它；要改派就再 assign 给别人。",
     "不要让别的会话去做你自己会话不被允许的事。",
   ].join("\n"),
   roleHead: (project, ceo) =>
@@ -400,7 +419,7 @@ const ZH: Words = {
     ][rule]
     return `- #${id} ${task.slice(0, 60)}（${who}）：${what}`
   },
-  nudgeTail: "决定怎么处理：去问它、改派给别的会话、问它的部长，或者告诉董事长。",
+  nudgeTail: "决定怎么处理：去问它、撤回（withdraw）后改派给别的会话、问它的部长，或者告诉董事长。",
   approvalToast: (id, who, minutes) => `#${id}：${who} 等你批准已经 ${minutes} 分钟`,
   ceoWaiting: "已经交差、等你验收的：",
   waitingLine: (id, task, who) => `- #${id} ${task}（${who} 交的）`,
@@ -424,6 +443,7 @@ const ZH: Words = {
     team: "这是点名给你的：先用 office_board 工具认领（action: claim），然后开始做。",
     all: "这是发给全体的：先判断和你当前的项目、目录、任务有没有关系。有关就用 office_board 认领（action: claim）再做；无关就用 office_board 说一句为什么不接（action: post），然后停下，别做别的。",
     open: "这是一件待领的活，你正空着，先来看看：能接就用 office_board 认领（action: claim）再做；不合适就用 office_board 说一句为什么不接（action: post），然后停下，别做别的，下一位同事会接着看。认领时，别的会话就不会再接这件事；如果认领时发现已经有人接了，就停下。",
+    ceoOpen: "这是一件待领的活，你是 CEO，由你来分派：先用 office_board 认领（action: claim），再用 office_board assign 派给最合适的会话；没人比你更合适就自己做，拿不准就问董事长。不要放着不管：不会有别的会话来接。",
   },
   btw: "[螃蟹办公室 · 董事长顺便问一句（btw）：用中文几句话回答，像同事聊天，说清在干什么、进展如何、卡在哪；不要调用工具，也别因此改变手上的活]",
   btwFor: (title, task, tools, back, question) =>
@@ -471,7 +491,7 @@ const ZH: Words = {
   uncalled: "· 不点名就谁有空谁接",
   tool: {
     description:
-      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=duty 写某个会话负责什么（to、text）；action=appoint 任命某个会话为它所在 repo 的部长（to）。",
+      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=withdraw 撤回还没结束的活（assignment）；action=duty 写某个会话负责什么（to、text）；action=appoint 任命某个会话为它所在 repo 的部长（to）。",
     memo: "要认领的 memo id",
     text: "要写的内容：白板上的话、派的活（assign）、结果（report）、验收意见或退回原因（accept、reject）、职责（duty）",
     assignment: "活的编号（report、accept、reject）",
@@ -515,7 +535,11 @@ const ZH: Words = {
     written: (heard) => `已经写到白板上了，${heard}。`,
     oneSession: (to, name) =>
       `${to} 是一个会话，单独找它请用 SendMessage${name ? `（to: "${name}"）` : ""}：马上送到、会告诉你送没送到，白板上也看得到。这次没有写上白板。`,
-    actions: "action 只有 read、post、claim。ListAgents 列出别的会话，SendMessage 单独写给一个。",
+    actions: "action 有 read、post、claim；任命了 CEO 之后还有 staff、assign、report、accept、reject、withdraw、duty、appoint，能用哪些看你的说明。ListAgents 列出别的会话，SendMessage 单独写给一个。",
+    notFromSubagent: "只有 CEO 自己的对话能这么做，它的子代理不行",
+    closed: "这件活已经结束了",
+    withdrawn: (id) => `#${id} 已撤回，已经告诉那个会话停下。`,
+    overruled: (who) => `已记下，但董事长自己任命的 ${who} 仍是部长。`,
   },
 }
 

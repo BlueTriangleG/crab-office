@@ -44,11 +44,28 @@ export function orgOf(records: Appointment[], snaps: Snapshot[], now: number): O
   for (const project of projects) {
     const own = records.filter((r) => r.kind === "head" && r.project === project)
     const chairman = latest(own.filter((r) => r.by === "chairman"))
-    const picks = [chairman?.sessionId === null ? undefined : chairman, latest(own.filter((r) => r.by === "ceo"))]
+    const ceoPick = latest(own.filter((r) => r.by === "ceo"))
+    // The chairman's revoke clears every pick made before it, the CEO's too; a
+    // CEO's pick made after it stands.
+    const picks =
+      chairman?.sessionId === null ? [ceoPick !== undefined && ceoPick.at > chairman.at ? ceoPick : undefined] : [chairman, ceoPick]
     const id = picks.map(named).find((x) => x !== undefined && x !== ceo)
     if (id !== undefined) heads[project] = id
   }
   return { ...(ceo === undefined ? {} : { ceo }), heads }
+}
+
+// What a writer keeps of its own records: the latest of each kind, repository
+// and appointer, all orgOf ever reads. Keeping the last twenty of any kind let
+// twenty head appointments push out the CEO's, and an older CEO come back.
+export function prunedRecords(records: Appointment[]): Appointment[] {
+  const latestOf = new Map<string, Appointment>()
+  for (const r of records) {
+    const key = `${r.kind}:${r.project ?? ""}:${r.by}`
+    const held = latestOf.get(key)
+    if (held === undefined || r.at >= held.at) latestOf.set(key, r)
+  }
+  return [...latestOf.values()]
 }
 
 export function rankOf(sessionId: string, org: Org, chiefs: Set<string>): Rank {
@@ -77,7 +94,7 @@ export function sessionNamed(
   peers: unknown[],
   now: number,
 ): { one?: Snapshot; many: Snapshot[] } {
-  const name = to.trim().replace(/^@/, "").replace(/\s*(组|team)$/i, "")
+  const name = to.trim().replace(/^@/, "").replace(/(\s*组|\s+team)$/i, "")
   const here = snaps.filter((s) => !isGoneOf(s, now))
   const peer = peerOf(peers, name)
   const isHq = HQ_NAMES.has(name.toLowerCase())
@@ -131,7 +148,7 @@ export function staffOf(
   now: number,
 ): string[] {
   const open = (id: string) =>
-    jobs.filter((j) => j.to === id && j.status !== "accepted" && j.status !== "chairman").map((j) => j.id)
+    jobs.filter((j) => j.to === id && (j.status === "assigned" || j.status === "rejected" || j.status === "reported")).map((j) => j.id)
   return rosterOf(snaps, me, now, org, (s) =>
     w().staffMore(peerOf(peers, s.sessionId)?.name, duties[s.sessionId], open(s.sessionId)),
   )

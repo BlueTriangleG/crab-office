@@ -1,7 +1,18 @@
 import { expect, test } from "claude-code/testing"
 
 import { LEAVE_MS, chairman, chiefsOf, companyOf, createSnapshot } from "../hooks/office.ts"
-import { NO_ORG, appointedNote, ceoHandoverOf, dutiesOf, orgOf, parseAppoint, roleSectionOf, sessionNamed, staffOf } from "../hooks/org.ts"
+import {
+  NO_ORG,
+  appointedNote,
+  ceoHandoverOf,
+  dutiesOf,
+  orgOf,
+  parseAppoint,
+  prunedRecords,
+  roleSectionOf,
+  sessionNamed,
+  staffOf,
+} from "../hooks/org.ts"
 import { jobsOf } from "../hooks/jobs.ts"
 import type { Appointment } from "../hooks/org.ts"
 import { titleOf } from "../hooks/pixels.ts"
@@ -43,8 +54,11 @@ test("a department's 部长: the chairman's pick, else the CEO's, else the longe
   expect([...chiefsOf(snaps, T0 + 10, orgOf([ceoIsA, head("c", T0 + 3, "ceo")], snaps, T0 + 10))]).toEqual(["c"])
   const both = [ceoIsA, head("b", T0 + 2, "chairman"), head("c", T0 + 3, "ceo")]
   expect([...chiefsOf(snaps, T0 + 10, orgOf(both, snaps, T0 + 10))]).toEqual(["b"])
-  // the chairman's pick revoked, the CEO's stands again
-  expect([...chiefsOf(snaps, T0 + 10, orgOf([...both, head(null, T0 + 4, "chairman")], snaps, T0 + 10))]).toEqual(["c"])
+  // the chairman's revoke clears every pick made before it, the CEO's too
+  expect([...chiefsOf(snaps, T0 + 10, orgOf([...both, head(null, T0 + 4, "chairman")], snaps, T0 + 10))]).toEqual(["b"])
+  // and the CEO may appoint again after it
+  const again = [...both, head(null, T0 + 4, "chairman"), head("c", T0 + 5, "ceo")]
+  expect([...chiefsOf(snaps, T0 + 10, orgOf(again, snaps, T0 + 10))]).toEqual(["c"])
   // nobody may be both
   expect([...chiefsOf(snaps, T0 + 10, orgOf([ceoIsA, head("a", T0 + 3, "chairman")], snaps, T0 + 10))]).toEqual(["b"])
 })
@@ -184,4 +198,26 @@ test("the CEO's handover lists reports waiting for a verdict", async () => {
   expect(text).not.toContain("#j2")
   expect(text).toContain(b.team ?? "")
   expect(text).toContain("staff")
+})
+
+test("pruning keeps the latest appointment of each kind, repository and appointer", async () => {
+  const ceo: Appointment = { kind: "ceo", sessionId: "a", at: T0, by: "chairman" }
+  const heads = Array.from({ length: 30 }, (_, i): Appointment => ({
+    kind: "head",
+    project: `p${i % 3}`,
+    sessionId: `s${i}`,
+    at: T0 + 1 + i,
+    by: "ceo",
+  }))
+  const kept = prunedRecords([ceo, ...heads])
+  expect(kept).toContainEqual(ceo)
+  expect(kept.filter((r) => r.kind === "head").map((r) => r.sessionId).sort()).toEqual(["s27", "s28", "s29"])
+})
+
+test("a team whose name ends in team is still that team", async () => {
+  const s = createSnapshot("a", "web-app", undefined, T0, "dreamteam")
+  s.updatedAt = T0
+  expect(sessionNamed("dreamteam", [s], [], T0).one?.sessionId).toBe("a")
+  expect(sessionNamed("dreamteam team", [s], [], T0).one?.sessionId).toBe("a")
+  expect(sessionNamed("dreamteam组", [s], [], T0).one?.sessionId).toBe("a")
 })

@@ -9,11 +9,12 @@ import { w } from "./words.ts"
 // (`verdicts/<id>.<n>.json`, the CEO that judged it).
 export type Assignment = { id: string; at: number; by: string; to: string; task: string; standard?: string }
 export type Report = { id: string; n: number; at: number; from: string; text: string }
-export type Verdict = { id: string; n: number; at: number; by: string; ok: boolean; note: string }
+// `isWithdrawn`: the CEO took the job back; it closes, judged neither way.
+export type Verdict = { id: string; n: number; at: number; by: string; ok: boolean; note: string; isWithdrawn?: boolean }
 
-// assigned and rejected are the session's to move, reported the CEO's; accepted
-// and chairman are closed, the latter left for the chairman to decide.
-export type JobStatus = "assigned" | "reported" | "accepted" | "rejected" | "chairman"
+// assigned and rejected are the session's to move, reported the CEO's; accepted,
+// withdrawn and chairman are closed, the last left for the chairman to decide.
+export type JobStatus = "assigned" | "reported" | "accepted" | "rejected" | "chairman" | "withdrawn"
 export type Job = Assignment & { status: JobStatus; since: number; reports: Report[]; verdicts: Verdict[] }
 
 // Rejected this many times, a job goes no further round: it is the chairman's.
@@ -29,8 +30,8 @@ export function jobsOf(assignments: Assignment[], reports: Report[], verdicts: V
     const verdict = judged.at(-1)
     const base = { ...a, reports: said, verdicts: judged }
     if (verdict !== undefined && (last === undefined || verdict.at >= last.at)) {
-      const rejects = judged.filter((v) => !v.ok).length
-      const status = verdict.ok ? "accepted" : rejects > REJECTS_MAX ? "chairman" : "rejected"
+      const rejects = judged.filter((v) => !v.ok && !v.isWithdrawn).length
+      const status = verdict.isWithdrawn ? "withdrawn" : verdict.ok ? "accepted" : rejects > REJECTS_MAX ? "chairman" : "rejected"
       return { ...base, status, since: verdict.at }
     }
     if (last !== undefined) return { ...base, status: "reported", since: last.at }
@@ -38,7 +39,23 @@ export function jobsOf(assignments: Assignment[], reports: Report[], verdicts: V
   })
 }
 
-export type BoardAction = "read" | "post" | "claim" | "staff" | "duty" | "assign" | "report" | "accept" | "reject" | "appoint"
+export type BoardAction =
+  | "read"
+  | "post"
+  | "claim"
+  | "staff"
+  | "duty"
+  | "assign"
+  | "report"
+  | "accept"
+  | "reject"
+  | "withdraw"
+  | "appoint"
+
+const OPEN = new Set<JobStatus>(["assigned", "rejected", "reported"])
+// What only the CEO's own loop may do: a subagent of the CEO session shares its
+// session id, and may have been told it is the CEO.
+const CEO_ONLY = new Set<BoardAction>(["assign", "appoint", "duty", "accept", "reject", "withdraw"])
 
 // Who may do what, decided here and nowhere else: the CEO assigns, judges and
 // appoints heads; a head or the CEO writes duties, a head for its own repository
@@ -47,9 +64,10 @@ export function refusalOf(
   action: BoardAction,
   me: string,
   rank: Rank,
-  ctx: { job?: Job; target?: Snapshot; myProject: string; org: Org },
+  ctx: { job?: Job; target?: Snapshot; myProject: string; org: Org; isSubagent?: boolean },
 ): string | undefined {
   const { job, target } = ctx
+  if (ctx.isSubagent === true && CEO_ONLY.has(action)) return w().tool.notFromSubagent
   switch (action) {
     case "assign":
     case "appoint":
@@ -60,6 +78,10 @@ export function refusalOf(
       if (rank !== "ceo") return w().tool.notCeo
       if (job === undefined) return w().tool.noJob
       return job.status === "reported" ? undefined : w().tool.notReported
+    case "withdraw":
+      if (rank !== "ceo") return w().tool.notCeo
+      if (job === undefined) return w().tool.noJob
+      return OPEN.has(job.status) ? undefined : w().tool.closed
     case "duty":
       if (rank === "staff") return w().tool.notManager
       return rank === "head" && target !== undefined && target.project !== ctx.myProject ? w().tool.otherRepo : undefined

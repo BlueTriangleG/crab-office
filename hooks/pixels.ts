@@ -211,7 +211,8 @@ export function titleOf(role: string): string {
 // a crown, it said nothing.
 const HATS: Record<string, { color: string; rows: [string, string] }> = {
   chief: { color: "#e8c468", rows: ["   █  █  █   ", "   ███████   "] },
-  ceo: { color: "#2b2b33", rows: ["    █████    ", "  █████████  "] },
+  // Silver: a black hat vanished into the dark floors.
+  ceo: { color: "#c9ced6", rows: ["    █████    ", "  █████████  "] },
   mortarboard: { color: "#3fa598", rows: [" ███████████ ", "    █████ █  "] },
   chef: { color: "#efe9dc", rows: ["   ███████   ", "    █████    "] },
   viking: { color: "#b7c3d3", rows: ["█           █", " ███████████ "] },

@@ -51,6 +51,7 @@ import {
   dutiesOf,
   orgOf,
   parseAppoint,
+  prunedRecords,
   rankOf,
   roleSectionOf,
   sessionNamed,
@@ -521,18 +522,20 @@ async function watch($: EngineInterface, now: number) {
     return s === undefined ? (jobOf(id)?.to ?? id) : whoOf(s)
   }
   // Kept to the last WATCH.againMs, all a stamp is ever read for.
-  const stamp = (list: Nudge[]) => {
+  const stamp = (keys: string[]) => {
     const kept = Object.entries(me.nudged ?? {}).filter(([, at]) => now - at < WATCH.againMs)
-    me.nudged = Object.fromEntries([...kept, ...list.map((n): [string, number] => [`${n.id}:${n.rule}`, now])])
+    me.nudged = Object.fromEntries([...kept, ...keys.map((key): [string, number] => [key, now])])
     changed($)
   }
-  const toChairman = nudges.filter((n) => n.toChairman)
-  for (const n of toChairman) $.ui.toast(w().approvalToast(n.id, whoIs(n.id), n.minutes))
-  if (toChairman.length > 0) stamp(toChairman)
-  const toCeo = nudges.filter((n) => !n.toChairman)
-  if (toCeo.length === 0 || !isFree(me, now) || (await $.prompt.read()).text.trim() !== "") return
-  stamp(toCeo)
-  const lines = toCeo.map((n) => w().nudgeLine(n.rule, n.id, jobOf(n.id)?.task ?? "", whoIs(n.id), n.minutes))
+  const keyOf = (n: Nudge) => `${n.id}:${n.rule}`
+  // The chairman's toast is stamped apart (`<job>:<rule>:toast`), so it is said
+  // at once and the CEO still hears of the wait when it is free.
+  const toasts = nudges.filter((n) => n.toChairman && now - (me.nudged?.[`${keyOf(n)}:toast`] ?? -Infinity) >= WATCH.againMs)
+  for (const n of toasts) $.ui.toast(w().approvalToast(n.id, whoIs(n.id), n.minutes))
+  if (toasts.length > 0) stamp(toasts.map((n) => `${keyOf(n)}:toast`))
+  if (!isFree(me, now) || (await $.prompt.read()).text.trim() !== "") return
+  stamp(nudges.map(keyOf))
+  const lines = nudges.map((n) => w().nudgeLine(n.rule, n.id, jobOf(n.id)?.task ?? "", whoIs(n.id), n.minutes))
   const text = [w().nudgeHead, ...lines, "", w().nudgeTail].join("\n")
   turnStarted(me, undefined, text, now)
   changed($)
@@ -563,12 +566,14 @@ async function appoint(
   const snaps = [me, ...office.others]
   let target = chosen
   if (target === undefined && a.name !== null) {
-    const found = sessionNamed(a.name, snaps, await readJsonDir<unknown>($, office.sessions), now)
-    if (found.many.length > 1) return w().ambiguous(found.many.map(whoOf))
+    const peers = await readJsonDir<unknown>($, office.sessions)
+    const found = sessionNamed(a.name, snaps, peers, now)
+    if (found.many.length > 1) return w().ambiguous(found.many.map((s) => peerOf(peers, s.sessionId)?.name ?? whoOf(s)))
     // A head is revoked by naming its repository as well as the head.
     target = found.one ?? (a.kind === "head" && a.isOff ? snaps.find((s) => s.project === a.name) : undefined)
     if (target === undefined) return w().nobodyNamed(a.name)
   }
+  if (a.kind === "head" && !a.isOff && target !== undefined && target.sessionId === office.org.ceo) return w().ceoCantHead
   const project = target?.project ?? me.project
   const holder = a.kind === "ceo" ? office.org.ceo : office.org.heads[project]
   const about = a.isOff ? snaps.find((s) => s.sessionId === holder) ?? target : target
@@ -589,7 +594,7 @@ async function recordAppointment($: EngineInterface, record: Appointment, by: Sp
   if (me === undefined) return
   const file = `${office.base}/org/${me.sessionId}.json`
   const mine = await $.fs.read(file).then((text) => JSON.parse(text) as Appointment[]).catch(() => [])
-  await $.fs.write(file, JSON.stringify([...mine, record].slice(-20)))
+  await $.fs.write(file, JSON.stringify(prunedRecords([...mine, record])))
   office.records = [...office.records, record]
   office.org = orgOf(office.records, [me, ...office.others], record.at)
   noted(me, appointedNote(by, about, record.kind, record.sessionId === null, record.at))
@@ -607,7 +612,7 @@ type BoardInput = {
   agentId?: string
 }
 
-const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "appoint"])
+const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint"])
 
 // The CEO's actions, a head's duties and a session's report: each judged by
 // refusalOf before anything is written, each delivery through the engine's own
@@ -629,7 +634,13 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     if (found.one === undefined) return w().nobodyNamed(input.to)
     target = found.one
   }
-  const refusal = refusalOf(action as BoardAction, me.sessionId, rank, { job, target, myProject: me.project, org: office.org })
+  const refusal = refusalOf(action as BoardAction, me.sessionId, rank, {
+    job,
+    target,
+    myProject: me.project,
+    org: office.org,
+    isSubagent: input.agentId !== undefined,
+  })
   if (refusal !== undefined) return refusal
   if (action === "staff") return staffOf(snaps, me, office.org, office.duties, office.jobs, peers, now).join("\n")
   const text = input.text?.trim() ?? ""
@@ -637,9 +648,11 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     const by = { name: titleOf("ceo"), color: LEADER_COLOR, id: me.sessionId }
     const record: Appointment = { kind: "head", project: target.project, sessionId: target.sessionId, at: now, by: "ceo" }
     await recordAppointment($, record, by, target)
+    const head = snaps.find((s) => s.sessionId === office.org.heads[target.project])
+    if (head !== undefined && head.sessionId !== target.sessionId) return w().tool.overruled(whoOf(head))
     return w().appointDone(whoOf(target), titleOf("chief"), false)
   }
-  if (text === "" && action !== "accept") return w().tool.empty
+  if (text === "" && action !== "accept" && action !== "withdraw") return w().tool.empty
   if (action === "duty" && target !== undefined) {
     const file = `${office.base}/duties/${me.sessionId}.json`
     const mine = await $.fs.read(file).then((s) => JSON.parse(s) as Record<string, Duty>).catch(() => ({}))
@@ -675,6 +688,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     if (ceo === undefined) {
       messageSent(me, input.agentId, w().chairman, w().reportLine(job.id, text), now)
       changed($)
+      $.ui.toast(w().noCeoToast(whoOf(me), job.id))
       return w().tool.noCeoKept
     }
     const sent = await $.session.send({ to: { sessionId: ceo.sessionId }, text: w().reportEnvelope(job.id, job.task, text, whoOf(me)) })
@@ -684,22 +698,37 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     return w().tool.reportedTo(whoOf(ceo))
   }
   const ok = action === "accept"
-  const judged: Verdict = { id: job.id, n: job.verdicts.length + 1, at: now, by: me.sessionId, ok, note: text }
+  const isWithdrawn = action === "withdraw"
+  const judged: Verdict = {
+    id: job.id,
+    n: job.verdicts.length + 1,
+    at: now,
+    by: me.sessionId,
+    ok,
+    note: text,
+    ...(isWithdrawn ? { isWithdrawn } : {}),
+  }
   await $.fs.write(`${office.base}/verdicts/${job.id}.${judged.n}.json`, JSON.stringify(judged))
   office.jobs = office.jobs.map((j) => (j.id === job.id ? (jobsOf([j], j.reports, [...j.verdicts, judged])[0] ?? j) : j))
   const worker = snaps.find((s) => s.sessionId === job.to)
-  messageSent(me, input.agentId, worker ? nameOf(worker) : job.to, w().verdictLine(job.id, ok, text), now, job.to)
-  changed($)
-  const rejects = job.verdicts.filter((v) => !v.ok).length + (ok ? 0 : 1)
+  const line = (said: string) => {
+    messageSent(me, input.agentId, worker ? nameOf(worker) : job.to, said, now, job.to)
+    changed($)
+  }
+  const rejects = job.verdicts.filter((v) => !v.ok && !v.isWithdrawn).length + (ok || isWithdrawn ? 0 : 1)
   if (rejects > REJECTS_MAX) {
+    line(w().escalatedLine(job.id, text))
     $.ui.toast(w().toChairmanToast(job.id, job.task))
     return w().tool.toChairman(job.id)
   }
-  if (!ok) {
-    const sent = await $.session.send({ to: { sessionId: job.to }, text: w().rejectEnvelope(job.id, text) })
+  // Sent back or taken back, the session is told; a gone one is told nothing.
+  const word = isWithdrawn ? w().withdrawEnvelope(job.id, text) : ok ? undefined : w().rejectEnvelope(job.id, text)
+  if (word !== undefined && worker !== undefined) {
+    const sent = await $.session.send({ to: { sessionId: job.to }, text: word })
     if (!sent.isDelivered) return w().tool.notDelivered(job.id, sent.reason)
   }
-  return w().tool.judged(job.id, ok)
+  line(isWithdrawn ? w().withdrawLine(job.id, text) : w().verdictLine(job.id, ok, text))
+  return isWithdrawn ? w().tool.withdrawn(job.id) : w().tool.judged(job.id, ok)
 }
 
 // A reload starts the module over; the board and the memos already handed are
@@ -794,7 +823,10 @@ export const register: Register = (on, options) => {
       inputSchema: {
         type: "object",
         properties: {
-          action: { type: "string", enum: ["read", "post", "claim", "staff", "duty", "assign", "report", "accept", "reject", "appoint"] },
+          action: {
+            type: "string",
+            enum: ["read", "post", "claim", "staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint"],
+          },
           memo: { type: "string", description: w().tool.memo },
           assignment: { type: "string", description: w().tool.assignment },
           standard: { type: "string", description: w().tool.standard },
@@ -833,14 +865,15 @@ export const register: Register = (on, options) => {
   on("prompt.compose", async ($, e, next) => {
     const r = await next(e)
     const me = office.me
-    if (me === undefined || office.org.ceo === undefined) return r
+    // A teammate's prompt is its own, not this session's.
+    if (me === undefined || office.org.ceo === undefined || e.traits.includes("teammate")) return r
     const now = Date.now()
     const snaps = [me, ...office.others]
     const rank = rankOf(me.sessionId, office.org, chiefsOf(snaps, now, office.org))
     const peers = await readJsonDir<unknown>($, office.sessions)
     const text = roleSectionOf(rank, me, snaps, office.org, peers, now)
     if (text === undefined) return r
-    return { sections: [...r.sections, { id: "crab-office-rank", text, scope: "session" as const }] }
+    return { sections: [...r.sections, { id: "crab-office:rank", text, scope: "session" as const }] }
   })
 
   on("turn.start", ($, e, next) => {
@@ -884,8 +917,10 @@ export const register: Register = (on, options) => {
   // by the name or socket it was sent to.
   on("session.send", async ($, e, next) => {
     const r = await next(e)
-    // A delivery office_board made itself is on the board already.
-    if (office.me !== undefined && r.isDelivered && e.origin.kind === "model") {
+    // A delivery office_board made itself is on the board already; another
+    // plugin's is not.
+    const isOurs = e.origin.kind === "plugin" && e.origin.name === "crab-office"
+    if (office.me !== undefined && r.isDelivered && !isOurs) {
       const peer = peerOf(await readJsonDir<unknown>($, office.sessions), e.to)
       messageSent(office.me, e.agentId, e.to, e.text, Date.now(), peer?.sessionId)
       changed($)
@@ -1022,7 +1057,9 @@ export const register: Register = (on, options) => {
     }
     if (arg.startsWith("say")) return { text: await say($, args.slice(3)) }
     const appointing = parseAppoint(args)
-    if (appointing !== undefined) return { text: await appoint($, appointing) }
+    // A person appoints: the prompt box, or the person's own remote client.
+    const isPerson = e.origin.kind === "composer" || e.origin.kind === "bridge"
+    if (appointing !== undefined) return { text: isPerson ? await appoint($, appointing) : w().notByPerson }
     try {
       await $.ui.open({
         id: PANE,

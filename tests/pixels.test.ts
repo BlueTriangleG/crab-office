@@ -395,3 +395,18 @@ test("a board with more lines than it shows has a way back and a way forward", a
   const newest = office({ ...company, boardView: { first: 23, last: 30, total: 30 } }, 60, 0)
   expect(newest.pagers.map((p) => p.dir)).toEqual(["older"])
 })
+
+test("the CEO's top hat stands out from the floor, at work or at rest", async () => {
+  const lum = (hex: string | undefined) => {
+    const n = parseInt((hex ?? "#000000").slice(1), 16)
+    return 0.3 * (n >> 16) + 0.59 * ((n >> 8) & 255) + 0.11 * (n & 255)
+  }
+  for (const look of ["idle", "editing"]) {
+    const band: Company = { rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[{ ...seat("s", "ceo", look), hat: "ceo" }]] }] }
+    const drawn = office(band, 40, 0)
+    const at = drawn.seats[0]!
+    const floor = lum(drawn.cells[at.cy]![at.cx]!.fg)
+    const hat = drawn.cells[at.cy]!.slice(at.cx + 1, at.cx + 7).flatMap((c) => [c.fg, c.bg])
+    expect(hat.some((c) => c !== undefined && Math.abs(lum(c) - floor) > 60)).toBe(true)
+  }
+})

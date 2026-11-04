@@ -762,7 +762,9 @@ export type Detail = { title: string; where: string; state: string; color: strin
 const DETAIL_MAX = 160
 
 // `snaps`, the company, so a 大部长's card names it as the drawing does.
-const isLive = (j: Job) => j.status !== "accepted" && j.status !== "chairman"
+// Open: still with the session or the CEO. A job left to the chairman is
+// closed for them but stays on its cards, where the chairman can find it.
+const isLive = (j: Job) => j.status === "assigned" || j.status === "rejected" || j.status === "reported"
 
 // A session's card lists the open jobs it was given; the CEO's, those it gave.
 export function detailOf(
@@ -782,7 +784,7 @@ export function detailOf(
     ...(tools ? [{ label: label.tools, text: tools }] : []),
     ...(!isLeader && crab.answer ? [{ label: label.back, text: clip(crab.answer, DETAIL_MAX) }] : []),
     ...(isLeader ? jobs : [])
-      .filter((j) => isLive(j) && (org.ceo === snap.sessionId ? j.by === snap.sessionId : j.to === snap.sessionId))
+      .filter((j) => (isLive(j) || j.status === "chairman") && (org.ceo === snap.sessionId ? j.by === snap.sessionId : j.to === snap.sessionId))
       .map((j) => ({ label: label.job, text: `#${j.id} ${clip(j.task, 60)} · ${w().jobStatus[j.status]} · ${elapsed(now - j.since)}` })),
   ]
   return {
@@ -1062,7 +1064,9 @@ export function rosterOf(
 // What a session is handed: the memo, who it is, its colleagues, and how to
 // take it on or pass, through the office_board tool.
 export function handoverOf(memo: Memo, me: Snapshot, snaps: Snapshot[], now: number, org: Org = NONE): string {
-  const how = w().handover[memo.to.kind === "team" ? "team" : memo.to.kind === "all" ? "all" : "open"]
+  // The CEO hands open work out rather than passing it on: there is no next in line.
+  const kind = memo.to.kind === "team" ? "team" : memo.to.kind === "all" ? "all" : org.ceo === me.sessionId ? "ceoOpen" : "open"
+  const how = w().handover[kind]
   return [
     w().handover.head(addresseeOf(memo.to), memo.id),
     memo.text,
