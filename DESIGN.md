@@ -137,7 +137,7 @@ colours, which is all a terminal cell can show.
   manager said nothing; the one crown is the CEO's.
 - **The CEO**: the crown and the title CEO, in an office of its own (CEO 办公室)
   on a row to itself at the very top, its subagents with it and out of its
-  department; the head is what the chairman looks to first. The header leads with its work
+  department, since it is where the chairman looks first. The header leads with its work
   (jobs open, jobs to judge), then names it; a card lists the open jobs its
   session was given, and the CEO's card the jobs it gave. Its appointments,
   jobs, reports and verdicts are lines on the board, with the ✉ on both crabs.
