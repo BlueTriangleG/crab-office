@@ -442,3 +442,10 @@ test("a band's share is plain data: no undefined anywhere, or the engine refuses
   const band: Company = { rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[seat("s", "lead", "idle")]] }] }
   expect(undefinedAt(partOf(band, 0))).toEqual([])
 })
+
+test("a crab with a job title wears it on its name plate", async () => {
+  const band = (s: SeatData): Company => ({ rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[s]] }] })
+  const text = (s: SeatData) => office(band(s), 40, 0).cells.map((l) => l.map((c) => c.ch).join("")).join("\n")
+  expect(text({ ...seat("s", "lead", "idle"), post: "voice" })).toContain("voice")
+  expect(text(seat("s", "lead", "idle"))).not.toContain("voice")
+})

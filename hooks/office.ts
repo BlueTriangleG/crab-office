@@ -583,10 +583,18 @@ function lettersOf(snaps: Snapshot[], now: number): Set<string> {
 
 // A manager with no task yet goes by its worktree's name, so two idle teams of
 // one department can be told apart.
-function teamOf(s: Snapshot, now: number, hat: string | undefined, letters = new Set<string>()): SeatData[] {
+function teamOf(
+  s: Snapshot,
+  now: number,
+  hat: string | undefined,
+  letters = new Set<string>(),
+  titles: Record<string, string> = {},
+): SeatData[] {
   const isGone = isGoneOf(s, now)
-  const [leader, ...crew] = [s.leader, ...s.agents].map((c) => seatOf(c, now, isGone, letters.has(c.id)))
-  if (leader === undefined) return crew
+  const [first, ...crew] = [s.leader, ...s.agents].map((c) => seatOf(c, now, isGone, letters.has(c.id)))
+  if (first === undefined) return crew
+  const post = titles[s.sessionId]
+  const leader = post === undefined ? first : { ...first, post }
   const task = leader.task || s.team || ""
   if (hat === CHIEF) return [{ ...leader, role: CHIEF, task }, ...crew]
   if (hat === CEO) return [{ ...leader, role: CEO, hat: CEO, task }, ...crew]
@@ -668,10 +676,11 @@ export function companyOf(
   snaps: Snapshot[],
   mine: string,
   now: number,
-  desk: { memos: Memo[]; claims: Claim[]; org?: Org; jobs?: Job[] } = { memos: [], claims: [] },
+  desk: { memos: Memo[]; claims: Claim[]; org?: Org; jobs?: Job[]; titles?: Record<string, string> } = { memos: [], claims: [] },
   older = 0,
 ): Company {
   const org = desk.org ?? NONE
+  const titles = desk.titles ?? {}
   const present = snaps.filter(
     (s) => now - s.updatedAt < LEAVE_MS || s.sessionId === mine,
   )
@@ -686,7 +695,7 @@ export function companyOf(
   )
   const hats = hatsOf(present, now, org)
   const letters = lettersOf(present, now)
-  const ceoTeam = ceo === undefined ? undefined : teamOf(ceo, now, hats.get(ceo.sessionId), letters)
+  const ceoTeam = ceo === undefined ? undefined : teamOf(ceo, now, hats.get(ceo.sessionId), letters, titles)
   const top: Room[] =
     ceo === undefined || ceoTeam === undefined
       ? []
@@ -707,7 +716,7 @@ export function companyOf(
       .filter((s) => s.project === project)
       .sort((a, b) => Number(hats.get(b.sessionId) === CHIEF) - Number(hats.get(a.sessionId) === CHIEF) || bySeniority(a, b))
     const here = sessions.findIndex((s) => s.sessionId === mine)
-    const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId), letters))
+    const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId), letters, titles))
     const isCheering = teams.some((team) => team[0]?.finish === "cheer")
     // Signs only where a department has more than one team to tell apart.
     const signs = sessions.length > 1 ? sessions.map((s) => (s.team ? w().teamSign(s.team) : w().hq)) : undefined
@@ -737,12 +746,15 @@ export function companyOf(
   const ranks = ranksOf(present, now, org)
   // A line between two sessions names the sender's too, since a title alone
   // (部长) is one in every session; the session reads its own lines as its own.
-  const across = (n: Note, s: Snapshot): Note =>
-    n.to.id !== undefined && n.to.id !== s.sessionId && present.some((o) => o.sessionId === n.to.id)
-      ? { ...n, from: { ...n.from, name: `${whoOf(s)} ${n.from.name}` } }
-      : n
+  // A session with a job title goes by it alone: it is unique, and short.
+  const across = (n: Note, s: Snapshot): Note => {
+    if (n.to.id === undefined || n.to.id === s.sessionId || !present.some((o) => o.sessionId === n.to.id)) return n
+    const post = titles[s.sessionId]
+    const name = n.from.id === s.sessionId && post !== undefined ? post : `${post ?? whoOf(s)} ${n.from.name}`
+    return { ...n, from: { ...n.from, name } }
+  }
   const all = [
-    ...present.flatMap((s) => (s.board ?? []).map((n) => across(shownNote(n, s, ranks, present), s))),
+    ...present.flatMap((s) => (s.board ?? []).map((n) => across(shownNote(n, s, ranks, present, titles), s))),
     ...memoNotes,
   ].sort((a, b) => a.at - b.at)
   // `older`: how many lines back from the newest the board is paged.
@@ -763,7 +775,7 @@ export function companyOf(
 }
 
 // The strip above the prompt: this session's team on one row of desks.
-export function bandOf(s: Snapshot, snaps: Snapshot[], now: number, org: Org = NONE): Company {
+export function bandOf(s: Snapshot, snaps: Snapshot[], now: number, org: Org = NONE, titles: Record<string, string> = {}): Company {
   return {
     rooms: [
       {
@@ -771,7 +783,7 @@ export function bandOf(s: Snapshot, snaps: Snapshot[], now: number, org: Org = N
         footer: "",
         bare: true,
         flat: true,
-        teams: [teamOf(s, now, hatsOf(snaps, now, org).get(s.sessionId), lettersOf(snaps, now))],
+        teams: [teamOf(s, now, hatsOf(snaps, now, org).get(s.sessionId), lettersOf(snaps, now), titles)],
       },
     ],
     lang: w().lang,
@@ -1064,14 +1076,24 @@ export function subagentBtwOf(crab: Crab, rows: readonly Row[], question: string
 // was written with, before anyone knew who would be 大部长. One sent to another
 // session names that session's crab by its department and team, not by the
 // name SendMessage took (web-app-e0, or a reply's socket).
-function shownNote(n: Note, s: Snapshot, ranks: Map<string, string>, snaps: Snapshot[] = []): Note {
+function shownNote(
+  n: Note,
+  s: Snapshot,
+  ranks: Map<string, string>,
+  snaps: Snapshot[] = [],
+  titles: Record<string, string> = {},
+): Note {
   const shown = (sp: Speaker): Speaker => {
     if (sp.id === s.sessionId) return { ...sp, name: managerTitleOf(s, ranks) }
     const crab = s.agents.find((a) => a.id === sp.id)
     if (crab !== undefined) return { ...sp, name: titleOf(crab.role) }
     const other = snaps.find((o) => o.sessionId === sp.id)
     if (other !== undefined)
-      return { ...sp, name: `${whoOf(other)} ${managerTitleOf(other, ranks)}`, color: colorOf(other.leader) }
+      return {
+        ...sp,
+        name: titles[other.sessionId] ?? `${whoOf(other)} ${managerTitleOf(other, ranks)}`,
+        color: colorOf(other.leader),
+      }
     return CHAIRMAN_NAMES.has(sp.name) ? { ...sp, name: w().chairman } : sp
   }
   return { ...n, from: shown(n.from), to: shown(n.to) }

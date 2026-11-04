@@ -48,8 +48,11 @@ import {
   NO_ORG,
   appointedNote,
   ceoHandoverOf,
+  addressOf,
   dutiesOf,
   labelOf,
+  titleRefusal,
+  titlesOf,
   orgOf,
   parseAppoint,
   prunedRecords,
@@ -97,6 +100,8 @@ const office = {
   // The CEO's jobs as their files come to, and who is responsible for what.
   jobs: [] as Job[],
   duties: {} as Record<string, string>,
+  // Each session's job title (`titles/<writer>.json`), the latest word standing.
+  titles: {} as Record<string, string>,
   watchedAt: 0,
   isDirty: true,
   lastWrite: 0,
@@ -471,14 +476,16 @@ async function tick($: EngineInterface) {
   office.org = org
   office.memos = await readJsonDir<Memo>($, `${office.base}/memos`)
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
-  const [given, reported, judged, duties] = await Promise.all([
+  const [given, reported, judged, duties, titles] = await Promise.all([
     readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
     readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
     readJsonDir<Verdict>($, `${office.base}/verdicts`, JOB_KEEP_MS),
     readJsonDir<Record<string, Duty>>($, `${office.base}/duties`),
+    readJsonDir<Record<string, Duty>>($, `${office.base}/titles`),
   ])
   office.jobs = jobsOf(given, reported, judged)
   office.duties = dutiesOf(duties)
+  office.titles = titlesOf(titles)
   await deliver($, now)
   await handOver($, now)
   await watch($, now)
@@ -568,7 +575,7 @@ async function appoint(
   const peers = await readJsonDir<unknown>($, office.sessions)
   let target = chosen
   if (target === undefined && a.name !== null) {
-    const found = sessionNamed(a.name, snaps, peers, now)
+    const found = sessionNamed(a.name, snaps, peers, now, office.titles)
     if (found.many.length > 1) return w().ambiguous(found.many.map((s) => peerOf(peers, s.sessionId)?.name ?? whoOf(s)))
     // A head is revoked by naming its repository as well as the head.
     target = found.one ?? (a.kind === "head" && a.isOff ? snaps.find((s) => s.project === a.name) : undefined)
@@ -587,7 +594,7 @@ async function appoint(
     by: "chairman",
   }
   await recordAppointment($, record, chairman(), about)
-  return w().appointDone(labelOf(about, peers), titleOf(a.kind === "ceo" ? "ceo" : "chief"), a.isOff)
+  return w().appointDone(labelOf(about, peers, office.titles), titleOf(a.kind === "ceo" ? "ceo" : "chief"), a.isOff)
 }
 
 async function recordAppointment($: EngineInterface, record: Appointment, by: Speaker, about: Snapshot) {
@@ -613,7 +620,7 @@ type BoardInput = {
   agentId?: string
 }
 
-const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint"])
+const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint", "title"])
 
 // The CEO's actions, a head's duties and a session's report: each judged by
 // refusalOf before anything is written, each delivery through the engine's own
@@ -628,9 +635,11 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
   const id = input.assignment?.trim().replace(/^#/, "")
   const job = office.jobs.find((j) => j.id === id)
   let target: Snapshot | undefined
-  if (action === "assign" || action === "duty" || action === "appoint") {
+  // A job title is set on this session itself unless `to` names another.
+  if (action === "title" && !input.to) target = me
+  else if (action === "assign" || action === "duty" || action === "appoint" || action === "title") {
     if (!input.to) return w().tool.needTo
-    const found = sessionNamed(input.to, snaps, peers, now)
+    const found = sessionNamed(input.to, snaps, peers, now, office.titles)
     if (found.many.length > 1) return w().ambiguous(found.many.map(nameOf))
     if (found.one === undefined) return w().nobodyNamed(input.to)
     target = found.one
@@ -643,23 +652,33 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     isSubagent: input.agentId !== undefined,
   })
   if (refusal !== undefined) return refusal
-  if (action === "staff") return staffOf(snaps, me, office.org, office.duties, office.jobs, peers, now).join("\n")
+  if (action === "staff") return staffOf(snaps, me, office.org, office.duties, office.jobs, peers, now, office.titles).join("\n")
   const text = input.text?.trim() ?? ""
   if (action === "appoint" && target !== undefined) {
     const by = { name: titleOf("ceo"), color: LEADER_COLOR, id: me.sessionId }
     const record: Appointment = { kind: "head", project: target.project, sessionId: target.sessionId, at: now, by: "ceo" }
     await recordAppointment($, record, by, target)
     const head = snaps.find((s) => s.sessionId === office.org.heads[target.project])
-    if (head !== undefined && head.sessionId !== target.sessionId) return w().tool.overruled(labelOf(head, peers))
-    return w().appointDone(labelOf(target, peers), titleOf("chief"), false)
+    if (head !== undefined && head.sessionId !== target.sessionId) return w().tool.overruled(labelOf(head, peers, office.titles))
+    return w().appointDone(labelOf(target, peers, office.titles), titleOf("chief"), false)
   }
   if (text === "" && action !== "accept" && action !== "withdraw") return w().tool.empty
+  if (action === "title" && target !== undefined) {
+    const titleRefused = titleRefusal(text, target.sessionId, office.titles, snaps, peers, now)
+    if (titleRefused !== undefined) return titleRefused
+    const file = `${office.base}/titles/${me.sessionId}.json`
+    const mine = await $.fs.read(file).then((s) => JSON.parse(s) as Record<string, Duty>).catch(() => ({}))
+    await $.fs.write(file, JSON.stringify({ ...mine, [target.sessionId]: { text, at: now, by: me.sessionId } }))
+    office.titles = { ...office.titles, [target.sessionId]: text }
+    changed($)
+    return w().tool.titleDone(labelOf(target, peers, office.titles), text)
+  }
   if (action === "duty" && target !== undefined) {
     const file = `${office.base}/duties/${me.sessionId}.json`
     const mine = await $.fs.read(file).then((s) => JSON.parse(s) as Record<string, Duty>).catch(() => ({}))
     await $.fs.write(file, JSON.stringify({ ...mine, [target.sessionId]: { text, at: now, by: me.sessionId } }))
     office.duties = { ...office.duties, [target.sessionId]: text }
-    return w().tool.dutyDone(labelOf(target, peers))
+    return w().tool.dutyDone(labelOf(target, peers, office.titles))
   }
   if (action === "assign" && target !== undefined) {
     const given: Assignment = {
@@ -677,7 +696,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     if (!sent.isDelivered) return w().tool.notDelivered(given.id, sent.reason)
     messageSent(me, input.agentId, nameOf(target), w().jobLine(given.id, given.task), now, target.sessionId)
     changed($)
-    return w().tool.assigned(given.id, labelOf(target, peers))
+    return w().tool.assigned(given.id, labelOf(target, peers, office.titles))
   }
   // Narrows: refusalOf has answered every report, accept and reject without a job.
   if (job === undefined) return w().tool.noJob
@@ -696,7 +715,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     if (!sent.isDelivered) return w().tool.reportHeld(sent.reason)
     messageSent(me, input.agentId, nameOf(ceo), w().reportLine(job.id, text), now, ceo.sessionId)
     changed($)
-    return w().tool.reportedTo(labelOf(ceo, peers))
+    return w().tool.reportedTo(labelOf(ceo, peers, office.titles))
   }
   const ok = action === "accept"
   const isWithdrawn = action === "withdraw"
@@ -826,7 +845,7 @@ export const register: Register = (on, options) => {
         properties: {
           action: {
             type: "string",
-            enum: ["read", "post", "claim", "staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint"],
+            enum: ["read", "post", "claim", "staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint", "title"],
           },
           memo: { type: "string", description: w().tool.memo },
           assignment: { type: "string", description: w().tool.assignment },
@@ -872,7 +891,7 @@ export const register: Register = (on, options) => {
     const snaps = [me, ...office.others]
     const rank = rankOf(me.sessionId, office.org, chiefsOf(snaps, now, office.org))
     const peers = await readJsonDir<unknown>($, office.sessions)
-    const text = roleSectionOf(rank, me, snaps, office.org, peers, now)
+    const text = roleSectionOf(rank, me, snaps, office.org, peers, now, office.titles)
     if (text === undefined) return r
     return { sections: [...r.sections, { id: "crab-office:rank", text, scope: "session" as const }] }
   })
@@ -916,14 +935,24 @@ export const register: Register = (on, options) => {
   // another session, goes up on the shared board once it is delivered. One to
   // another session names that session's crab, found in the engine's register
   // by the name or socket it was sent to.
+  //
+  // A model's SendMessage to a job title, or to CEO, is readdressed to the name
+  // that session goes by now; one to a title nobody at work holds is refused,
+  // never guessed. Every other address passes untouched.
   on("session.send", async ($, e, next) => {
-    const r = await next(e)
+    const me = office.me
+    const peers = await readJsonDir<unknown>($, office.sessions)
+    const now = Date.now()
+    const snaps = me === undefined ? office.others : [me, ...office.others]
+    const routed = e.origin.kind === "model" ? addressOf(e.to, office.titles, office.org, snaps, peers, now) : undefined
+    if (routed?.refusal !== undefined) return { isDelivered: false as const, reason: routed.refusal }
+    const sent = routed?.to === undefined ? e : { ...e, to: routed.to }
+    const r = await next(sent)
     // A delivery office_board made itself is on the board already; another
     // plugin's is not.
     const isOurs = e.origin.kind === "plugin" && e.origin.name === "crab-office"
-    if (office.me !== undefined && r.isDelivered && !isOurs) {
-      const peer = peerOf(await readJsonDir<unknown>($, office.sessions), e.to)
-      messageSent(office.me, e.agentId, e.to, e.text, Date.now(), peer?.sessionId)
+    if (me !== undefined && r.isDelivered && !isOurs) {
+      messageSent(me, e.agentId, sent.to, e.text, now, peerOf(peers, sent.to)?.sessionId)
       changed($)
     }
     return r
@@ -956,7 +985,7 @@ export const register: Register = (on, options) => {
       // the tool description it started with, so one started before an update
       // never learned the CEO's actions from it.
       const rank = rankOf(me.sessionId, office.org, chiefsOf(snaps, now, office.org))
-      const role = roleSectionOf(rank, me, snaps, office.org, await readJsonDir<unknown>($, office.sessions), now)
+      const role = roleSectionOf(rank, me, snaps, office.org, await readJsonDir<unknown>($, office.sessions), now, office.titles)
       return {
         result: [
           inbox.length > 0 ? w().tool.inbox(inbox) : w().tool.noInbox,
@@ -1167,7 +1196,7 @@ export const register: Register = (on, options) => {
         snaps,
         me?.sessionId ?? "",
         now,
-        { memos: office.memos, claims: office.claims, org: office.org, jobs: office.jobs },
+        { memos: office.memos, claims: office.claims, org: office.org, jobs: office.jobs, titles: office.titles },
         office.boardOlder,
       )
       // Paged past the oldest line kept, the count comes back to where it shows.
@@ -1235,7 +1264,7 @@ export const register: Register = (on, options) => {
     if (isQuiet) return next(e)
     const { Box, Text, Client, Input, Button } = $.ui.resolve(e)
     const now = Date.now()
-    const band = bandOf(me, [me, ...office.others], now, office.org)
+    const band = bandOf(me, [me, ...office.others], now, office.org, office.titles)
     const chosen =
       office.selected !== null ? findCrab([me], office.selected) : undefined
     return (

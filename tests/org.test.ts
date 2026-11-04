@@ -1,12 +1,15 @@
 import { expect, test } from "claude-code/testing"
 
-import { LEAVE_MS, chairman, chiefsOf, companyOf, createSnapshot } from "../hooks/office.ts"
+import { LEAVE_MS, chairman, chiefsOf, companyOf, createSnapshot, messageSent } from "../hooks/office.ts"
 import {
   NO_ORG,
   appointedNote,
+  addressOf,
   ceoHandoverOf,
   dutiesOf,
   labelOf,
+  titleRefusal,
+  titlesOf,
   orgOf,
   parseAppoint,
   prunedRecords,
@@ -239,4 +242,65 @@ test("a session is named by its SendMessage name too, since one checkout holds m
   expect(labelOf(a, peers)).not.toBe(labelOf(b, peers))
   // one the register does not know keeps its place alone
   expect(labelOf(a, [])).toBe("web-app 部 · 本部")
+})
+
+const posts = () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0, "docs")
+  const c = createSnapshot("c", "api-server", undefined, T0)
+  const gone = createSnapshot("g", "api-server", undefined, T0, "old")
+  for (const s of [a, b, c]) s.updatedAt = T0 + 10
+  gone.updatedAt = T0 + 10 - LEAVE_MS
+  const snaps = [a, b, c, gone]
+  const peers = [
+    { sessionId: "a", name: "web-app-12", messagingSocketPath: "/tmp/cc-socks/1.sock" },
+    { sessionId: "b", name: "web-app-e0" },
+    { sessionId: "c", name: "api-server-34" },
+  ]
+  const org = orgOf([{ kind: "ceo", sessionId: "a", at: T0, by: "chairman" }], snaps, T0 + 10)
+  const titles = titlesOf([{ b: { text: "voice", at: T0 + 1, by: "b" }, g: { text: "infra", at: T0 + 1, by: "g" } }])
+  return { a, b, c, gone, snaps, peers, org, titles }
+}
+
+test("a job title is one word, the CEO's is reserved, and no two sessions at work share one or a real name", async () => {
+  const { snaps, peers, titles } = posts()
+  const now = T0 + 10
+  expect(titleRefusal("mobile", "c", titles, snaps, peers, now)).toBeUndefined()
+  // its own again, or the title of a session that has left
+  expect(titleRefusal("voice", "b", titles, snaps, peers, now)).toBeUndefined()
+  expect(titleRefusal("infra", "c", titles, snaps, peers, now)).toBeUndefined()
+  for (const bad of ["", "two words", "x".repeat(25), "CEO", "ceo", "Voice", "web-app-e0"])
+    expect(titleRefusal(bad, "c", titles, snaps, peers, now)).toBeDefined()
+})
+
+test("SendMessage to a job title or to CEO reaches its session by the name it has now; a title nobody at work holds is refused, never guessed", async () => {
+  const { b, snaps, peers, org, titles } = posts()
+  const now = T0 + 10
+  expect(addressOf("voice", titles, org, snaps, peers, now)).toEqual({ to: "web-app-e0" })
+  expect(addressOf("Voice", titles, org, snaps, peers, now)).toEqual({ to: "web-app-e0" })
+  expect(addressOf("CEO", titles, org, snaps, peers, now)).toEqual({ to: "web-app-12" })
+  // a real name, a socket or an id is the engine's to deliver
+  for (const real of ["api-server-34", "uds:/tmp/cc-socks/1.sock", "c"]) expect(addressOf(real, titles, org, snaps, peers, now)).toBeUndefined()
+  // nobody by that name at all: the engine says so
+  expect(addressOf("nobody", titles, org, snaps, peers, now)).toBeUndefined()
+  expect(addressOf("infra", titles, org, snaps, peers, now)?.refusal).toBeDefined()
+  expect(addressOf("CEO", titles, NO_ORG, snaps, peers, now)?.refusal).toBeDefined()
+  // its session gone quiet
+  b.updatedAt = now - 60_000
+  expect(addressOf("voice", titles, org, snaps, peers, now)?.refusal).toBeDefined()
+})
+
+test("a job title names its session for assign and shows wherever the session is named", async () => {
+  const { a, b, snaps, peers, org, titles } = posts()
+  const now = T0 + 10
+  expect(sessionNamed("voice", snaps, peers, now, titles).one?.sessionId).toBe("b")
+  expect(labelOf(b, peers, titles)).toContain("voice")
+  expect(staffOf(snaps, a, org, {}, [], peers, now, titles).find((l) => l.includes("docs"))).toContain("voice")
+  const seats = companyOf(snaps, "a", now, { memos: [], claims: [], org, titles }).rooms.flatMap((r) => r.teams.flat())
+  expect(seats.find((s) => s.id === "b")?.post).toBe("voice")
+  // a line between sessions names a titled one by its title
+  messageSent(a, undefined, "web-app-e0", "看一下", now, "b")
+  const line = companyOf(snaps, "a", now, { memos: [], claims: [], org, titles }).board?.at(-1)
+  expect(line?.to.name).toBe("voice")
+  expect(roleSectionOf("staff", b, snaps, org, peers, now, titles)).toContain("title")
 })

@@ -20,6 +20,8 @@ export type SeatData = {
   // Just wrote to another crab, or was written to: a ✉ by its head, across
   // sessions as well as within one.
   letter?: boolean
+  // A session's job title, worn on its name plate in place of its rank's.
+  post?: string
 }
 // Who said a board line; `id` is the crab's, so a click on the line finds it.
 export type Speaker = { name: string; color: string; id?: string }
@@ -547,7 +549,7 @@ function drawSeat(
       labels.push({ ...mark, x: cx + mark.x, y: cy })
   // Left of the head, where only a cheer's spark goes, which keeps its place.
   if (seat.letter && !isGone && seat.finish !== "cheer") labels.push({ x: cx, y: cy, ch: "✉", fg: NAMEPLATE, bold: true })
-  const title = titleOf(seat.role)
+  const title = seat.post ?? titleOf(seat.role)
   const nameColor = isGone ? GONE : body
   if (isSelected) {
     const line = fit(`${title} ${seat.task}`, SEAT_COLS - 1)

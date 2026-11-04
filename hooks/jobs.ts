@@ -51,6 +51,7 @@ export type BoardAction =
   | "reject"
   | "withdraw"
   | "appoint"
+  | "title"
 
 const OPEN = new Set<JobStatus>(["assigned", "rejected", "reported"])
 // What only the CEO's own loop may do: a subagent of the CEO session shares its
@@ -82,6 +83,13 @@ export function refusalOf(
       if (rank !== "ceo") return w().tool.notCeo
       if (job === undefined) return w().tool.noJob
       return OPEN.has(job.status) ? undefined : w().tool.closed
+    case "title":
+      // Its own, from any loop of the session; another's, as a head or the CEO.
+      if (target === undefined || target.sessionId === me) return undefined
+      if (ctx.isSubagent === true) return w().tool.notFromSubagent
+      if (rank === "ceo") return undefined
+      if (rank === "head") return target.project === ctx.myProject ? undefined : w().tool.otherRepo
+      return w().tool.titleOwnOnly
     case "duty":
       if (rank === "staff") return w().tool.notManager
       return rank === "head" && target !== undefined && target.project !== ctx.myProject ? w().tool.otherRepo : undefined

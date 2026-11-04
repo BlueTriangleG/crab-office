@@ -103,7 +103,12 @@ const EN = {
   reportLine: (id: string, text: string) => `reported #${id}: ${text}`,
   verdictLine: (id: string, ok: boolean, note: string) => `${ok ? "accepted" : "sent back"} #${id}${note ? `: ${note}` : ""}`,
   toChairmanToast: (id: string, task: string) => `Job #${id} (${task}) was rejected too many times: it is yours to decide`,
-  named: (who: string, name: string | undefined) => (name ? `${who} (SendMessage: ${name})` : who),
+  named: (who: string, name: string | undefined, title?: string) => {
+    const more = [title ? `title: ${title}` : "", name ? `SendMessage: ${name}` : ""].filter((x) => x !== "")
+    return more.length > 0 ? `${who} (${more.join(", ")})` : who
+  },
+  titleHelp: (title: string | undefined) =>
+    `Your job title: ${title ?? "none yet"}. Set it with office_board title (text: one word, no spaces); SendMessage to a job title, or to CEO, reaches whoever holds it now.`,
   roleCeo: [
     "## crab-office: you are the CEO",
     "The chairman (the user) has made you CEO of the office: every Claude Code session open on this machine works for you.",
@@ -147,8 +152,8 @@ const EN = {
   ceoWaiting: "Reported and waiting for your verdict:",
   waitingLine: (id: string, task: string, who: string) => `- #${id} ${task} (from ${who})`,
   ceoHandoverTail: "office_board staff gives this list again any time.",
-  staffMore: (name: string | undefined, duty: string | undefined, jobs: string[]) =>
-    `${name ? ` · SendMessage: ${name}` : ""}${duty ? ` · duty: ${duty}` : ""}${jobs.length > 0 ? ` · open: ${jobs.map((id) => `#${id}`).join(" ")}` : ""}`,
+  staffMore: (name: string | undefined, duty: string | undefined, jobs: string[], title?: string) =>
+    `${title ? ` · title: ${title}` : ""}${name ? ` · SendMessage: ${name}` : ""}${duty ? ` · duty: ${duty}` : ""}${jobs.length > 0 ? ` · open: ${jobs.map((id) => `#${id}`).join(" ")}` : ""}`,
   appointedLine: (title: string, isRevoked: boolean) => (isRevoked ? `removed as ${title}` : `appointed ${title}`),
   boardLine: (
     time: string,
@@ -244,7 +249,7 @@ const EN = {
   // the office_board tool, which the model reads
   tool: {
     description:
-      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=withdraw takes an open job back (assignment); action=duty writes what a session is responsible for (to, text); action=appoint makes a session its repository's head (to).",
+      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=withdraw takes an open job back (assignment); action=duty writes what a session is responsible for (to, text); action=appoint makes a session its repository's head (to); action=title gives a session a one-word job title (to, text; left out, your own), and SendMessage to a job title or to CEO reaches whoever holds it.",
     memo: "the id of the memo to claim",
     text: "what to write: the post, the job (assign), the result (report), a note or reason (accept, reject), or the duty",
     assignment: "the job's id (report, accept, reject)",
@@ -260,6 +265,15 @@ const EN = {
     notReported: "Nothing has been reported on that job yet",
     otherRepo: "A head writes duties for its own repository only",
     needTo: "Say which session with `to`",
+    titleOwnOnly: "You can set your own job title; another session's is for the CEO or its head",
+    badTitle: (max: number) => `A job title is one word of 1 to ${max} characters, no spaces`,
+    reservedTitle: "CEO is the CEO's address and cannot be a job title",
+    titleIsName: (t: string) => `${t} is a session's own name already`,
+    titleTaken: (t: string, who: string) => `${who} holds the title ${t}; choose another`,
+    titleAway: (t: string) => `Whoever holds the title ${t} is not at work now, so nothing was sent`,
+    titleShared: (t: string) => `More than one session at work holds the title ${t}, so nothing was sent; send to its SendMessage name`,
+    noCeoAddress: "There is no CEO now, so nothing was sent",
+    titleDone: (who: string, t: string) => `${who} is ${t} now; SendMessage to ${t} reaches it.`,
     dutyDone: (who: string) => `Duty written for ${who}.`,
     assigned: (id: string, who: string) => `Job #${id} given to ${who}; it sees it at its next tool call.`,
     notDelivered: (id: string, reason: string) => `Job #${id} is recorded but did not reach the session: ${reason}`,
@@ -394,7 +408,12 @@ const ZH: Words = {
   reportLine: (id, text) => `交差 #${id}：${text}`,
   verdictLine: (id, ok, note) => `${ok ? "验收通过" : "退回"} #${id}${note ? `：${note}` : ""}`,
   toChairmanToast: (id, task) => `#${id}（${task}）退回次数太多，交给你决定`,
-  named: (who, name) => (name ? `${who}（SendMessage：${name}）` : who),
+  named: (who, name, title) => {
+    const more = [title ? `职位：${title}` : "", name ? `SendMessage：${name}` : ""].filter((x) => x !== "")
+    return more.length > 0 ? `${who}（${more.join("，")}）` : who
+  },
+  titleHelp: (title) =>
+    `你的职位名：${title ?? "还没有"}。用 office_board title（text：一个词，不含空格）设置；用 SendMessage 发给某个职位名或 CEO，会送到当前担任的会话。`,
   roleCeo: [
     "## 螃蟹办公室：你是 CEO",
     "董事长（用户）任命你为公司的 CEO：这台机器上开着的 Claude Code 会话都归你管。",
@@ -438,8 +457,8 @@ const ZH: Words = {
   ceoWaiting: "已经交差、等你验收的：",
   waitingLine: (id, task, who) => `- #${id} ${task}（${who} 交的）`,
   ceoHandoverTail: "随时用 office_board staff 再看这张表。",
-  staffMore: (name, duty, jobs) =>
-    `${name ? ` · SendMessage：${name}` : ""}${duty ? ` · 职责：${duty}` : ""}${jobs.length > 0 ? ` · 在办：${jobs.map((id) => `#${id}`).join(" ")}` : ""}`,
+  staffMore: (name, duty, jobs, title) =>
+    `${title ? ` · 职位：${title}` : ""}${name ? ` · SendMessage：${name}` : ""}${duty ? ` · 职责：${duty}` : ""}${jobs.length > 0 ? ` · 在办：${jobs.map((id) => `#${id}`).join(" ")}` : ""}`,
   appointedLine: (title, isRevoked) => `${isRevoked ? "撤销" : "任命为"}${/^[A-Za-z]/.test(title) ? ` ${title}` : title}`,
   boardLine: (time, who, from, to, text) =>
     `${time} ${who} 的${from} → ${to}：${text}`,
@@ -504,7 +523,7 @@ const ZH: Words = {
   sayHint: (hasCeo) => `@组名、@部门 或 @全体；不写 @ 就${hasCeo ? "交给 CEO" : "谁先空谁接"}`,
   tool: {
     description:
-      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=withdraw 撤回还没结束的活（assignment）；action=duty 写某个会话负责什么（to、text）；action=appoint 任命某个会话为它所在 repo 的部长（to）。",
+      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=withdraw 撤回还没结束的活（assignment）；action=duty 写某个会话负责什么（to、text）；action=appoint 任命某个会话为它所在 repo 的部长（to）；action=title 给会话取一个一词的职位名（to、text；不写 to 就是你自己），用 SendMessage 发给职位名或 CEO 会送到当前担任的会话。",
     memo: "要认领的 memo id",
     text: "要写的内容：白板上的话、派的活（assign）、结果（report）、验收意见或退回原因（accept、reject）、职责（duty）",
     assignment: "活的编号（report、accept、reject）",
@@ -520,6 +539,15 @@ const ZH: Words = {
     notReported: "这件活还没有交差",
     otherRepo: "部长只能给本 repo 的会话写职责",
     needTo: "用 to 指定是哪个会话",
+    titleOwnOnly: "你只能设自己的职位名；别的会话的由 CEO 或它的部长设",
+    badTitle: (max) => `职位名是一个词，1 到 ${max} 个字符，不含空格`,
+    reservedTitle: "CEO 是 CEO 的地址，不能当职位名",
+    titleIsName: (t) => `${t} 已经是某个会话的真实名字`,
+    titleTaken: (t, who) => `${who} 已经是 ${t}，换一个`,
+    titleAway: (t) => `担任 ${t} 的会话现在不在岗，没有发出`,
+    titleShared: (t) => `不止一个在岗会话叫 ${t}，没有发出；请用它的 SendMessage 名字`,
+    noCeoAddress: "现在没有 CEO，没有发出",
+    titleDone: (who, t) => `${who} 现在是 ${t}，用 SendMessage 发给 ${t} 就能找到它。`,
     dutyDone: (who) => `已经给 ${who} 写好职责。`,
     assigned: (id, who) => `#${id} 已派给 ${who}，它下次调用工具时就会看到。`,
     notDelivered: (id, reason) => `#${id} 已记下，但没有送到那个会话：${reason}`,

@@ -122,3 +122,16 @@ test("the CEO's subagents cannot act as the CEO", async () => {
   expect(refusalOf("report", "b", "staff", { ...ctx, job: { ...reported, status: "assigned" } })).toBeUndefined()
   expect(refusalOf("staff", "a", "ceo", ctx)).toBeUndefined()
 })
+
+test("a session sets its own job title; a head its repository's; the CEO anyone's", async () => {
+  const b = createSnapshot("b", "web-app", undefined, T0, "docs")
+  const c = createSnapshot("c", "api-server", undefined, T0)
+  const ctx = { myProject: "web-app", org: NO_ORG }
+  expect(refusalOf("title", "b", "staff", ctx)).toBeUndefined()
+  expect(refusalOf("title", "b", "staff", { ...ctx, target: b })).toBeUndefined()
+  expect(refusalOf("title", "x", "staff", { ...ctx, target: b })).toBeDefined()
+  expect(refusalOf("title", "h", "head", { ...ctx, target: b })).toBeUndefined()
+  expect(refusalOf("title", "h", "head", { ...ctx, target: c })).toBeDefined()
+  expect(refusalOf("title", "a", "ceo", { ...ctx, target: c })).toBeUndefined()
+  expect(refusalOf("title", "a", "ceo", { ...ctx, target: c, isSubagent: true })).toBeDefined()
+})
