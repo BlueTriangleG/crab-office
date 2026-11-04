@@ -212,6 +212,34 @@ is refused with that session's SendMessage name, and nothing is written; a
 `colleagues` action that listed the sessions went with it, since ListAgents
 does that.
 
+## Meetings
+
+When three or more sessions must agree on something, one SendMessage at a time
+splits the talk: B's answer to A never reaches C unless B copies C, and a
+model does not copy everyone every time. Any session may call a meeting
+(`office_board meet`: a one-word name, the colleagues, the topic and the result
+wanted); any member brings more in with the same name. A word to the whole
+meeting is a SendMessage to the meeting's name, which a `tool.call` hook passes
+to every other member through `$.session.send` and answers itself, as
+SendMessage answers (`{ success, message }`), since the call names no session;
+the input is never changed, which auto mode refuses. To one colleague alone, a
+session writes to its own name as ever. The members settle the result; whoever
+called the meeting closes it (`office_board close` with the conclusion), which
+goes to every member and onto the board, and the instructions ask it to close
+only once everyone agrees.
+
+Unlike a post, a meeting's words wake their readers, so code ends it, not the
+models: 15 minutes with nobody speaking, or one member left in the company, and
+it is over with no conclusion (its caller's tick closes it and says so on the
+board); after 30 words it passes on no more and waits for its conclusion. A
+meeting's name means nothing else: not `CEO`, no session's name or title, no
+live meeting's. A meeting is a file per meeting and member,
+`meetings/<id>.<sessionId>.json`, one writer each: the caller's opens and
+closes it, each member's holds whom it brought and how many words it said.
+While one is live its members sit in a room of their own at the top of the
+office, under the meeting's name and topic, each team under its department's
+sign, and not at their desks; a session at two sits at the earlier.
+
 ## The CEO and the heads
 
 The chairman appoints a CEO (a card's button, or `/office ceo @<who>|off`); the
@@ -229,10 +257,14 @@ session leaves the company; a CEO that lapses is said in a toast.
 
 Each session is told its rank in its system prompt (`prompt.compose`, after
 the cache boundary): the CEO how to run the office, a head what it may do,
-everyone else who the CEO and its head are and how to report. Only who holds
-which post goes in, so the text moves only when an appointment does. A newly
-appointed CEO is handed, when free, the staff list and the reports waiting.
-With a CEO, a memo for whoever is free goes to the CEO alone.
+everyone else who the CEO and its head are and how to report; and every
+session, under a CEO or not, that it goes to a colleague directly with
+SendMessage, may have a colleague review its work before reporting, and may
+call a meeting. Only who holds which post goes in, so the text moves only when
+an appointment does. A newly appointed CEO is handed, when free, the staff list
+and the reports waiting. The CEO is the last check, not the hand-out: a memo
+for whoever is free goes to whoever is free, CEO or not, and sessions ask each
+other and meet without routing through it.
 
 The CEO runs the work through `office_board`, each action judged by
 `refusalOf` before anything is written: `staff` (who is at work, their

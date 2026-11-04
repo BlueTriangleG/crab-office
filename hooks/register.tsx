@@ -64,6 +64,8 @@ import {
 import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
 import type { Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
+import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
+import type { Meeting, MeetingFile } from "./meetings.ts"
 import { setLanguage, w } from "./words.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
@@ -76,7 +78,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-04.2"
+const BUILD = "2026-11-04.3"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -104,6 +106,10 @@ const office = {
   duties: {} as Record<string, string>,
   // Each session's job title (`titles/<writer>.json`), the latest word standing.
   titles: {} as Record<string, string>,
+  // Every session's meeting files (`meetings/<id>.<writer>.json`), and the
+  // meetings they make together.
+  meetingFiles: [] as MeetingFile[],
+  meetings: [] as Meeting[],
   watchedAt: 0,
   isDirty: true,
   lastWrite: 0,
@@ -447,7 +453,7 @@ async function deliver($: EngineInterface, now: number) {
   const me = office.me
   if (me === undefined) return
   const snaps = [me, ...office.others]
-  const memo = memoFor(me, snaps, office.memos, office.claims, now, office.org.ceo)
+  const memo = memoFor(me, snaps, office.memos, office.claims, now)
   if (memo === undefined) return
   // Whoever is typing in this session is at work in it, waiting or not.
   if ((await $.prompt.read()).text.trim() !== "") return
@@ -478,16 +484,20 @@ async function tick($: EngineInterface) {
   office.org = org
   office.memos = await readJsonDir<Memo>($, `${office.base}/memos`)
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
-  const [given, reported, judged, duties, titles] = await Promise.all([
+  const [given, reported, judged, duties, titles, meetingFiles] = await Promise.all([
     readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
     readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
     readJsonDir<Verdict>($, `${office.base}/verdicts`, JOB_KEEP_MS),
     readJsonDir<Record<string, Duty>>($, `${office.base}/duties`),
     readJsonDir<Record<string, Duty>>($, `${office.base}/titles`),
+    readJsonDir<MeetingFile>($, `${office.base}/meetings`, JOB_KEEP_MS),
   ])
   office.jobs = jobsOf(given, reported, judged)
   office.duties = dutiesOf(duties)
   office.titles = titlesOf(titles)
+  office.meetingFiles = meetingFiles
+  office.meetings = meetingsOf(meetingFiles, [me, ...office.others], now)
+  await adjourn($, now)
   await deliver($, now)
   await handOver($, now)
   await watch($, now)
@@ -612,8 +622,125 @@ async function recordAppointment($: EngineInterface, record: Appointment, by: Sp
   $.ui.invalidate("ui.render")
 }
 
+// A meeting this session called that ended with nobody's word (gone quiet, or
+// down to one) is closed in its file, once, with a line on the board.
+async function adjourn($: EngineInterface, now: number) {
+  const me = office.me
+  if (me === undefined) return
+  for (const m of office.meetings) {
+    if (m.by !== me.sessionId || (m.status !== "idle" && m.status !== "empty")) continue
+    await writeMeeting($, m.id, (f) => ({ ...f, close: { at: now, conclusion: "" } }))
+    messageSent(me, undefined, w().meetingTask(m.name), w().meetingEndedLine(m.status === "idle"), now)
+    changed($)
+  }
+}
+
+// This session's own file of a meeting, changed and written back, and the
+// meetings worked out again at once so the next word sees it.
+async function writeMeeting($: EngineInterface, id: string, change: (f: MeetingFile) => MeetingFile) {
+  const me = office.me
+  if (me === undefined) return
+  const held = office.meetingFiles.find((f) => f.id === id && f.writer === me.sessionId)
+  const next = change(held ?? { id, writer: me.sessionId, members: [], said: 0, lastAt: 0 })
+  await $.fs.write(`${office.base}/meetings/${id}.${me.sessionId}.json`, JSON.stringify(next))
+  office.meetingFiles = [...office.meetingFiles.filter((f) => f !== held), next]
+  office.meetings = meetingsOf(office.meetingFiles, [me, ...office.others], Date.now())
+}
+
+async function sendEach($: EngineInterface, to: Snapshot[], text: string, peers: unknown[]) {
+  const sent = await Promise.all(to.map(async (s) => ({ s, r: await $.session.send({ to: { sessionId: s.sessionId }, text }) })))
+  const label = (s: Snapshot) => labelOf(s, peers, office.titles)
+  return { heard: sent.filter((x) => x.r.isDelivered).map((x) => label(x.s)), missed: sent.filter((x) => !x.r.isDelivered).map((x) => label(x.s)) }
+}
+
+// Every other member still in the company: one a moment slow to write its
+// snapshot is still at the table.
+function tableOf(m: Meeting, me: Snapshot, now: number): Snapshot[] {
+  return office.others.filter((s) => m.members.includes(s.sessionId) && s.ended !== true && now - s.updatedAt < LEAVE_MS && s.sessionId !== me.sessionId)
+}
+
+async function invite($: EngineInterface, m: Meeting, to: Snapshot[], peers: unknown[]) {
+  const snaps = office.me === undefined ? office.others : [office.me, ...office.others]
+  const label = (s: Snapshot) => labelOf(s, peers, office.titles)
+  const caller = snaps.find((s) => s.sessionId === m.by)
+  const seated = m.members.flatMap((id) => snaps.filter((s) => s.sessionId === id)).map(label)
+  return sendEach($, to, w().meetingInvite(m.name, m.topic, caller === undefined ? m.by : label(caller), seated), peers)
+}
+
+// A SendMessage to a meeting's name: passed on to every other member, and
+// answered here as SendMessage answers, since the call names no session. The
+// input is never changed, which auto mode refuses.
+async function speak($: EngineInterface, m: Meeting, me: Snapshot, text: string, agentId: string | undefined, peers: unknown[]) {
+  const refused = speakRefusal(m, me.sessionId)
+  if (refused !== undefined) return { deny: refused }
+  const now = Date.now()
+  const isLast = m.said + 1 >= MEETING.saidMax
+  await writeMeeting($, m.id, (f) => ({ ...f, said: f.said + 1, lastAt: now }))
+  const envelope = w().meetingEnvelope(m.name, labelOf(me, peers, office.titles), text, isLast ? { max: MEETING.saidMax } : undefined)
+  const sent = await sendEach($, tableOf(m, me, now), envelope, peers)
+  messageSent(me, agentId, w().meetingTask(m.name), text, now)
+  changed($)
+  const message = `${w().tool.meetingSent(m.name, sent.heard, sent.missed)}${isLast ? ` ${w().tool.meetingFull(m.name, MEETING.saidMax)}` : ""}`
+  return { result: { success: true, message } }
+}
+
+// office_board meet and close: any session calls a meeting or brings colleagues
+// to one it is at, and whoever called it closes it, the conclusion going to
+// everyone at the table.
+async function meet($: EngineInterface, input: BoardInput, me: Snapshot, now: number): Promise<string> {
+  const name = input.meeting?.trim() ?? ""
+  if (name === "") return w().tool.needMeeting
+  const snaps = [me, ...office.others]
+  const peers = await readJsonDir<unknown>($, office.sessions)
+  const label = (s: Snapshot) => labelOf(s, peers, office.titles)
+  const m = meetingNamed(name, office.meetings)
+  const text = input.text?.trim() ?? ""
+  if (input.action === "close") {
+    if (m === undefined) return w().tool.noMeeting(name)
+    const refused = closeRefusal(m, me.sessionId)
+    if (refused !== undefined) return refused
+    await writeMeeting($, m.id, (f) => ({ ...f, close: { at: now, conclusion: text } }))
+    const told = await sendEach($, tableOf(m, me, now), w().meetingClosedEnvelope(m.name, text), peers)
+    messageSent(me, input.agentId, w().meetingTask(m.name), w().closeLine(text), now)
+    changed($)
+    return w().tool.meetClosed(m.name, told.heard)
+  }
+  const found: Snapshot[] = []
+  for (const n of (input.to ?? "").split(/[,，、]/).map((x) => x.trim()).filter(Boolean)) {
+    const one = sessionNamed(n, snaps, peers, now, office.titles)
+    if (one.many.length > 1) return w().ambiguous(one.many.map((s) => peerOf(peers, s.sessionId)?.name ?? whoOf(s)))
+    if (one.one === undefined) return w().nobodyNamed(n)
+    if (one.one.sessionId !== me.sessionId && !found.includes(one.one)) found.push(one.one)
+  }
+  if (m !== undefined && isLiveMeeting(m)) {
+    if (!m.members.includes(me.sessionId)) return w().tool.notInMeeting(m.name)
+    const fresh = found.filter((s) => !m.members.includes(s.sessionId))
+    if (fresh.length === 0) return w().tool.alreadyIn(m.name)
+    await writeMeeting($, m.id, (f) => ({ ...f, members: [...f.members, ...fresh.map((s) => s.sessionId)], lastAt: now }))
+    const sent = await invite($, office.meetings.find((x) => x.id === m.id) ?? m, fresh, peers)
+    messageSent(me, input.agentId, w().meetingTask(m.name), w().meetAddLine(fresh.map(label)), now)
+    changed($)
+    return w().tool.meetAdded(m.name, sent.heard, sent.missed)
+  }
+  if (found.length === 0) return w().tool.needTo
+  if (text === "") return w().tool.empty
+  const refused = meetingNameRefusal(name, office.meetings, office.titles, snaps, peers, now)
+  if (refused !== undefined) return refused
+  const id = idOf(now)
+  const members = [me.sessionId, ...found.map((s) => s.sessionId)]
+  await writeMeeting($, id, (f) => ({ ...f, members, lastAt: now, open: { name, topic: text, at: now } }))
+  const opened = office.meetings.find((x) => x.id === id)
+  // Narrows: writeMeeting has just put it among the meetings.
+  if (opened === undefined) return w().tool.notReady
+  const sent = await invite($, opened, found, peers)
+  messageSent(me, input.agentId, w().meetingTask(name), w().meetLine(text), now)
+  changed($)
+  return w().tool.meetOpened(name, sent.heard, sent.missed)
+}
+
 type BoardInput = {
   action?: string
+  meeting?: string
   memo?: string
   text?: string
   to?: string
@@ -848,8 +975,9 @@ export const register: Register = (on, options) => {
         properties: {
           action: {
             type: "string",
-            enum: ["read", "post", "claim", "staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint", "title"],
+            enum: ["read", "post", "claim", "meet", "close", "staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint", "title"],
           },
+          meeting: { type: "string", description: w().tool.meeting },
           memo: { type: "string", description: w().tool.memo },
           assignment: { type: "string", description: w().tool.assignment },
           standard: { type: "string", description: w().tool.standard },
@@ -883,19 +1011,19 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // Each session's rank goes into its system prompt after the cache boundary; the
-  // text moves only when an appointment does (roleSectionOf).
+  // Each session's rank, and how it works with colleagues, goes into its system
+  // prompt after the cache boundary; the text moves only when an appointment
+  // or a title does (roleSectionOf).
   on("prompt.compose", async ($, e, next) => {
     const r = await next(e)
     const me = office.me
     // A teammate's prompt is its own, not this session's.
-    if (me === undefined || office.org.ceo === undefined || e.traits.includes("teammate")) return r
+    if (me === undefined || e.traits.includes("teammate")) return r
     const now = Date.now()
     const snaps = [me, ...office.others]
     const rank = rankOf(me.sessionId, office.org, chiefsOf(snaps, now, office.org))
     const peers = await readJsonDir<unknown>($, office.sessions)
     const text = roleSectionOf(rank, me, snaps, office.org, peers, now, office.titles)
-    if (text === undefined) return r
     return { sections: [...r.sections, { id: "crab-office:rank", text, scope: "session" as const }] }
   })
 
@@ -960,9 +1088,12 @@ export const register: Register = (on, options) => {
   // every other address passes untouched.
   on("tool.call", { tool: "SendMessage" }, async ($, e, next) => {
     const me = office.me
-    const to = (e as unknown as { to?: unknown }).to
+    const { to, message } = e as unknown as { to?: unknown; message?: unknown }
     if (me === undefined || typeof to !== "string") return next(e)
     const peers = await readJsonDir<unknown>($, office.sessions)
+    // A meeting's name, unless a session goes by it now.
+    const m = peerOf(peers, to) === undefined ? meetingNamed(to, office.meetings) : undefined
+    if (m !== undefined) return speak($, m, me, typeof message === "string" ? message : String(message ?? ""), e.agentId, peers)
     const routed = addressOf(to, office.titles, office.org, [me, ...office.others], peers, Date.now())
     if (routed?.refusal !== undefined) return { deny: routed.refusal }
     return routed?.to === undefined ? next(e) : { deny: w().tool.titleNow(to, routed.to) }
@@ -1000,7 +1131,7 @@ export const register: Register = (on, options) => {
         result: [
           inbox.length > 0 ? w().tool.inbox(inbox) : w().tool.noInbox,
           w().tool.latest(boardOf(snaps, now, undefined, office.org)),
-          ...(role === undefined ? [] : [role]),
+          role,
         ].join("\n\n"),
       }
     }
@@ -1025,6 +1156,7 @@ export const register: Register = (on, options) => {
       const heard = target === undefined ? w().tool.heardByChairman : w().tool.heardBy(reach)
       return { result: `${w().tool.written(heard)}${nudge}` }
     }
+    if (input.action === "meet" || input.action === "close") return { result: `${await meet($, input, me, now)}${nudge}` }
     return { result: `${await manage($, input, me, now)}${nudge}` }
   })
 
@@ -1206,7 +1338,7 @@ export const register: Register = (on, options) => {
         snaps,
         me?.sessionId ?? "",
         now,
-        { memos: office.memos, claims: office.claims, org: office.org, jobs: office.jobs, titles: office.titles },
+        { memos: office.memos, claims: office.claims, org: office.org, jobs: office.jobs, titles: office.titles, meetings: office.meetings },
         office.boardOlder,
       )
       // Paged past the oldest line kept, the count comes back to where it shows.
@@ -1235,7 +1367,7 @@ export const register: Register = (on, options) => {
               onSubmit={() => undefined}
             />
             {/* Whom a line can call, in one line: a tag for every team ran to three rows. */}
-            <Text dimColor>{w().sayHint(office.org.ceo !== undefined)}</Text>
+            <Text dimColor>{w().sayHint}</Text>
           </Box>
           {note !== undefined && noteCard({ Box, Text }, note)}
           {chosen !== undefined &&

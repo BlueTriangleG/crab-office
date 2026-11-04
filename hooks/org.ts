@@ -226,7 +226,8 @@ export function staffOf(
 
 // What each session is told it is, in its system prompt: who holds which post
 // and nothing that moves (no status, no time), so the text, and the prompt's
-// cache, hold until an appointment changes. With no CEO nothing is said.
+// cache, hold until an appointment changes. Every session, under a CEO or not,
+// is told to go to a colleague directly and how to meet.
 export function roleSectionOf(
   rank: Rank,
   me: Snapshot,
@@ -235,10 +236,10 @@ export function roleSectionOf(
   peers: unknown[],
   now: number,
   titles: Record<string, string> = {},
-): string | undefined {
+): string {
   const ceo = snaps.find((s) => s.sessionId === org.ceo)
-  if (ceo === undefined) return undefined
-  const post = w().titleHelp(titles[me.sessionId])
+  const post = `${w().roleFlat}\n${w().titleHelp(titles[me.sessionId])}`
+  if (ceo === undefined) return post
   if (rank === "ceo") return `${w().roleCeo}\n${post}`
   if (rank === "head") return `${w().roleHead(me.project, labelOf(ceo, peers, titles))}\n${post}`
   const chiefs = chiefsOf(snaps, now, org)

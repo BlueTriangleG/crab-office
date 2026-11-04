@@ -552,21 +552,6 @@ test("the chairman's instructions reach only the session they name, once", async
   expect(promptOf(`The crab-office plugin sent a message: ${orderPromptOf("再跑一遍测试")}`)).toBe("再跑一遍测试")
 })
 
-test("with a CEO, a memo for whoever is free goes to the CEO alone", async () => {
-  const hq = createSnapshot("a", "web-app", undefined, T0)
-  const wt = createSnapshot("b", "web-app", undefined, T0, "docs")
-  const snaps = [hq, wt]
-  const now = T0 + 100
-  for (const s of snaps) s.updatedAt = now
-  const open = parseSay("看一下首页", "o", T0 + 50)!
-  const all = parseSay("@全体 周五发版", "all", T0 + 50)!
-  expect(memoFor(wt, snaps, [open], [], now, "b")?.id).toBe("o")
-  expect(memoFor(hq, snaps, [open], [], now, "b")).toBeUndefined()
-  expect(snaps.map((s) => memoFor(s, snaps, [all], [], now, "b")?.id)).toEqual(["all", "all"])
-  // with no CEO, the first free by id takes it, as before
-  expect(memoFor(hq, snaps, [open], [], now)?.id).toBe("o")
-})
-
 const working = () => {
   const a = createSnapshot("a", "web-app", undefined, T0)
   const b = createSnapshot("b", "web-app", undefined, T0, "docs")
@@ -606,12 +591,12 @@ test("a card lists the jobs given to its session, the CEO's card all it gave", a
   expect(rows(c).map((r) => r.text.split(" ")[0])).toEqual(["#j1", "#j2"])
 })
 
-test("the CEO is handed an open memo to hand out, not to pass on", async () => {
+test("open work goes to whoever is free, the CEO taking it or passing it on like anyone", async () => {
   const { c, snaps, org } = working()
   const open = parseSay("看一下首页", "o", T0 + 50)!
   const text = handoverOf(open, c, snaps, T0 + 100, org)
-  expect(text).toContain("assign")
-  expect(text).not.toContain("下一位同事")
+  expect(text).toContain("下一位同事")
+  expect(text).not.toContain("assign")
 })
 
 test("a job left to the chairman stays on its cards", async () => {

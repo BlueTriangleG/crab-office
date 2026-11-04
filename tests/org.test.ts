@@ -167,7 +167,10 @@ const company = () => {
 
 test("each rank is told who the CEO is and what it may do", async () => {
   const { a, b, c, snaps, org, peers } = company()
-  expect(roleSectionOf("staff", b, snaps, NO_ORG, peers, T0 + 10)).toBeUndefined()
+  // with no CEO, still told to go to a colleague directly, and how to meet
+  const flat = roleSectionOf("staff", b, snaps, NO_ORG, peers, T0 + 10) ?? ""
+  expect(flat).toContain("SendMessage")
+  expect(flat).toContain("meet")
   const ceo = roleSectionOf("ceo", c, snaps, org, peers, T0 + 10) ?? ""
   expect(ceo).toContain("assign")
   expect(ceo).toContain("accept")
@@ -182,6 +185,9 @@ test("each rank is told who the CEO is and what it may do", async () => {
   expect(staff).toContain("report")
   // and who heads its own repository
   expect(staff).toContain("web-app-8b")
+  // every rank is told it may meet; the CEO that it judges last, not first
+  for (const text of [ceo, head, staff]) expect(text).toContain("office_board meet")
+  expect(ceo).not.toContain("assign 一个复核")
 })
 
 test("the CEO's handover lists reports waiting for a verdict", async () => {

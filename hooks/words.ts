@@ -114,11 +114,36 @@ const EN = {
     "The chairman (the user) has made you CEO of the office: every Claude Code session open on this machine works for you.",
     "When the chairman gives you work, do not do it yourself if another session is better placed: look with office_board staff, pick the session best suited, and give it the job with office_board assign (to, text, and standard: how you will judge it). If nobody fits, ask the chairman; never start new sessions.",
     "To learn about a repository, ask its head with SendMessage. Where there are many sessions, appoint a head for each repository with office_board appoint; with few, manage them yourself.",
-    "When a report comes back, judge it against the standard you set; if unsure, assign a review to a session that has worked on something similar. Record your verdict with office_board accept or reject (assignment, text), then answer the chairman yourself, in this session, for all of it.",
+    "When a report comes back, judge it against the standard you set: you are the last check, not the only one, and a report may name the colleague who already reviewed it. Still unsure, ask a session that has worked on something similar, with SendMessage. Record your verdict with office_board accept or reject (assignment, text), then answer the chairman yourself, in this session, for all of it.",
+    "Sessions ask each other and meet without you: do not route their questions between them.",
     "When the chairman asks who is doing something, find it with office_board staff and answer, or pass it on.",
     "A job you no longer want done, or whose session has gone, take back with office_board withdraw (assignment), so the watchdog stops asking about it; give it to someone else with assign.",
     "Never ask a session to do what your own session may not do.",
   ].join("\n"),
+  roleFlat: [
+    "## crab-office: working with colleagues",
+    "Every Claude Code session on this machine is a colleague. When you need something in another session's area (its repository, its duty, its job title), ask it directly with SendMessage; nothing goes through a manager first.",
+    "Before handing work back, you may ask a colleague who knows the area to review it; say in your report who did.",
+    "When three or more sessions must agree on something, call a meeting: office_board meet (meeting: a one-word name, to: the colleagues, text: the topic and the result you need). Speak to it with SendMessage to the meeting's name, and everyone in it hears. Settle the result together; once everyone agrees, whoever called it closes it with office_board close (meeting, text: the conclusion), which goes to everyone and onto the board. A meeting quiet for 15 minutes ends by itself.",
+  ].join("\n"),
+  meetingRoom: (name: string, topic: string) => `Meeting · ${name}: ${topic}`,
+  meetingTask: (name: string) => `meeting ${name}`,
+  meetingInvite: (name: string, topic: string, by: string, members: string[]) =>
+    [
+      `[crab-office · meeting ${name}, called by ${by}]`,
+      `Topic: ${topic}`,
+      `At the table: ${members.join(", ")}`,
+      `Speak to the whole meeting with SendMessage to "${name}"; to one colleague alone, to its own name. Settle the result together and say plainly when you agree; once everyone agrees, whoever called it closes it with office_board close. If nothing here is yours, say nothing.`,
+    ].join("\n"),
+  meetingEnvelope: (name: string, who: string, text: string, full: { max: number } | undefined) =>
+    `[crab-office · meeting ${name}] ${who}: ${text}${full === undefined ? "" : `\n(That is ${full.max} messages: the meeting passes on no more. Whoever called it, close it now with office_board close and the conclusion.)`}`,
+  meetingClosedEnvelope: (name: string, conclusion: string) =>
+    `[crab-office · meeting ${name} closed]\nConclusion: ${conclusion || "none"}`,
+  meetLine: (topic: string) => `called a meeting: ${topic}`,
+  meetAddLine: (who: string[]) => `brought in ${who.join(", ")}`,
+  closeLine: (conclusion: string) => `closed. Conclusion: ${conclusion || "none"}`,
+  meetingEndedLine: (isIdle: boolean): string =>
+    isIdle ? "ended: 15 minutes with nobody speaking, no conclusion" : "ended: one left at the table, no conclusion",
   roleHead: (project: string, ceo: string) =>
     [
       `## crab-office: you are the head of ${project}`,
@@ -189,7 +214,6 @@ const EN = {
     team: "This one names you: claim it with the office_board tool (action: claim), then do it.",
     all: "This one is for everyone: first judge whether it bears on your project, folder and task. If it does, claim it with office_board (action: claim) and do it; if not, say why on office_board (action: post), then stop and do nothing else.",
     open: "This is open work and you are free, so take a look: if you can take it, claim it with office_board (action: claim) and do it; if it is not for you, say why on office_board (action: post), then stop and do nothing else, and the next colleague will look at it. Once it is claimed no other session takes it; if your claim says someone already has, stop.",
-    ceoOpen: "This is open work, and as CEO it is yours to hand out: claim it with office_board (action: claim), then give it to the session best placed with office_board assign, or do it yourself if nobody fits better, or ask the chairman. Do not pass it on: no one else will look at it.",
   },
   // btw
   btw: "[crab-office · a btw from the chairman: answer in a few sentences, like a colleague chatting: what you are doing, how it is going, where you are stuck. Do not call tools, and do not change the work in hand because of this]",
@@ -244,17 +268,17 @@ const EN = {
   sayLabel: "✎ Write on the board ",
   sayPlaceholder: "e.g. @everyone get the tests in before you go",
   post: "post",
-  sayHint: (hasCeo: boolean) =>
-    `@team, @department or @everyone; no @ goes to ${hasCeo ? "the CEO" : "whoever is free first"}`,
+  sayHint: "@team, @department or @everyone; no @ goes to whoever is free first",
   // the office_board tool, which the model reads
   tool: {
     description:
-      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=withdraw takes an open job back (assignment); action=duty writes what a session is responsible for (to, text); action=appoint makes a session its repository's head (to); action=title gives a session a one-word job title (to, text; left out, your own), and SendMessage to a job title or to CEO reaches whoever holds it.",
+      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=withdraw takes an open job back (assignment); action=duty writes what a session is responsible for (to, text); action=appoint makes a session its repository's head (to); action=title gives a session a one-word job title (to, text; left out, your own), and SendMessage to a job title or to CEO reaches whoever holds it. When three or more sessions must agree on something, any of them may call a meeting: action=meet (meeting: a one-word name, to: the colleagues, text: the topic and the result needed; again with the same name brings more in); speak to it with SendMessage to the meeting's name, and everyone in it hears; whoever called it closes it with action=close (meeting, text: the conclusion).",
     memo: "the id of the memo to claim",
-    text: "what to write: the post, the job (assign), the result (report), a note or reason (accept, reject), or the duty",
+    meeting: "the meeting's one-word name (meet, close)",
+    text: "what to write: the post, the job (assign), the result (report), a note or reason (accept, reject), the duty, the topic (meet) or the conclusion (close)",
     assignment: "the job's id (report, accept, reject)",
     standard: "how the job will be judged (assign, optional)",
-    to: 'who it is for: a department (project name) or "everyone" (post; left out, the chairman); a session by its SendMessage name or team (assign, duty, appoint)',
+    to: 'who it is for: a department (project name) or "everyone" (post; left out, the chairman); a session by its SendMessage name or team (assign, duty, appoint); for meet, the colleagues, comma-separated',
     notReady: "The office isn't ready yet",
     notCeo: "Only the CEO can do that",
     notManager: "Only the CEO or a head can write duties",
@@ -307,7 +331,27 @@ const EN = {
     written: (heard: string) => `Written on the board; ${heard}.`,
     oneSession: (to: string, name: string | undefined) =>
       `${to} is one session, so write to it with SendMessage${name ? ` (to: "${name}")` : ""}: it reaches that session now, says whether it did, and shows on this board too. Nothing was written.`,
-    actions: "action is read, post or claim, and with a CEO appointed also staff, assign, report, accept, reject, withdraw, duty or appoint, as your instructions allow. ListAgents lists the other sessions; SendMessage writes to one.",
+    actions: "action is read, post, claim, meet or close, and with a CEO appointed also staff, assign, report, accept, reject, withdraw, duty or appoint, as your instructions allow. ListAgents lists the other sessions; SendMessage writes to one.",
+    needMeeting: "Name the meeting: meeting is one word.",
+    noMeeting: (name: string) => `No meeting is called ${name}.`,
+    badMeetingName: (max: number) => `A meeting's name is one word, no spaces, at most ${max} characters.`,
+    meetingNameTaken: (name: string) =>
+      `"${name}" is taken: CEO, a session's name or job title, or a meeting still going. Pick another.`,
+    notInMeeting: (name: string) =>
+      `You are not in meeting ${name}. To join, ask someone at it to bring you in with office_board meet (meeting: ${name}, to: you).`,
+    meetingFull: (name: string, max: number) =>
+      `Meeting ${name} has had ${max} messages and passes on no more. Whoever called it closes it now with office_board close (meeting, text: the conclusion); to go on, call a new one.`,
+    meetingOver: (name: string) => `Meeting ${name} is over. To talk on, call a new one with office_board meet.`,
+    onlyCaller: "Only whoever called the meeting closes it. To wrap up, tell them with SendMessage.",
+    alreadyIn: (name: string) => `They are all at meeting ${name} already.`,
+    meetOpened: (name: string, invited: string[], missed: string[]) =>
+      `Meeting ${name} called; invited ${invited.join(", ")}${missed.length > 0 ? `; not delivered to ${missed.join(", ")}` : ""}. Speak to it with SendMessage to "${name}".`,
+    meetAdded: (name: string, invited: string[], missed: string[]) =>
+      `Brought ${invited.join(", ")} into meeting ${name}${missed.length > 0 ? `; not delivered to ${missed.join(", ")}` : ""}.`,
+    meetingSent: (name: string, heard: string[], missed: string[]) =>
+      `Sent to meeting ${name}: ${heard.join(", ") || "nobody"}${missed.length > 0 ? `; not delivered to ${missed.join(", ")}` : ""}.`,
+    meetClosed: (name: string, told: string[]) =>
+      `Meeting ${name} closed; the conclusion went to ${told.join(", ") || "nobody"} and onto the board.`,
     notFromSubagent: "Only the CEO's own conversation can do that, not one of its subagents",
     closed: "That job is already closed",
     withdrawn: (id: string) => `Job #${id} withdrawn; its session was told to stop.`,
@@ -421,11 +465,34 @@ const ZH: Words = {
     "董事长（用户）任命你为公司的 CEO：这台机器上开着的 Claude Code 会话都归你管。",
     "董事长交给你的活，如果别的会话更合适，不要自己动手：先用 office_board staff 看人，挑最合适的会话，用 office_board assign 派过去（to、text，standard 写你会怎么验收）。没人合适就问董事长，不要自己新开会话。",
     "想了解某个 repo，用 SendMessage 问它的部长。会话多时用 office_board appoint 给每个 repo 任命部长；会话少时你自己直接管。",
-    "收到交差后按你定的标准验收；拿不准就 assign 一个复核给做过类似部分的会话。用 office_board accept 或 reject（assignment、text）记下结论，然后在你自己的会话里统一回复董事长。",
+    "收到交差后按你定的标准验收：你是最后一道关，不是唯一一道，交差里可能写了哪位同事已经复核过。还拿不准就用 SendMessage 问做过类似部分的会话。用 office_board accept 或 reject（assignment、text）记下结论，然后在你自己的会话里统一回复董事长。",
+    "会话之间互相问、互相开会不用经过你：不要替它们转话。",
     "董事长问某件事谁在做，用 office_board staff 查了回答，或者转过去。",
     "不再需要的活，或者做它的会话已经下线了，用 office_board withdraw（assignment）撤回，督促就不会再问它；要改派就再 assign 给别人。",
     "不要让别的会话去做你自己会话不被允许的事。",
   ].join("\n"),
+  roleFlat: [
+    "## 螃蟹办公室：和同事协作",
+    "这台机器上的每个 Claude Code 会话都是同事。需要别的会话负责的东西（它的 repo、职责或职位名），直接用 SendMessage 问它，不用先经过经理。",
+    "交差前可以请熟悉这块的同事复核，并在交差里写明谁复核过。",
+    "三个或更多会话要商量定一件事时就开会：office_board meet（meeting：一个词的会议名，to：要拉的同事，text：议题和要商量出的结果）。在会上说话用 SendMessage 发给会议名，每个与会者都会收到。结论大家一起定；都同意后由召集人用 office_board close（meeting、text：结论）散会，结论会送到每个人并贴上白板。会上 15 分钟没人说话会自动结束。",
+  ].join("\n"),
+  meetingRoom: (name, topic) => `会议室 · ${name}：${topic}`,
+  meetingTask: (name) => `会议 ${name}`,
+  meetingInvite: (name, topic, by, members) =>
+    [
+      `[螃蟹办公室 · 会议 ${name}，${by} 召集]`,
+      `议题：${topic}`,
+      `与会：${members.join("、")}`,
+      `对整场会说话：SendMessage 发给 "${name}"；只跟一位同事说：发给它自己的名字。结论大家一起定，同意就明说同意；大家都同意后由召集人用 office_board close 散会。没你的事就不用说话。`,
+    ].join("\n"),
+  meetingEnvelope: (name, who, text, full) =>
+    `[螃蟹办公室 · 会议 ${name}] ${who}：${text}${full === undefined ? "" : `\n（会上已满 ${full.max} 条，不再转发。召集人请现在用 office_board close 写结论散会。）`}`,
+  meetingClosedEnvelope: (name, conclusion) => `[螃蟹办公室 · 会议 ${name} 散会]\n结论：${conclusion || "没有结论"}`,
+  meetLine: (topic) => `召集开会：${topic}`,
+  meetAddLine: (who) => `拉 ${who.join("、")} 进会`,
+  closeLine: (conclusion) => `散会。结论：${conclusion || "没有结论"}`,
+  meetingEndedLine: (isIdle) => (isIdle ? "散会：15 分钟没人说话，没有结论" : "散会：只剩一个人，没有结论"),
   roleHead: (project, ceo) =>
     [
       `## 螃蟹办公室：你是 ${project} 的部长`,
@@ -478,7 +545,6 @@ const ZH: Words = {
     team: "这是点名给你的：先用 office_board 工具认领（action: claim），然后开始做。",
     all: "这是发给全体的：先判断和你当前的项目、目录、任务有没有关系。有关就用 office_board 认领（action: claim）再做；无关就用 office_board 说一句为什么不接（action: post），然后停下，别做别的。",
     open: "这是一件待领的活，你正空着，先来看看：能接就用 office_board 认领（action: claim）再做；不合适就用 office_board 说一句为什么不接（action: post），然后停下，别做别的，下一位同事会接着看。认领时，别的会话就不会再接这件事；如果认领时发现已经有人接了，就停下。",
-    ceoOpen: "这是一件待领的活，你是 CEO，由你来分派：先用 office_board 认领（action: claim），再用 office_board assign 派给最合适的会话；没人比你更合适就自己做，拿不准就问董事长。不要放着不管：不会有别的会话来接。",
   },
   btw: "[螃蟹办公室 · 董事长顺便问一句（btw）：用中文几句话回答，像同事聊天，说清在干什么、进展如何、卡在哪；不要调用工具，也别因此改变手上的活]",
   btwFor: (title, task, tools, back, question) =>
@@ -522,15 +588,16 @@ const ZH: Words = {
   sayLabel: "✎ 写在白板上 ",
   sayPlaceholder: "比如：@全体 下班前把测试补齐",
   post: "贴上",
-  sayHint: (hasCeo) => `@组名、@部门 或 @全体；不写 @ 就${hasCeo ? "交给 CEO" : "谁先空谁接"}`,
+  sayHint: "@组名、@部门 或 @全体；不写 @ 就谁先空谁接",
   tool: {
     description:
-      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=withdraw 撤回还没结束的活（assignment）；action=duty 写某个会话负责什么（to、text）；action=appoint 任命某个会话为它所在 repo 的部长（to）；action=title 给会话取一个一词的职位名（to、text；不写 to 就是你自己），用 SendMessage 发给职位名或 CEO 会送到当前担任的会话。",
+      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=withdraw 撤回还没结束的活（assignment）；action=duty 写某个会话负责什么（to、text）；action=appoint 任命某个会话为它所在 repo 的部长（to）；action=title 给会话取一个一词的职位名（to、text；不写 to 就是你自己），用 SendMessage 发给职位名或 CEO 会送到当前担任的会话。三个或更多会话要商量定一件事时，任何会话都可以开会：action=meet（meeting：一个词的会议名，to：要拉的同事，text：议题和要商量出的结果；用同一个会议名再 meet 一次就是拉更多人）；在会上说话用 SendMessage 发给会议名，每个与会者都会收到；召集人用 action=close（meeting、text：结论）散会。",
     memo: "要认领的 memo id",
-    text: "要写的内容：白板上的话、派的活（assign）、结果（report）、验收意见或退回原因（accept、reject）、职责（duty）",
+    meeting: "会议名，一个词（meet、close）",
+    text: "要写的内容：白板上的话、派的活（assign）、结果（report）、验收意见或退回原因（accept、reject）、职责（duty）、议题（meet）、结论（close）",
     assignment: "活的编号（report、accept、reject）",
     standard: "这件活怎么验收（assign，可不写）",
-    to: "写给谁：部门名（项目名）或「全体」（post；不写就是董事长）；或用 SendMessage 名、组名指定一个会话（assign、duty、appoint）",
+    to: "写给谁：部门名（项目名）或「全体」（post；不写就是董事长）；或用 SendMessage 名、组名指定一个会话（assign、duty、appoint）；meet 时写要拉的同事，用逗号分开",
     notReady: "办公室还没准备好",
     notCeo: "只有 CEO 能这么做",
     notManager: "只有 CEO 或部长能写职责",
@@ -579,7 +646,24 @@ const ZH: Words = {
     written: (heard) => `已经写到白板上了，${heard}。`,
     oneSession: (to, name) =>
       `${to} 是一个会话，单独找它请用 SendMessage${name ? `（to: "${name}"）` : ""}：马上送到、会告诉你送没送到，白板上也看得到。这次没有写上白板。`,
-    actions: "action 有 read、post、claim；任命了 CEO 之后还有 staff、assign、report、accept、reject、withdraw、duty、appoint，能用哪些看你的说明。ListAgents 列出别的会话，SendMessage 单独写给一个。",
+    actions: "action 有 read、post、claim、meet、close；任命了 CEO 之后还有 staff、assign、report、accept、reject、withdraw、duty、appoint，能用哪些看你的说明。ListAgents 列出别的会话，SendMessage 单独写给一个。",
+    needMeeting: "缺会议名：meeting 填一个词。",
+    noMeeting: (name) => `没有叫 ${name} 的会议。`,
+    badMeetingName: (max) => `会议名要是一个词，不含空格，最多 ${max} 个字符。`,
+    meetingNameTaken: (name) => `"${name}" 已被占用（CEO、某个会话的名字或职位名，或还在开的会），换一个。`,
+    notInMeeting: (name) => `你不在会议 ${name} 里。想加入，请与会者用 office_board meet（meeting: ${name}，to: 你）拉你进来。`,
+    meetingFull: (name, max) =>
+      `会议 ${name} 已满 ${max} 条，不再转发。召集人请现在用 office_board close（meeting、text：结论）散会；还要接着谈就另开一场。`,
+    meetingOver: (name) => `会议 ${name} 已经结束了。还要谈就用 office_board meet 另开一场。`,
+    onlyCaller: "只有召集人能散会。想收尾，用 SendMessage 告诉召集人。",
+    alreadyIn: (name) => `他们都已经在会议 ${name} 里了。`,
+    meetOpened: (name, invited, missed) =>
+      `开会了：${name}，已邀请 ${invited.join("、")}${missed.length > 0 ? `；没送到：${missed.join("、")}` : ""}。在会上说话：SendMessage 发给 "${name}"。`,
+    meetAdded: (name, invited, missed) =>
+      `已把 ${invited.join("、")} 拉进会议 ${name}${missed.length > 0 ? `；没送到：${missed.join("、")}` : ""}。`,
+    meetingSent: (name, heard, missed) =>
+      `已送给会议 ${name}：${heard.join("、") || "没有人"}${missed.length > 0 ? `；没送到：${missed.join("、")}` : ""}。`,
+    meetClosed: (name, told) => `会议 ${name} 已散会，结论已送给 ${told.join("、") || "没有人"}，也贴上了白板。`,
     notFromSubagent: "只有 CEO 自己的对话能这么做，它的子代理不行",
     closed: "这件活已经结束了",
     withdrawn: (id) => `#${id} 已撤回，已经告诉那个会话停下。`,

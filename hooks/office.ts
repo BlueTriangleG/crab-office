@@ -7,6 +7,7 @@ import { CHAIRMAN_NAMES, HQ_NAMES, w } from "./words.ts"
 import type { BoardLine, Company, Room, SeatData, Speaker } from "./pixels.ts"
 import type { Org } from "./org.ts"
 import type { Job } from "./jobs.ts"
+import type { Meeting } from "./meetings.ts"
 
 export type Status =
   | "thinking"
@@ -288,6 +289,7 @@ export function promptOf(text: string): string {
 // showed its handover's first line, "[crab-office · the chairman…", as its task.
 const OWN: [RegExp, (m: RegExpExecArray) => string][] = [
   [/^\[(?:螃蟹办公室 · 董事长任命你为 CEO|crab-office · the chairman has made you CEO)\]/, () => w().ceoTask],
+  [/^\[(?:螃蟹办公室 · 会议|crab-office · meeting) ([^\s，,\]]+)/, (m) => w().meetingTask(m[1] ?? "")],
   [/^\[(?:螃蟹办公室 · 督促|crab-office · the watchdog)\]/, () => w().nudgeTask],
   [
     /^\[(?:螃蟹办公室 · CEO（[^）]*）派活 #(\w+)|crab-office · job #(\w+) from the CEO[^\]]*)\]\s*([^\n]*)/,
@@ -679,7 +681,14 @@ export function companyOf(
   snaps: Snapshot[],
   mine: string,
   now: number,
-  desk: { memos: Memo[]; claims: Claim[]; org?: Org; jobs?: Job[]; titles?: Record<string, string> } = { memos: [], claims: [] },
+  desk: {
+    memos: Memo[]
+    claims: Claim[]
+    org?: Org
+    jobs?: Job[]
+    titles?: Record<string, string>
+    meetings?: Meeting[]
+  } = { memos: [], claims: [] },
   older = 0,
 ): Company {
   const org = desk.org ?? NONE
@@ -689,10 +698,15 @@ export function companyOf(
   )
   const isMine = (project: string) =>
     present.some((s) => s.sessionId === mine && s.project === project)
+  // A session at a live meeting sits at its table, the earliest it is at, and
+  // not at its desk.
+  const meeting = (desk.meetings ?? []).filter((m) => m.status === "open" || m.status === "full").sort((a, b) => a.at - b.at)
+  const seated = new Map<string, Meeting>()
+  for (const m of meeting) for (const id of m.members) if (!seated.has(id)) seated.set(id, m)
   // The CEO leaves its department for an office of its own, a row to itself
   // at the very top.
   const ceo = present.find((s) => s.sessionId === org.ceo)
-  const staff = present.filter((s) => s !== ceo)
+  const staff = present.filter((s) => s !== ceo && !seated.has(s.sessionId))
   const projects = [...new Set(staff.map((s) => s.project))].sort((a, b) =>
     isMine(a) === isMine(b) ? a.localeCompare(b) : isMine(a) ? -1 : 1,
   )
@@ -700,7 +714,7 @@ export function companyOf(
   const letters = lettersOf(present, now)
   const ceoTeam = ceo === undefined ? undefined : teamOf(ceo, now, hats.get(ceo.sessionId), letters, titles)
   const top: Room[] =
-    ceo === undefined || ceoTeam === undefined
+    ceo === undefined || ceoTeam === undefined || seated.has(ceo.sessionId)
       ? []
       : [
           {
@@ -732,7 +746,23 @@ export function companyOf(
       ...(here >= 0 ? { here } : {}),
     }
   })
-  rooms.unshift(...top)
+  const tables: Room[] = meeting.flatMap((m) => {
+    const sessions = m.members.flatMap((id) => present.filter((s) => s.sessionId === id && seated.get(id) === m))
+    if (sessions.length === 0) return []
+    const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId), letters, titles))
+    const here = sessions.findIndex((s) => s.sessionId === mine)
+    return [
+      {
+        title: w().meetingRoom(m.name, clip(m.topic, 40)),
+        footer: footerOf(teams.flat()),
+        teams,
+        signs: sessions.map((s) => s.project),
+        top: true,
+        ...(here >= 0 ? { here } : {}),
+      },
+    ]
+  })
+  rooms.unshift(...top, ...tables)
   const onDuty = rooms
     .flatMap((r) => r.teams.flat())
     .filter((s) => s.look !== "gone").length
@@ -994,16 +1024,9 @@ export function takerOf(memo: Memo, snaps: Snapshot[], now: number): string | un
 
 // The one memo this session should be handed now, if any: free, not handed it
 // before, and either named in it, or everyone's, or first in line for it.
-// `ceo`: with one appointed, work for whoever is free is the CEO's to hand out,
-// so it goes to the CEO alone and not past it.
-export function memoFor(
-  me: Snapshot,
-  snaps: Snapshot[],
-  memos: Memo[],
-  claims: Claim[],
-  now: number,
-  ceo?: string,
-): Memo | undefined {
+// Open work goes to whoever is free, a CEO as anyone: sessions settle work among
+// themselves, and the CEO's part is the last check, not the hand-out.
+export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], claims: Claim[], now: number): Memo | undefined {
   if (!isFree(me, now)) return undefined
   const handled = new Set(me.handled ?? [])
   return memos
@@ -1012,7 +1035,6 @@ export function memoFor(
     .find((m) => {
       // Still busy with it is still holding it: the claim lands a turn after the
       // handover, and in that gap the next in line, then the next, took it too.
-      if (m.to.kind === "open" && ceo !== undefined) return me.sessionId === ceo && !claims.some((c) => c.memoId === m.id)
       if (m.to.kind === "open")
         return (
           !claims.some((c) => c.memoId === m.id) &&
@@ -1129,8 +1151,7 @@ export function rosterOf(
 // What a session is handed: the memo, who it is, its colleagues, and how to
 // take it on or pass, through the office_board tool.
 export function handoverOf(memo: Memo, me: Snapshot, snaps: Snapshot[], now: number, org: Org = NONE): string {
-  // The CEO hands open work out rather than passing it on: there is no next in line.
-  const kind = memo.to.kind === "team" ? "team" : memo.to.kind === "all" ? "all" : org.ceo === me.sessionId ? "ceoOpen" : "open"
+  const kind = memo.to.kind === "team" ? "team" : memo.to.kind === "all" ? "all" : "open"
   const how = w().handover[kind]
   return [
     w().handover.head(addresseeOf(memo.to), memo.id),
