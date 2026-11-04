@@ -10,10 +10,10 @@ Every word the office shows or says, to the person and to the model, is in
 `hooks/words.ts`, once in English and once in Chinese, chosen by the plugin's
 `language` option (`en` by default, `zh`; set in `/config`). The drawing runs
 in an environment of its own, so the company it is handed carries the
-language. Titles below are given in both: 大部长 Director, 部长 Head, 组长
-Lead, 本部 HQ. A board line names its crabs as the drawing names them now, in
-the words the office speaks now: a note keeps the names it was written with,
-before anyone knew which session would be 大部长.
+language. Titles below are given in both: CEO, 部长 Head, 组长 Lead, 本部 HQ.
+A board line names its crabs as the drawing names them now, in the words the
+office speaks now: a note keeps the names it was written with, before anyone
+knew which session would be 部长.
 
 ## What it shows
 
@@ -67,8 +67,9 @@ before anyone knew which session would be 大部长.
   prompt submitted while a turn runs waits for the turn to end, so an
   instruction never interrupts work. Each session keeps the ids it has taken
   up (`obeyed`), so none runs twice, and the card marks each one delivered or
-  still waiting. Only the person gives instructions: the model has no way to,
-  so sessions cannot set one another to work.
+  still waiting. Only the person, and the CEO the person appointed, set a
+  session to work: no other model has a way to, so sessions cannot set one
+  another to work.
 - **btw**: under a clicked crab, a field to ask it something. The answer never
   starts a turn or interrupts the work: a manager answers through a fork of its
   session's own thread (`$.model.fork`, as `/btw` does), a subagent from its own
@@ -125,15 +126,20 @@ colours, which is all a terminal cell can show.
 - **Clawd** is drawn from Claude Code's own parts (arms, eyes, feet, turned
   frames; body `rgb(215,119,87)` for managers, eyes `clawd_background`). Crew
   colours come in hiring order so a team never repeats one.
-- **A crown a department**: each department's 大部长 is its longest-serving
-  session in the repository's own checkout, or in a worktree where none is, and
-  wears its crown; the 大部长's team sits alone on the department's top row,
-  centred, the other teams below. Every other 部长 and 组长 wears a hat of its
+- **A crown a department**: each department's 部长 is the session the chairman
+  or the CEO appointed, else its longest-serving session in the repository's
+  own checkout, or in a worktree where none is, never the CEO; it wears the
+  crown, and its team sits alone on the department's top row, centred, the
+  other teams below. Every other session's crab is 组长 and wears a hat of its
   own, handed out by seniority so a newcomer never takes an old hand's:
   mortarboard, chef's hat, viking helmet, pom beanie, bunny ears, cowboy hat,
-  propeller cap; an eighth manager starts the list again. A crown on every 部长
-  said nothing, and one crown for the whole company left every other
+  propeller cap; an eighth manager starts the list again. A crown on every
+  manager said nothing, and one crown for the whole company left every other
   repository headless.
+- **The CEO**: a top hat and the title CEO. The header leads with its work
+  (jobs open, jobs to judge), then names it; a card lists the open jobs its
+  session was given, and the CEO's card the jobs it gave. Its appointments,
+  jobs, reports and verdicts are lines on the board, with the ✉ on both crabs.
 - **Hats and titles by role**: managers as above, Explore safari hat 调研员,
   Plan cap 规划师, general-purpose hard hat 工程师, fork sprout 分身,
   claude-code-guide 顾问, verifier 质检员, any other 实习生 with no hat.
@@ -187,6 +193,44 @@ is refused with that session's SendMessage name, and nothing is written; a
 `colleagues` action that listed the sessions went with it, since ListAgents
 does that.
 
+## The CEO and the heads
+
+The chairman appoints a CEO (a card's button, or `/office ceo @<who>|off`); the
+CEO appoints a 部长 per repository (`office_board appoint`), and the chairman
+may too (`/office head @<who>`, `/office head off [@<who or repository>]`), the
+chairman's pick standing over the CEO's. Each session writes its own
+appointments to `org/<sessionId>.json`; everyone works the same answer out of
+all of them, the latest standing (`orgOf`). An appointment lapses when its
+session leaves the company; a CEO that lapses is said in a toast.
+
+Each session is told its rank in its system prompt (`prompt.compose`, after
+the cache boundary): the CEO how to run the office, a head what it may do,
+everyone else who the CEO and its head are and how to report. Only who holds
+which post goes in, so the text moves only when an appointment does. A newly
+appointed CEO is handed, when free, the staff list and the reports waiting.
+With a CEO, a memo for whoever is free goes to the CEO alone.
+
+The CEO runs the work through `office_board`, each action judged by
+`refusalOf` before anything is written: `staff` (who is at work, their
+SendMessage names, duties and open jobs), `assign`, `accept`, `reject`,
+`appoint` (the CEO's), `duty` (the CEO's, or a head's for its own repository),
+`report` (only the session the job was given to). A job is three kinds of file,
+one writer each: `jobs/<id>.json` by the assigning CEO, `reports/<id>.<n>.json`
+by the session doing it, `verdicts/<id>.<n>.json` by the judging CEO. Delivery
+goes through the engine's own cross-session channel (`$.session.send`), at
+once, busy or not, so whatever the engine holds back (a session in another
+permission mode) stays held; the office never submits a prompt into another
+session on a model's word. A job rejected more than three times is the
+chairman's to decide. Files untouched for a week are no longer read.
+
+A watchdog in the CEO's tick, code and not the CEO's model, checks open jobs
+every 30 s: given 10 min ago and not started; waiting 5 min for approval (a
+toast to the chairman, who alone can approve); the session gone; 60 min and
+no report; reported 10 min ago and not judged. Each job and rule is put to the
+CEO at most once in 30 min, as one prompt when it is free; what to do is the
+CEO's to decide. The decisions behind all of this are in
+`docs/specs/2026-11-04-manager-design.md` (the dev copy only).
+
 ## How sessions see each other
 
 Each session writes its own snapshot to `<config>/crab-office/live/<sessionId>.json`
@@ -205,10 +249,13 @@ but never drew.
 
 ## Limits
 
-- Observes, except for memos, instructions and btw: every hook passes its event
-  on unchanged; it hands a memo the chairman wrote to a finished session and an
-  instruction to the session it names as prompts, and answers a btw with one
-  side call to the model. No network, no processes.
+- Observes, except for memos, instructions, btw and the CEO's work: every hook
+  passes its event on unchanged but `prompt.compose`, which adds a session's
+  rank; it hands a memo the chairman wrote to a finished session, an
+  instruction to the session it names, and the CEO its handover and the
+  watchdog's nudges as prompts, sends the CEO's jobs and the reports through
+  the engine's cross-session channel, and answers a btw with one side call to
+  the model. No network, no processes.
 - "Waiting for approval" comes from the classic `PermissionRequest` event, skipped in
   auto mode. `tool.check` answering `ask` was tried first and raised a hand on most
   calls in auto mode, where the classifier answers and nobody is asked. Where an

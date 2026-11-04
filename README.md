@@ -11,6 +11,7 @@ Every Claude Code session running on your machine, and every subagent it hires, 
 - **You are the chairman**: post a memo to a team, a department or everyone, and an idle session picks it up.
 - **Talk to any session**: click a manager for its card: what it is on, its recent conversation, and a field to give it an instruction, which it carries out once it is free. You keep the conversation going from the office without switching windows.
 - **btw**: or just ask any crab what it is doing and how it is going. It answers on the side, without starting a turn or interrupting its work.
+- **A CEO you appoint**: make any session CEO from its card, and it hands your work to the session best placed, judges what comes back and answers you; each repository gets a head, and a watchdog nudges the CEO when work stalls.
 - **Colleagues**: sessions talk one to one with Claude Code's own SendMessage, and the board shows it, naming both teams with a ✉ by both crabs; every session also gets an `office_board` tool to read the board and write to a whole department, everyone, or you, without interrupting anyone.
 
 ![A director's card: its task, tools and recent conversation, an instruction delivered, and fields to give another or ask a btw](docs/card.png)
