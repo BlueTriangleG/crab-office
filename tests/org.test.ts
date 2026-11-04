@@ -1,7 +1,7 @@
 import { expect, test } from "claude-code/testing"
 
 import { LEAVE_MS, chairman, chiefsOf, companyOf, createSnapshot } from "../hooks/office.ts"
-import { appointedNote, dutiesOf, orgOf, parseAppoint, sessionNamed, staffOf } from "../hooks/org.ts"
+import { NO_ORG, appointedNote, ceoHandoverOf, dutiesOf, orgOf, parseAppoint, roleSectionOf, sessionNamed, staffOf } from "../hooks/org.ts"
 import { jobsOf } from "../hooks/jobs.ts"
 import type { Appointment } from "../hooks/org.ts"
 import { titleOf } from "../hooks/pixels.ts"
@@ -131,4 +131,57 @@ test("staff lists each present session with its SendMessage name, rank, duty and
   expect(line("web-app 部 · docs")).toContain("auth and login")
   expect(line("web-app 部 · docs")).toContain("#j1")
   expect(line("api-server 部 · 本部")).toContain("部长")
+})
+
+const company = () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0 + 1, "docs")
+  const c = createSnapshot("c", "api-server", undefined, T0 + 2)
+  const snaps = [a, b, c]
+  for (const s of snaps) s.updatedAt = T0 + 10
+  const org = orgOf([{ kind: "ceo", sessionId: "c", at: T0, by: "chairman" }], snaps, T0 + 10)
+  const peers = [
+    { sessionId: "c", name: "api-server-e0" },
+    { sessionId: "a", name: "web-app-8b" },
+  ]
+  return { a, b, c, snaps, org, peers }
+}
+
+test("each rank is told who the CEO is and what it may do", async () => {
+  const { a, b, c, snaps, org, peers } = company()
+  expect(roleSectionOf("staff", b, snaps, NO_ORG, peers, T0 + 10)).toBeUndefined()
+  const ceo = roleSectionOf("ceo", c, snaps, org, peers, T0 + 10) ?? ""
+  expect(ceo).toContain("assign")
+  expect(ceo).toContain("accept")
+  // the same a minute on, so the prompt's cache holds until an appointment changes
+  expect(roleSectionOf("ceo", c, snaps, org, peers, T0 + 70_000)).toBe(ceo)
+  const head = roleSectionOf("head", a, snaps, org, peers, T0 + 10) ?? ""
+  expect(head).toContain("duty")
+  expect(head).toContain("web-app")
+  expect(head).toContain("api-server-e0")
+  const staff = roleSectionOf("staff", b, snaps, org, peers, T0 + 10) ?? ""
+  expect(staff).toContain("api-server-e0")
+  expect(staff).toContain("report")
+  // and who heads its own repository
+  expect(staff).toContain("web-app-8b")
+})
+
+test("the CEO's handover lists reports waiting for a verdict", async () => {
+  const { b, c, snaps, org, peers } = company()
+  const jobs = jobsOf(
+    [
+      { id: "j1", at: T0, by: "c", to: "b", task: "fix the login test" },
+      { id: "j2", at: T0, by: "c", to: "b", task: "write the docs" },
+    ],
+    [
+      { id: "j1", n: 1, at: T0 + 1, from: "b", text: "fixed" },
+      { id: "j2", n: 1, at: T0 + 1, from: "b", text: "written" },
+    ],
+    [{ id: "j2", n: 1, at: T0 + 2, by: "c", ok: true, note: "" }],
+  )
+  const text = ceoHandoverOf(c, snaps, org, jobs, {}, peers, T0 + 10)
+  expect(text).toContain("#j1")
+  expect(text).not.toContain("#j2")
+  expect(text).toContain(b.team ?? "")
+  expect(text).toContain("staff")
 })

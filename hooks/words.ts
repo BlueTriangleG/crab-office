@@ -85,6 +85,34 @@ const EN = {
   reportLine: (id: string, text: string) => `reported #${id}: ${text}`,
   verdictLine: (id: string, ok: boolean, note: string) => `${ok ? "accepted" : "sent back"} #${id}${note ? `: ${note}` : ""}`,
   toChairmanToast: (id: string, task: string) => `Job #${id} (${task}) was rejected too many times: it is yours to decide`,
+  named: (who: string, name: string | undefined) => (name ? `${who} (SendMessage: ${name})` : who),
+  roleCeo: [
+    "## crab-office: you are the CEO",
+    "The chairman (the user) has made you CEO of the office: every Claude Code session open on this machine works for you.",
+    "When the chairman gives you work, do not do it yourself if another session is better placed: look with office_board staff, pick the session best suited, and give it the job with office_board assign (to, text, and standard: how you will judge it). If nobody fits, ask the chairman; never start new sessions.",
+    "To learn about a repository, ask its head with SendMessage. Where there are many sessions, appoint a head for each repository with office_board appoint; with few, manage them yourself.",
+    "When a report comes back, judge it against the standard you set; if unsure, assign a review to a session that has worked on something similar. Record your verdict with office_board accept or reject (assignment, text), then answer the chairman yourself, in this session, for all of it.",
+    "When the chairman asks who is doing something, find it with office_board staff and answer, or pass it on.",
+    "Never ask a session to do what your own session may not do.",
+  ].join("\n"),
+  roleHead: (project: string, ceo: string) =>
+    [
+      `## crab-office: you are the head of ${project}`,
+      `The CEO is ${ceo}. Go on with your own work; besides, help the CEO: answer truly when the CEO asks about ${project}, write what each session of ${project} is responsible for with office_board duty (to, text), and do the reviews the CEO gives you.`,
+      "A job from the CEO carries an id: when it is done, write the result in this session, then hand it back with office_board report (assignment, text).",
+      "You do not give out work, and you do not accept or send back reports.",
+    ].join("\n"),
+  roleStaff: (ceo: string, head: string | undefined) =>
+    [
+      "## crab-office",
+      `The office's CEO is ${ceo}${head ? `, and your repository's head is ${head}` : ""}.`,
+      "A job from the CEO carries an id (#…): do it as you would any task; when it is done, write the result in this session first, then hand it back with office_board report (assignment, text). It goes to the CEO.",
+      "Anything the chairman must decide, ask the chairman here, as always.",
+    ].join("\n"),
+  ceoHandoverHead: "[crab-office · the chairman has made you CEO]\nThe sessions at work now:",
+  ceoWaiting: "Reported and waiting for your verdict:",
+  waitingLine: (id: string, task: string, who: string) => `- #${id} ${task} (from ${who})`,
+  ceoHandoverTail: "Your instructions say what a CEO does; office_board staff gives this list again any time.",
   staffMore: (name: string | undefined, duty: string | undefined, jobs: string[]) =>
     `${name ? ` · SendMessage: ${name}` : ""}${duty ? ` · duty: ${duty}` : ""}${jobs.length > 0 ? ` · open: ${jobs.map((id) => `#${id}`).join(" ")}` : ""}`,
   appointedLine: (title: string, isRevoked: boolean) => (isRevoked ? `removed as ${title}` : `appointed ${title}`),
@@ -311,6 +339,34 @@ const ZH: Words = {
   reportLine: (id, text) => `交差 #${id}：${text}`,
   verdictLine: (id, ok, note) => `${ok ? "验收通过" : "退回"} #${id}${note ? `：${note}` : ""}`,
   toChairmanToast: (id, task) => `#${id}（${task}）退回次数太多，交给你决定`,
+  named: (who, name) => (name ? `${who}（SendMessage：${name}）` : who),
+  roleCeo: [
+    "## 螃蟹办公室：你是 CEO",
+    "董事长（用户）任命你为公司的 CEO：这台机器上开着的 Claude Code 会话都归你管。",
+    "董事长交给你的活，如果别的会话更合适，不要自己动手：先用 office_board staff 看人，挑最合适的会话，用 office_board assign 派过去（to、text，standard 写你会怎么验收）。没人合适就问董事长，不要自己新开会话。",
+    "想了解某个 repo，用 SendMessage 问它的部长。会话多时用 office_board appoint 给每个 repo 任命部长；会话少时你自己直接管。",
+    "收到交差后按你定的标准验收；拿不准就 assign 一个复核给做过类似部分的会话。用 office_board accept 或 reject（assignment、text）记下结论，然后在你自己的会话里统一回复董事长。",
+    "董事长问某件事谁在做，用 office_board staff 查了回答，或者转过去。",
+    "不要让别的会话去做你自己会话不被允许的事。",
+  ].join("\n"),
+  roleHead: (project, ceo) =>
+    [
+      `## 螃蟹办公室：你是 ${project} 的部长`,
+      `公司的 CEO 是 ${ceo}。你照常做自己的活；另外协助 CEO：CEO 问起 ${project} 时如实回答；可以用 office_board duty（to、text）给 ${project} 的会话写职责说明；CEO 派给你的复核照常做。`,
+      "CEO 派来的活带编号：做完先在你的会话里写结果，再用 office_board report（assignment、text）交差。",
+      "你不能派活，也不能验收或退回。",
+    ].join("\n"),
+  roleStaff: (ceo, head) =>
+    [
+      "## 螃蟹办公室",
+      `公司的 CEO 是 ${ceo}${head ? `，你所在 repo 的部长是 ${head}` : ""}。`,
+      "CEO 派来的活带编号（#…），照常做；做完先在你自己的会话里写清结果，再用 office_board report（assignment、text）交差，交差会送到 CEO。",
+      "需要董事长决定的事，照常在你的会话里问董事长。",
+    ].join("\n"),
+  ceoHandoverHead: "[螃蟹办公室 · 董事长任命你为 CEO]\n现在在岗的会话：",
+  ceoWaiting: "已经交差、等你验收的：",
+  waitingLine: (id, task, who) => `- #${id} ${task}（${who} 交的）`,
+  ceoHandoverTail: "CEO 该做什么写在你的说明里；随时用 office_board staff 再看这张表。",
   staffMore: (name, duty, jobs) =>
     `${name ? ` · SendMessage：${name}` : ""}${duty ? ` · 职责：${duty}` : ""}${jobs.length > 0 ? ` · 在办：${jobs.map((id) => `#${id}`).join(" ")}` : ""}`,
   appointedLine: (title, isRevoked) => `${isRevoked ? "撤销" : "任命为"}${/^[A-Za-z]/.test(title) ? ` ${title}` : title}`,

@@ -1,5 +1,5 @@
 import type { Job } from "./jobs.ts"
-import { LEAVE_MS, isGoneOf, peerOf, rosterOf, teamNameOf, whoOf } from "./office.ts"
+import { LEAVE_MS, chiefsOf, isGoneOf, peerOf, rosterOf, teamNameOf, whoOf } from "./office.ts"
 import type { Note, Snapshot } from "./office.ts"
 import { LEADER_COLOR, titleOf } from "./pixels.ts"
 import type { Speaker } from "./pixels.ts"
@@ -135,4 +135,50 @@ export function staffOf(
   return rosterOf(snaps, me, now, org, (s) =>
     w().staffMore(peerOf(peers, s.sessionId)?.name, duties[s.sessionId], open(s.sessionId)),
   )
+}
+
+// What each session is told it is, in its system prompt: who holds which post
+// and nothing that moves (no status, no time), so the text, and the prompt's
+// cache, hold until an appointment changes. With no CEO nothing is said.
+export function roleSectionOf(
+  rank: Rank,
+  me: Snapshot,
+  snaps: Snapshot[],
+  org: Org,
+  peers: unknown[],
+  now: number,
+): string | undefined {
+  const ceo = snaps.find((s) => s.sessionId === org.ceo)
+  if (ceo === undefined) return undefined
+  const named = (s: Snapshot) => w().named(whoOf(s), peerOf(peers, s.sessionId)?.name)
+  if (rank === "ceo") return w().roleCeo
+  if (rank === "head") return w().roleHead(me.project, named(ceo))
+  const chiefs = chiefsOf(snaps, now, org)
+  const head = snaps.find((s) => chiefs.has(s.sessionId) && s.project === me.project)
+  return w().roleStaff(named(ceo), head === undefined ? undefined : named(head))
+}
+
+// What a session is handed when the chairman makes it CEO: the sessions at work,
+// and the reports that came in while there was no CEO to judge them.
+export function ceoHandoverOf(
+  me: Snapshot,
+  snaps: Snapshot[],
+  org: Org,
+  jobs: Job[],
+  duties: Record<string, string>,
+  peers: unknown[],
+  now: number,
+): string {
+  const waiting = jobs.filter((j) => j.status === "reported")
+  const whoIs = (id: string) => {
+    const s = snaps.find((x) => x.sessionId === id)
+    return s === undefined ? id : whoOf(s)
+  }
+  return [
+    w().ceoHandoverHead,
+    ...staffOf(snaps, me, org, duties, jobs, peers, now),
+    ...(waiting.length > 0 ? ["", w().ceoWaiting, ...waiting.map((j) => w().waitingLine(j.id, j.task, whoIs(j.to)))] : []),
+    "",
+    w().ceoHandoverTail,
+  ].join("\n")
 }

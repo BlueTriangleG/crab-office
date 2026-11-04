@@ -549,3 +549,18 @@ test("the chairman's instructions reach only the session they name, once", async
   // taken up, an instruction is its session's task as it was written
   expect(promptOf(`The crab-office plugin sent a message: ${orderPromptOf("再跑一遍测试")}`)).toBe("再跑一遍测试")
 })
+
+test("with a CEO, a memo for whoever is free goes to the CEO alone", async () => {
+  const hq = createSnapshot("a", "web-app", undefined, T0)
+  const wt = createSnapshot("b", "web-app", undefined, T0, "docs")
+  const snaps = [hq, wt]
+  const now = T0 + 100
+  for (const s of snaps) s.updatedAt = now
+  const open = parseSay("看一下首页", "o", T0 + 50)!
+  const all = parseSay("@全体 周五发版", "all", T0 + 50)!
+  expect(memoFor(wt, snaps, [open], [], now, "b")?.id).toBe("o")
+  expect(memoFor(hq, snaps, [open], [], now, "b")).toBeUndefined()
+  expect(snaps.map((s) => memoFor(s, snaps, [all], [], now, "b")?.id)).toEqual(["all", "all"])
+  // with no CEO, the first free by id takes it, as before
+  expect(memoFor(hq, snaps, [open], [], now)?.id).toBe("o")
+})

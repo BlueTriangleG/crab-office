@@ -38,12 +38,24 @@ import {
   chairman,
   noted,
   chiefsOf,
+  isFree,
 } from "./office.ts"
 import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
 import type { BoardLine } from "./pixels.ts"
 import { LEADER_COLOR, SEAT_COLS, heightOf, office as draw, partOf, slicesOf, titleOf } from "./pixels.ts"
 import type { Speaker } from "./pixels.ts"
-import { NO_ORG, appointedNote, dutiesOf, orgOf, parseAppoint, rankOf, sessionNamed, staffOf } from "./org.ts"
+import {
+  NO_ORG,
+  appointedNote,
+  ceoHandoverOf,
+  dutiesOf,
+  orgOf,
+  parseAppoint,
+  rankOf,
+  roleSectionOf,
+  sessionNamed,
+  staffOf,
+} from "./org.ts"
 import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, jobsOf, refusalOf } from "./jobs.ts"
 import type { Assignment, BoardAction, Job, Report, Verdict } from "./jobs.ts"
@@ -425,7 +437,7 @@ async function deliver($: EngineInterface, now: number) {
   const me = office.me
   if (me === undefined) return
   const snaps = [me, ...office.others]
-  const memo = memoFor(me, snaps, office.memos, office.claims, now)
+  const memo = memoFor(me, snaps, office.memos, office.claims, now, office.org.ceo)
   if (memo === undefined) return
   // Whoever is typing in this session is at work in it, waiting or not.
   if ((await $.prompt.read()).text.trim() !== "") return
@@ -465,11 +477,29 @@ async function tick($: EngineInterface) {
   office.jobs = jobsOf(given, reported, judged)
   office.duties = dutiesOf(duties)
   await deliver($, now)
+  await handOver($, now)
   await btw($, now)
   await obey($, now)
   if (office.isOpen) announce($, office.others, now)
   // The elapsed times on screen move every second.
   if (office.isOpen || me.agents.length > 0) $.ui.invalidate("ui.render")
+}
+
+// The session the chairman just made CEO is handed the staff list and the reports
+// waiting for a verdict, once per appointment, when it is free, as a memo is.
+async function handOver($: EngineInterface, now: number) {
+  const me = office.me
+  if (me === undefined || office.org.ceo !== me.sessionId || !isFree(me, now)) return
+  const made = office.records.filter((r) => r.kind === "ceo").sort((a, b) => b.at - a.at)[0]
+  if (made === undefined || me.ceoSeen === made.at) return
+  if ((await $.prompt.read()).text.trim() !== "") return
+  const snaps = [me, ...office.others]
+  const peers = await readJsonDir<unknown>($, office.sessions)
+  const text = ceoHandoverOf(me, snaps, office.org, office.jobs, office.duties, peers, now)
+  me.ceoSeen = made.at
+  turnStarted(me, undefined, text, now)
+  changed($)
+  await $.prompt.submit({ text })
 }
 
 // A CEO that left the company while still appointed, said once where the pane
@@ -649,6 +679,7 @@ async function restore($: EngineInterface, me: Snapshot) {
   me.handled = before.handled ?? []
   if (before.seen !== undefined) me.seen = before.seen
   me.obeyed = before.obeyed ?? []
+  if (before.ceoSeen !== undefined) me.ceoSeen = before.ceoSeen
 }
 
 async function claim(
@@ -757,6 +788,21 @@ export const register: Register = (on, options) => {
         .catch(() => undefined)
     }
     return next(e)
+  })
+
+  // Each session's rank goes into its system prompt after the cache boundary; the
+  // text moves only when an appointment does (roleSectionOf).
+  on("prompt.compose", async ($, e, next) => {
+    const r = await next(e)
+    const me = office.me
+    if (me === undefined || office.org.ceo === undefined) return r
+    const now = Date.now()
+    const snaps = [me, ...office.others]
+    const rank = rankOf(me.sessionId, office.org, chiefsOf(snaps, now, office.org))
+    const peers = await readJsonDir<unknown>($, office.sessions)
+    const text = roleSectionOf(rank, me, snaps, office.org, peers, now)
+    if (text === undefined) return r
+    return { sections: [...r.sections, { id: "crab-office-rank", text, scope: "session" as const }] }
   })
 
   on("turn.start", ($, e, next) => {

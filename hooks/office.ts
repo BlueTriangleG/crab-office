@@ -81,6 +81,8 @@ export type Snapshot = {
   seen?: number
   // The chairman's instructions this session has taken up, so none runs twice.
   obeyed?: string[]
+  // The CEO appointment (its `at`) this session was already handed over for.
+  ceoSeen?: number
   // Its last few exchanges, for its card: what was said to it, what it said.
   talk?: Talk[]
 }
@@ -895,7 +897,7 @@ export function boardOf(snaps: Snapshot[], now: number, limit = BOARD_SHOWN, org
 // a memo never lands on a team in the middle of something.
 const AT_REST = new Set(["idle", "done", "failed"])
 
-function isFree(s: Snapshot, now: number): boolean {
+export function isFree(s: Snapshot, now: number): boolean {
   return !isGoneOf(s, now) && s.leader.status === "idle" && s.agents.every((a) => AT_REST.has(a.status))
 }
 
@@ -915,7 +917,16 @@ export function takerOf(memo: Memo, snaps: Snapshot[], now: number): string | un
 
 // The one memo this session should be handed now, if any: free, not handed it
 // before, and either named in it, or everyone's, or first in line for it.
-export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], claims: Claim[], now: number): Memo | undefined {
+// `ceo`: with one appointed, work for whoever is free is the CEO's to hand out,
+// so it goes to the CEO alone and not past it.
+export function memoFor(
+  me: Snapshot,
+  snaps: Snapshot[],
+  memos: Memo[],
+  claims: Claim[],
+  now: number,
+  ceo?: string,
+): Memo | undefined {
   if (!isFree(me, now)) return undefined
   const handled = new Set(me.handled ?? [])
   return memos
@@ -924,6 +935,7 @@ export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], claims: 
     .find((m) => {
       // Still busy with it is still holding it: the claim lands a turn after the
       // handover, and in that gap the next in line, then the next, took it too.
+      if (m.to.kind === "open" && ceo !== undefined) return me.sessionId === ceo && !claims.some((c) => c.memoId === m.id)
       if (m.to.kind === "open")
         return (
           !claims.some((c) => c.memoId === m.id) &&
