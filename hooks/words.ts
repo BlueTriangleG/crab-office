@@ -108,7 +108,7 @@ const EN = {
     return more.length > 0 ? `${who} (${more.join(", ")})` : who
   },
   titleHelp: (title: string | undefined) =>
-    `Your job title: ${title ?? "none yet"}. Set it with office_board title (text: one word, no spaces); SendMessage to a job title, or to CEO, reaches whoever holds it now.`,
+    `Your job title: ${title ?? "none yet"}. Set it with office_board title (text: one word, no spaces). SendMessage to a job title, or to CEO, is answered with the name its session goes by now: send again to that name. office_board staff lists every title with its name.`,
   roleCeo: [
     "## crab-office: you are the CEO",
     "The chairman (the user) has made you CEO of the office: every Claude Code session open on this machine works for you.",
@@ -273,6 +273,8 @@ const EN = {
     titleAway: (t: string) => `Whoever holds the title ${t} is not at work now, so nothing was sent`,
     titleShared: (t: string) => `More than one session at work holds the title ${t}, so nothing was sent; send to its SendMessage name`,
     noCeoAddress: "There is no CEO now, so nothing was sent",
+    titleNow: (t: string, name: string) =>
+      `Nothing was sent: ${t} is ${name} now. Send it again with to: "${name}". (A job title is answered with the name, not readdressed, so auto mode's review holds.)`,
     titleDone: (who: string, t: string) => `${who} is ${t} now; SendMessage to ${t} reaches it.`,
     dutyDone: (who: string) => `Duty written for ${who}.`,
     assigned: (id: string, who: string) => `Job #${id} given to ${who}; it sees it at its next tool call.`,
@@ -413,7 +415,7 @@ const ZH: Words = {
     return more.length > 0 ? `${who}（${more.join("，")}）` : who
   },
   titleHelp: (title) =>
-    `你的职位名：${title ?? "还没有"}。用 office_board title（text：一个词，不含空格）设置；用 SendMessage 发给某个职位名或 CEO，会送到当前担任的会话。`,
+    `你的职位名：${title ?? "还没有"}。用 office_board title（text：一个词，不含空格）设置。用 SendMessage 发给某个职位名或 CEO，会收到它现在的真实名字，再按这个名字发一次；office_board staff 列出每个职位名和对应的名字。`,
   roleCeo: [
     "## 螃蟹办公室：你是 CEO",
     "董事长（用户）任命你为公司的 CEO：这台机器上开着的 Claude Code 会话都归你管。",
@@ -547,6 +549,7 @@ const ZH: Words = {
     titleAway: (t) => `担任 ${t} 的会话现在不在岗，没有发出`,
     titleShared: (t) => `不止一个在岗会话叫 ${t}，没有发出；请用它的 SendMessage 名字`,
     noCeoAddress: "现在没有 CEO，没有发出",
+    titleNow: (t, name) => `没有发出：${t} 现在是 ${name}。请用 to: "${name}" 再发一次。（职位名只换来真实名字、不代为改写，这样自动模式的审查才作数。）`,
     titleDone: (who, t) => `${who} 现在是 ${t}，用 SendMessage 发给 ${t} 就能找到它。`,
     dutyDone: (who) => `已经给 ${who} 写好职责。`,
     assigned: (id, who) => `#${id} 已派给 ${who}，它下次调用工具时就会看到。`,

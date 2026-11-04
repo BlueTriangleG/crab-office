@@ -189,11 +189,13 @@ a name kept for later stops reaching it. Its session id does not change. So a
 session may hold one job title (`office_board title`: one word, set by the
 session itself, its repository's head or the CEO; `titles/<writer>.json`,
 keyed by session id). A model's SendMessage to a job title, or to `CEO`, is
-readdressed to the name that session goes by now, by a `tool.call` hook on
-SendMessage, before the permission check: a readdress at `session.send` is
-judged again, and in auto mode that second judgement gave no verdict; a
-title nobody at work holds, or two do, is refused with a reason, never
-guessed, and a real name, socket or id always passes untouched. A title must
+refused by a `tool.call` hook with the name that session goes by now, for the
+model to send again; it is not readdressed. Auto mode reviews a tool call
+server-side as the model wrote it, before any hook, and refuses one whose
+input a hook changed ("a hook changed this call's input after auto mode
+reviewed it"): a readdress at `session.send` failed so, and one at the tool
+call too. A title nobody at work holds, or two do, is refused with a reason,
+never guessed, and a real name, socket or id always passes untouched. A title must
 not clash with another at work, with a real name, or with `CEO`; a clash is
 refused, not numbered. The title is on the crab's name plate, in `staff`, in
 every reply naming the session, and on board lines between sessions. A name
@@ -278,8 +280,8 @@ but never drew.
 
 - Observes, except for memos, instructions, btw and the CEO's work: every hook
   passes its event on unchanged but `prompt.compose`, which adds a session's
-  rank, and SendMessage's `tool.call`, which readdresses a send to a job title
-  or to CEO; it hands a memo the chairman wrote to a finished session, an
+  rank, and SendMessage's `tool.call`, which refuses a send to a job title or
+  to CEO with the name to send to; it hands a memo the chairman wrote to a finished session, an
   instruction to the session it names, and the CEO its handover and the
   watchdog's nudges as prompts, sends the CEO's jobs and the reports through
   the engine's cross-session channel, and answers a btw with one side call to

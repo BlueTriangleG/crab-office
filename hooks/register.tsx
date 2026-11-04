@@ -76,7 +76,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-04.1"
+const BUILD = "2026-11-04.2"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -951,11 +951,13 @@ export const register: Register = (on, options) => {
     return r
   })
 
-  // A SendMessage to a job title, or to CEO, is readdressed to the name that
-  // session goes by now, at the tool call, before the permission check: a
-  // readdress at session.send is judged again, and in auto mode that second
-  // judgement gave no verdict. A title nobody at work holds is refused, never
-  // guessed; every other address passes untouched.
+  // A SendMessage to a job title, or to CEO, is answered with the name that
+  // session goes by now, for the model to send again. It is not readdressed:
+  // auto mode reviews the call server-side as the model wrote it, before any
+  // hook, and refuses one whose input a hook changed ("a hook changed this
+  // call's input after auto mode reviewed it"), at session.send and at the
+  // tool call alike. A title nobody at work holds is refused, never guessed;
+  // every other address passes untouched.
   on("tool.call", { tool: "SendMessage" }, async ($, e, next) => {
     const me = office.me
     const to = (e as unknown as { to?: unknown }).to
@@ -963,7 +965,7 @@ export const register: Register = (on, options) => {
     const peers = await readJsonDir<unknown>($, office.sessions)
     const routed = addressOf(to, office.titles, office.org, [me, ...office.others], peers, Date.now())
     if (routed?.refusal !== undefined) return { deny: routed.refusal }
-    return routed?.to === undefined ? next(e) : next({ ...e, to: routed.to })
+    return routed?.to === undefined ? next(e) : { deny: w().tool.titleNow(to, routed.to) }
   })
 
   // The board tool the model calls to take up a memo, say something, or see
