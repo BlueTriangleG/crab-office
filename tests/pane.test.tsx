@@ -22,3 +22,11 @@ test("the field to write on the board says in one line whom it can call, with no
   expect((await ui.find({ type: "Text", text: /no @/ }))?.text).toBe("@team, @department or @everyone; no @ goes to whoever is free first")
   await ui.unmount()
 })
+
+test("the pane ends with what is waiting on the chairman, saying so when nothing is", async ($, on) => {
+  on("session.start", (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: "/work/web-app", surface: "terminal", isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: "terminal" })
+  expect((await ui.find({ type: "Text", text: /Waiting on you/ }))?.text).toBe("Waiting on you: nothing")
+  await ui.unmount()
+})

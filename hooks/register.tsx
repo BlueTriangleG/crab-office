@@ -64,6 +64,8 @@ import {
 import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
 import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
+import { pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
+import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
 import type { Meeting, MeetingFile } from "./meetings.ts"
 import { setLanguage, w } from "./words.ts"
@@ -78,7 +80,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-04.4"
+const BUILD = "2026-11-04.5"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -110,6 +112,8 @@ const office = {
   // meetings they make together.
   meetingFiles: [] as MeetingFile[],
   meetings: [] as Meeting[],
+  // What is waiting on the chairman (`decisions/`, `settled/`).
+  pending: [] as Decision[],
   watchedAt: 0,
   isDirty: true,
   lastWrite: 0,
@@ -149,6 +153,32 @@ const GOLD = "#e8c468"
 const CHALK = "#5d7a66"
 
 // A board line shown whole, on a card the colour of the board.
+// What is waiting on the chairman, under everything else: who asked and what,
+// each with a ✓ that takes it off.
+function chairmanCard(el: Pick<ClientElements, "Box" | "Text" | "Button">, rows: { id: string; who: string; text: string }[]) {
+  const { Box, Text, Button } = el
+  if (rows.length === 0)
+    return (
+      <Text key="chairman-card" dimColor>
+        {w().chairmanList(0)}
+      </Text>
+    )
+  return (
+    <Box key="chairman-card" flexDirection="column" borderStyle="round" borderColor={LEADER_COLOR} paddingX={1}>
+      <Text bold color={LEADER_COLOR}>
+        {w().chairmanList(rows.length)}
+      </Text>
+      {rows.map((r) => (
+        <Box key={`decision-${r.id}`} flexDirection="row" columnGap={1}>
+          <Button key={`office-settle-${r.id}`} label="✓" onPress={() => undefined} />
+          <Text bold>{r.who}</Text>
+          <Text wrap="wrap">{r.text}</Text>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
 function noteCard(el: Pick<ClientElements, "Box" | "Text">, note: BoardLine) {
   const { Box, Text } = el
   return (
@@ -484,7 +514,7 @@ async function tick($: EngineInterface) {
   office.org = org
   office.memos = await readJsonDir<Memo>($, `${office.base}/memos`)
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
-  const [given, reported, judged, duties, titles, meetingFiles, amends] = await Promise.all([
+  const [given, reported, judged, duties, titles, meetingFiles, amends, asked, settled] = await Promise.all([
     readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
     readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
     readJsonDir<Verdict>($, `${office.base}/verdicts`, JOB_KEEP_MS),
@@ -492,7 +522,10 @@ async function tick($: EngineInterface) {
     readJsonDir<Record<string, Duty>>($, `${office.base}/titles`),
     readJsonDir<MeetingFile>($, `${office.base}/meetings`, JOB_KEEP_MS),
     readJsonDir<Amend>($, `${office.base}/amends`, JOB_KEEP_MS),
+    readJsonDir<Decision>($, `${office.base}/decisions`, JOB_KEEP_MS),
+    readJsonDir<Settled>($, `${office.base}/settled`, JOB_KEEP_MS),
   ])
+  office.pending = pendingOf(asked, settled)
   office.jobs = jobsOf(given, reported, judged, amends)
   office.duties = dutiesOf(duties)
   office.titles = titlesOf(titles)
@@ -739,8 +772,43 @@ async function meet($: EngineInterface, input: BoardInput, me: Snapshot, now: nu
   return w().tool.meetOpened(name, sent.heard, sent.missed)
 }
 
+// office_board ask and settle: any session puts what only the chairman can
+// decide on the chairman's list; the one that asked, or the CEO, takes it off
+// once answered.
+async function decide($: EngineInterface, input: BoardInput, me: Snapshot, now: number): Promise<string> {
+  const text = input.text?.trim() ?? ""
+  if (input.action === "ask") {
+    if (text === "") return w().tool.empty
+    const d: Decision = { id: idOf(now), by: me.sessionId, at: now, text }
+    await $.fs.write(`${office.base}/decisions/${d.id}.json`, JSON.stringify(d))
+    office.pending = [...office.pending, d]
+    messageSent(me, input.agentId, w().chairman, w().askLine(text), now)
+    changed($)
+    $.ui.invalidate("ui.render")
+    return w().tool.asked(d.id)
+  }
+  const id = input.decision?.trim().replace(/^#/, "") ?? ""
+  const d = office.pending.find((x) => x.id === id)
+  const refused = settleRefusal(d, me.sessionId, office.org.ceo === me.sessionId)
+  if (refused !== undefined || d === undefined) return refused ?? w().tool.noDecision
+  await settle($, d, text)
+  messageSent(me, input.agentId, w().chairman, w().settleLine(text || d.text), now)
+  changed($)
+  return w().tool.settled(d.id)
+}
+
+async function settle($: EngineInterface, d: Decision, text: string) {
+  const me = office.me
+  if (me === undefined) return
+  const done: Settled = { id: d.id, by: me.sessionId, at: Date.now(), text }
+  await $.fs.write(`${office.base}/settled/${d.id}.${me.sessionId}.json`, JSON.stringify(done))
+  office.pending = office.pending.filter((x) => x.id !== d.id)
+  $.ui.invalidate("ui.render")
+}
+
 type BoardInput = {
   action?: string
+  decision?: string
   meeting?: string
   memo?: string
   text?: string
@@ -988,9 +1056,10 @@ export const register: Register = (on, options) => {
         properties: {
           action: {
             type: "string",
-            enum: ["read", "post", "claim", "meet", "close", "staff", "duty", "assign", "report", "accept", "reject", "amend", "withdraw", "appoint", "title"],
+            enum: ["read", "post", "claim", "meet", "close", "ask", "settle", "staff", "duty", "assign", "report", "accept", "reject", "amend", "withdraw", "appoint", "title"],
           },
           meeting: { type: "string", description: w().tool.meeting },
+          decision: { type: "string", description: w().tool.decision },
           memo: { type: "string", description: w().tool.memo },
           assignment: { type: "string", description: w().tool.assignment },
           standard: { type: "string", description: w().tool.standard },
@@ -1154,6 +1223,9 @@ export const register: Register = (on, options) => {
         result: [
           inbox.length > 0 ? w().tool.inbox(inbox) : w().tool.noInbox,
           w().tool.latest(boardOf(snaps, now, undefined, office.org)),
+          ...(office.pending.length === 0
+            ? []
+            : [[w().pendingHead, ...rowsOf(office.pending, snaps, office.titles).map((r) => w().pendingLine(r.id, r.who, r.text))].join("\n")]),
           role,
         ].join("\n\n"),
       }
@@ -1180,6 +1252,7 @@ export const register: Register = (on, options) => {
       return { result: `${w().tool.written(heard)}${nudge}` }
     }
     if (input.action === "meet" || input.action === "close") return { result: `${await meet($, input, me, now)}${nudge}` }
+    if (input.action === "ask" || input.action === "settle") return { result: `${await decide($, input, me, now)}${nudge}` }
     return { result: `${await manage($, input, me, now)}${nudge}` }
   })
 
@@ -1307,6 +1380,12 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  on("ui.press", { element: /^office-settle-/ }, async ($, e, next) => {
+    const d = office.pending.find((x) => `office-settle-${x.id}` === e.element)
+    if (d !== undefined) await settle($, d, w().settledByChairman)
+    return next(e)
+  })
+
   on("ui.input", { element: /^office-btw-/ }, async ($, e, next) => {
     if (e.kind !== "submit" || office.selected === null) return next(e)
     void ask($, office.selected, e.value)
@@ -1413,6 +1492,7 @@ export const register: Register = (on, options) => {
                   }
                 : undefined,
             )}
+          {chairmanCard({ Box, Text, Button }, rowsOf(office.pending, snaps, office.titles))}
         </Box>
       )
     },

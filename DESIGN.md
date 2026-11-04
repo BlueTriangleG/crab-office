@@ -298,6 +298,20 @@ CEO at most once in 30 min, as one prompt when it is free; what to do is the
 CEO's to decide. The decisions behind all of this are in
 `docs/specs/2026-11-04-manager-design.md` (the dev copy only).
 
+## The chairman's list
+
+What only the chairman can decide (an approval, a choice between plans, a
+meeting's conclusion left to the chairman) any session puts on the chairman's
+list with `office_board ask`; kept until then in the asker's own context, a
+compaction lost the detail and no other session saw what was stuck on the
+chairman. The list is at the very bottom of the pane, who is waiting (its job
+title, else its place) and on what, each with a ✓ that takes it off; `read`
+carries it too. Once the chairman has answered, the session that asked, or the
+CEO, takes it off with `office_board settle`. `decisions/<id>.json` is the
+asker's, `settled/<id>.<writer>.json` whoever settled it, so each file has one
+writer; a session that left keeps its item on the list, since what it asked may
+still need deciding.
+
 ## How sessions see each other
 
 Each session writes its own snapshot to `<config>/crab-office/live/<sessionId>.json`
