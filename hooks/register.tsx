@@ -75,6 +75,8 @@ import { setLanguage, w } from "./words.ts"
 // never starts a turn.
 
 const PANE = "crab-office"
+// Bumped with each sync; every session's snapshot carries it.
+const BUILD = "2026-11-04.1"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -827,6 +829,7 @@ export const register: Register = (on, options) => {
       Date.now(),
       place.team,
     )
+    office.me.build = BUILD
     await restore($, office.me)
     await refreshTalk($).catch(() => undefined)
     office.isDirty = true

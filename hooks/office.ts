@@ -84,6 +84,9 @@ export type Snapshot = {
   obeyed?: string[]
   // The CEO appointment (its `at`) this session was already handed over for.
   ceoSeen?: number
+  // Which build of the mod wrote this snapshot, so a sync can be seen reaching
+  // every session (the skills folder is watched and reloads on its own).
+  build?: string
   // As CEO: when each `<job>:<rule>` was last put to it by the watchdog.
   nudged?: Record<string, number>
   // Its last few exchanges, for its card: what was said to it, what it said.
