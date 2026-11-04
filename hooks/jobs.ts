@@ -1,3 +1,4 @@
+import { isGoneOf } from "./office.ts"
 import type { Snapshot } from "./office.ts"
 import type { Org, Rank } from "./org.ts"
 import { w } from "./words.ts"
@@ -69,4 +70,41 @@ export function refusalOf(
     default:
       return undefined
   }
+}
+
+// The watchdog, code and not the CEO's model: open work that stalls is put to
+// the CEO, which decides what to do (ask, hand it elsewhere, ask the head, tell
+// the chairman). Rule 2 tells the chairman too, since only the chairman can
+// approve a tool for another session.
+export type Nudge = { id: string; rule: 1 | 2 | 3 | 4 | 5; minutes: number; toChairman: boolean }
+
+export const WATCH = {
+  everyMs: 30_000,
+  idleMs: 10 * 60_000,
+  approvalMs: 5 * 60_000,
+  workingMs: 60 * 60_000,
+  verdictMs: 10 * 60_000,
+  againMs: 30 * 60_000,
+}
+
+// `nudged`: when each `<job>:<rule>` was last put to the CEO, so none comes
+// twice in WATCH.againMs.
+export function nudgesOf(jobs: Job[], snaps: Snapshot[], now: number, nudged: Record<string, number>): Nudge[] {
+  const minutes = (ms: number) => Math.floor(ms / 60_000)
+  const all = jobs.flatMap((job): Nudge[] => {
+    const nudge = (rule: Nudge["rule"], since: number, toChairman = false): Nudge[] => [
+      { id: job.id, rule, minutes: minutes(now - since), toChairman },
+    ]
+    if (job.status === "reported") return now - job.since > WATCH.verdictMs ? nudge(5, job.since) : []
+    if (job.status !== "assigned" && job.status !== "rejected") return []
+    const worker = snaps.find((s) => s.sessionId === job.to)
+    if (worker === undefined || isGoneOf(worker, now)) return nudge(3, job.since)
+    const { status, since } = worker.leader
+    if (status === "approval") return now - since > WATCH.approvalMs ? nudge(2, since, true) : []
+    return [
+      ...(status === "idle" && since <= job.since && now - job.since > WATCH.idleMs ? nudge(1, job.since) : []),
+      ...(now - job.since > WATCH.workingMs ? nudge(4, job.since) : []),
+    ]
+  })
+  return all.filter((n) => now - (nudged[`${n.id}:${n.rule}`] ?? Number.NEGATIVE_INFINITY) >= WATCH.againMs)
 }

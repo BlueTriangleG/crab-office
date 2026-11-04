@@ -1,6 +1,6 @@
 import { expect, test } from "claude-code/testing"
 
-import { REJECTS_MAX, jobsOf, refusalOf } from "../hooks/jobs.ts"
+import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "../hooks/jobs.ts"
 import type { Assignment, Job, Report, Verdict } from "../hooks/jobs.ts"
 import { createSnapshot } from "../hooks/office.ts"
 import { NO_ORG } from "../hooks/org.ts"
@@ -53,4 +53,46 @@ test("only the CEO assigns, judges and appoints; a head writes duties for its ow
   expect(refusalOf("appoint", "h", "head", { ...ctx, target: b })).toBeDefined()
   expect(refusalOf("appoint", "a", "ceo", { ...ctx, target: b })).toBeUndefined()
   expect(refusalOf("staff", "b", "staff", ctx)).toBeUndefined()
+})
+
+test("the watchdog: idle 10 min, waiting for approval 5 min, gone, working 60 min, unjudged 10 min, each at most once in 30 min", async () => {
+  const worker = (id: string, status: string, since: number, updatedAt: number) => {
+    const s = createSnapshot(id, "web-app", undefined, T0, id)
+    s.leader.status = status as typeof s.leader.status
+    s.leader.since = since
+    s.updatedAt = updatedAt
+    return s
+  }
+  const open = (id: string, to: string): Job => ({ ...job(id, to), status: "assigned", since: T0, reports: [], verdicts: [] })
+  const rules = (jobs: Job[], snaps: ReturnType<typeof worker>[], now: number, nudged = {}) =>
+    nudgesOf(jobs, snaps, now, nudged).map((n) => `${n.id}:${n.rule}`)
+  // 1: idle since before the job
+  const idle = worker("i", "idle", T0 - 1, T0 + WATCH.idleMs + 1)
+  expect(rules([open("j", "i")], [idle], T0 + WATCH.idleMs + 1)).toEqual(["j:1"])
+  expect(rules([open("j", "i")], [idle], T0 + WATCH.idleMs - 1)).toEqual([])
+  // started after the job: not rule 1
+  expect(rules([open("j", "i")], [worker("i", "idle", T0 + 5, T0 + WATCH.idleMs + 1)], T0 + WATCH.idleMs + 1)).toEqual([])
+  // 2: waiting for approval, and it tells the chairman
+  const asks = worker("p", "approval", T0 + 10, T0 + 10 + WATCH.approvalMs + 1)
+  expect(nudgesOf([open("j", "p")], [asks], T0 + 10 + WATCH.approvalMs + 1, {})).toEqual([
+    { id: "j", rule: 2, minutes: 5, toChairman: true },
+  ])
+  expect(rules([open("j", "p")], [asks], T0 + 10 + WATCH.approvalMs - 1)).toEqual([])
+  // 3: the session has gone
+  expect(rules([open("j", "x")], [], T0 + 1)).toEqual(["j:3"])
+  // 4: working a long time with no report
+  const busy = (now: number) => [worker("w", "editing", T0 + 5, now)]
+  expect(rules([open("j", "w")], busy(T0 + WATCH.workingMs + 1), T0 + WATCH.workingMs + 1)).toEqual(["j:4"])
+  expect(rules([open("j", "w")], busy(T0 + WATCH.workingMs - 1), T0 + WATCH.workingMs - 1)).toEqual([])
+  // 5: reported and not judged
+  const reported: Job = { ...open("j", "w"), status: "reported", since: T0 + 100 }
+  expect(rules([reported], busy(T0 + 100 + WATCH.verdictMs + 1), T0 + 100 + WATCH.verdictMs + 1)).toEqual(["j:5"])
+  expect(rules([reported], busy(T0 + 100 + WATCH.verdictMs - 1), T0 + 100 + WATCH.verdictMs - 1)).toEqual([])
+  // once in 30 minutes
+  const now = T0 + WATCH.idleMs + 1
+  expect(rules([open("j", "i")], [idle], now, { "j:1": now - WATCH.againMs + 60_000 })).toEqual([])
+  expect(rules([open("j", "i")], [idle], now, { "j:1": now - WATCH.againMs - 60_000 })).toEqual(["j:1"])
+  // closed jobs never
+  for (const status of ["accepted", "chairman"] as const)
+    expect(rules([{ ...open("j", "x"), status }], [], T0 + WATCH.workingMs * 2)).toEqual([])
 })

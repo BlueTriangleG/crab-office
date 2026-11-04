@@ -110,6 +110,20 @@ const EN = {
       "Anything the chairman must decide, ask the chairman here, as always.",
     ].join("\n"),
   ceoHandoverHead: "[crab-office · the chairman has made you CEO]\nThe sessions at work now:",
+  nudgeHead: "[crab-office · the watchdog] These jobs have stalled:",
+  nudgeLine: (rule: number, id: string, task: string, who: string, minutes: number) => {
+    const what = [
+      "",
+      `given ${minutes} min ago and not started`,
+      `waiting ${minutes} min for the chairman's approval`,
+      "the session has gone and the job is not done",
+      `${minutes} min and no report`,
+      `reported ${minutes} min ago and not yet judged by you`,
+    ][rule]
+    return `- #${id} ${task.slice(0, 60)} (${who}): ${what}`
+  },
+  nudgeTail: "Decide what to do: ask it, give the job to another session, ask its head, or tell the chairman.",
+  approvalToast: (id: string, who: string, minutes: number) => `Job #${id}: ${who} has waited ${minutes} min for your approval`,
   ceoWaiting: "Reported and waiting for your verdict:",
   waitingLine: (id: string, task: string, who: string) => `- #${id} ${task} (from ${who})`,
   ceoHandoverTail: "Your instructions say what a CEO does; office_board staff gives this list again any time.",
@@ -364,6 +378,20 @@ const ZH: Words = {
       "需要董事长决定的事，照常在你的会话里问董事长。",
     ].join("\n"),
   ceoHandoverHead: "[螃蟹办公室 · 董事长任命你为 CEO]\n现在在岗的会话：",
+  nudgeHead: "[螃蟹办公室 · 督促] 这几件活卡住了：",
+  nudgeLine: (rule, id, task, who, minutes) => {
+    const what = [
+      "",
+      `派出 ${minutes} 分钟了，还没开始`,
+      `在等董事长批准，已经 ${minutes} 分钟`,
+      "这个会话下线了，活还没交",
+      `${minutes} 分钟了还没交差`,
+      `交差 ${minutes} 分钟了，你还没验收`,
+    ][rule]
+    return `- #${id} ${task.slice(0, 60)}（${who}）：${what}`
+  },
+  nudgeTail: "决定怎么处理：去问它、改派给别的会话、问它的部长，或者告诉董事长。",
+  approvalToast: (id, who, minutes) => `#${id}：${who} 等你批准已经 ${minutes} 分钟`,
   ceoWaiting: "已经交差、等你验收的：",
   waitingLine: (id, task, who) => `- #${id} ${task}（${who} 交的）`,
   ceoHandoverTail: "CEO 该做什么写在你的说明里；随时用 office_board staff 再看这张表。",

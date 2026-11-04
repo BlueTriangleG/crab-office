@@ -57,8 +57,8 @@ import {
   staffOf,
 } from "./org.ts"
 import type { Appointment, Duty, Org } from "./org.ts"
-import { REJECTS_MAX, jobsOf, refusalOf } from "./jobs.ts"
-import type { Assignment, BoardAction, Job, Report, Verdict } from "./jobs.ts"
+import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
+import type { Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
 import { setLanguage, w } from "./words.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
@@ -95,6 +95,7 @@ const office = {
   // The CEO's jobs as their files come to, and who is responsible for what.
   jobs: [] as Job[],
   duties: {} as Record<string, string>,
+  watchedAt: 0,
   isDirty: true,
   lastWrite: 0,
   isOpen: false,
@@ -478,6 +479,7 @@ async function tick($: EngineInterface) {
   office.duties = dutiesOf(duties)
   await deliver($, now)
   await handOver($, now)
+  await watch($, now)
   await btw($, now)
   await obey($, now)
   if (office.isOpen) announce($, office.others, now)
@@ -497,6 +499,41 @@ async function handOver($: EngineInterface, now: number) {
   const peers = await readJsonDir<unknown>($, office.sessions)
   const text = ceoHandoverOf(me, snaps, office.org, office.jobs, office.duties, peers, now)
   me.ceoSeen = made.at
+  turnStarted(me, undefined, text, now)
+  changed($)
+  await $.prompt.submit({ text })
+}
+
+// The watchdog runs in the CEO's own session. A wait for approval goes to the
+// chairman at once, as a toast, since only the chairman can give it; the rest
+// is put to the CEO as one prompt when it is free, never interrupting it, and
+// waits for that otherwise.
+async function watch($: EngineInterface, now: number) {
+  const me = office.me
+  if (me === undefined || office.org.ceo !== me.sessionId || now - office.watchedAt < WATCH.everyMs) return
+  office.watchedAt = now
+  const snaps = [me, ...office.others]
+  const nudges = nudgesOf(office.jobs, snaps, now, me.nudged ?? {})
+  if (nudges.length === 0) return
+  const jobOf = (id: string) => office.jobs.find((j) => j.id === id)
+  const whoIs = (id: string) => {
+    const s = snaps.find((x) => x.sessionId === jobOf(id)?.to)
+    return s === undefined ? (jobOf(id)?.to ?? id) : whoOf(s)
+  }
+  // Kept to the last WATCH.againMs, all a stamp is ever read for.
+  const stamp = (list: Nudge[]) => {
+    const kept = Object.entries(me.nudged ?? {}).filter(([, at]) => now - at < WATCH.againMs)
+    me.nudged = Object.fromEntries([...kept, ...list.map((n): [string, number] => [`${n.id}:${n.rule}`, now])])
+    changed($)
+  }
+  const toChairman = nudges.filter((n) => n.toChairman)
+  for (const n of toChairman) $.ui.toast(w().approvalToast(n.id, whoIs(n.id), n.minutes))
+  if (toChairman.length > 0) stamp(toChairman)
+  const toCeo = nudges.filter((n) => !n.toChairman)
+  if (toCeo.length === 0 || !isFree(me, now) || (await $.prompt.read()).text.trim() !== "") return
+  stamp(toCeo)
+  const lines = toCeo.map((n) => w().nudgeLine(n.rule, n.id, jobOf(n.id)?.task ?? "", whoIs(n.id), n.minutes))
+  const text = [w().nudgeHead, ...lines, "", w().nudgeTail].join("\n")
   turnStarted(me, undefined, text, now)
   changed($)
   await $.prompt.submit({ text })
@@ -680,6 +717,7 @@ async function restore($: EngineInterface, me: Snapshot) {
   if (before.seen !== undefined) me.seen = before.seen
   me.obeyed = before.obeyed ?? []
   if (before.ceoSeen !== undefined) me.ceoSeen = before.ceoSeen
+  if (before.nudged !== undefined) me.nudged = before.nudged
 }
 
 async function claim(

@@ -83,6 +83,8 @@ export type Snapshot = {
   obeyed?: string[]
   // The CEO appointment (its `at`) this session was already handed over for.
   ceoSeen?: number
+  // As CEO: when each `<job>:<rule>` was last put to it by the watchdog.
+  nudged?: Record<string, number>
   // Its last few exchanges, for its card: what was said to it, what it said.
   talk?: Talk[]
 }
