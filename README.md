@@ -11,13 +11,27 @@ Every Claude Code session running on your machine, and every subagent it hires, 
 - **You are the chairman**: post a memo to a team, a department or everyone, and an idle session picks it up.
 - **Talk to any session**: click a manager for its card: what it is on, its recent conversation, and a field to give it an instruction, which it carries out once it is free. You keep the conversation going from the office without switching windows.
 - **btw**: or just ask any crab what it is doing and how it is going. It answers on the side, without starting a turn or interrupting its work.
-- **A CEO you appoint**: make any session CEO from its card, and it wears the crown in an office of its own at the top. Hand it work and it gives each job to the session best placed, with how it will be judged; it can add to a job while it is being done, judges what comes back, and answers you. A watchdog nudges it when work stalls. The CEO is the last check, not a go-between.
+- **A CEO you appoint**, modelled on DeepSeek's super-agent design ([below](#the-ceo-a-super-agent-built-from-claude-code)): make any session CEO from its card, and it wears the crown in an office of its own at the top. Hand it work and it gives each job to the session best placed, with how it will be judged; it can add to a job while it is being done, judges what comes back, and answers you. A watchdog nudges it when work stalls. The CEO is the last check, not a go-between.
 - **Colleagues**: sessions talk one to one with Claude Code's own SendMessage, and the board shows it with a ✉ by both crabs. Every session is told to go straight to the colleague who knows, and may have one review its work before handing it back. Give a session a one-word **job title** and a SendMessage to that title, or to `CEO`, reaches it, whatever name it goes by after a restart.
 - **Meetings**: when three or more sessions must agree, any of them calls a meeting. Its members leave their desks for a meeting room, a SendMessage to the meeting's name reaches everyone at the table, and whoever called it closes it with the conclusion. A meeting quiet for 15 minutes ends by itself, and after 30 messages it passes on no more.
 - **Waiting on you**: what only you can decide (an approval, a choice between plans), any session puts on your list at the bottom of the pane: who is waiting, and on what, each with a ✓. It stays there, through compactions, until it is settled.
 - **The board tool**: every session gets an `office_board` tool to read the board, write to a whole department, everyone or you without interrupting anyone, call and close meetings, and, under a CEO, run the work.
 
 ![A manager's card: its task, tools and recent conversation, an instruction delivered, and fields to give another or ask a btw](docs/card.png)
+
+## The CEO: a super-agent built from Claude Code
+
+The CEO is a practice run of the super-agent idea in the DeepSeek Harness team's write-up *Super-agent 设计探索：迈向更自主的 Agent 系统* ("Super-agent design exploration: towards more autonomous agent systems", 31 October 2026, on DeepSeek's official WeChat account), built only from what Claude Code already has: its sessions, its SendMessage between sessions, and plugin hooks.
+
+| The super-agent design | In crab-office |
+| --- | --- |
+| Agents work one session at a time, and a person running several keeps every context in their head | The office shows every session at once, and you hand work to one CEO instead of picking a session yourself |
+| A router faces the person; workers do the work in sessions of their own, and their results come back to the router | The CEO is the router: it gives each job to the session best placed, takes the report back, judges it and answers you |
+| Event-driven, filtered twice: rules first, then the model decides whether to step in | A watchdog in code checks open jobs every 30 seconds (not started, waiting for approval, gone, too long, unjudged); only what it flags is put to the CEO's model, which decides what to do |
+| An external watchdog, outside the agent, that spots work going nowhere | The watchdog is plugin code, not part of the CEO's conversation, so a CEO that compacted its context or lost track of a job is still nudged |
+| Open questions: how a person sees progress, and which actions need a person's approval | You see progress in the office itself; what only you can decide waits on your list; and every message between sessions goes through Claude Code's own channel, so each session's permission mode still holds |
+
+Where it goes its own way: it is flatter. Sessions do not route through the CEO; they ask each other directly, have a colleague review their work, and meet when three or more must agree. The CEO is the last check, not a go-between. Everything is local files on one machine, with no server.
 
 ## Install
 
