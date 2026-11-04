@@ -405,7 +405,7 @@ test("the handover names the memo, who you are, your colleagues and how to take 
   expect(text).toContain("web-app 部 · checkout-redesign 的组长")
   expect(text).toContain("- web-app 部 · 本部 部长")
   expect(text).toContain("office_board")
-  const board = companyOf([hq], "a", T0, { memos: [memo], claims: [{ memoId: "m1", at: T0, sessionId: "b", who: "web-app 部 · checkout-redesign" }] }).board
+  const board = companyOf([hq, wt], "a", T0, { memos: [memo], claims: [{ memoId: "m1", at: T0, sessionId: "b", who: "web-app 部 · checkout-redesign" }] }).board
   expect(board?.at(-1)?.from.name).toBe("董事长")
   expect(board?.at(-1)?.text).toContain("✓ web-app 部 · checkout-redesign 接了")
 })
@@ -649,4 +649,42 @@ test("the CEO sits alone at the top of the office, in a room of its own, out of 
   expect(drawn.seats.filter((s) => s.cy === at("c").cy).map((s) => s.id)).toEqual(["c"])
   void a
   void b
+})
+
+test("work for whoever is free, like everyone's, goes only to sessions there when it was posted, not to each new one for a day", async () => {
+  const early = createSnapshot("a", "web-app", undefined, T0)
+  const late = createSnapshot("b", "web-app", undefined, T0 + 60 * 60_000, "docs")
+  const now = T0 + 61 * 60_000
+  for (const s of [early, late]) s.updatedAt = now
+  const open = parseSay("看一下首页", "o", T0 + 50)!
+  const all = parseSay("@全体 周五发版", "all", T0 + 50)!
+  // the one there when it was posted looked and passed
+  early.handled = ["o"]
+  expect(memoFor(late, [early, late], [open], [], now)).toBeUndefined()
+  expect(memoFor(late, [early, late], [all], [], now)).toBeUndefined()
+})
+
+test("a memo taken by a session that went away mid-work goes back to whoever is free; one it finished stays taken", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0, "docs")
+  const now = T0 + 10 * 60_000
+  b.updatedAt = now
+  const open = parseSay("看一下首页", "o", T0 + 50)!
+  const taken = { memoId: "o", at: T0 + 60, sessionId: "a", who: "web-app · 本部" }
+  // a has left the company without finishing a turn after taking it
+  expect(memoFor(b, [b], [open], [taken], now)?.id).toBe("o")
+  expect(companyOf([b], "b", now, { memos: [open], claims: [taken] }).board?.at(-1)?.text).toBe("看一下首页")
+  // it finished the turn it took the memo in: done, not abandoned
+  expect(memoFor(b, [b], [open], [{ ...taken, doneAt: T0 + 120 }], now)).toBeUndefined()
+  // still at work on it, it is still a's
+  a.updatedAt = now
+  a.leader.status = "thinking"
+  expect(memoFor(b, [a, b], [open], [taken], now)).toBeUndefined()
+})
+
+test("a prompt the office submitted reads on a card without Claude Code's own wrapping around it", async () => {
+  const sent =
+    "The crab-office plugin sent a message:\n[crab-office · from the chairman] ship it\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above."
+  expect(promptOf(sent)).toBe("ship it")
+  expect(talkOf([{ role: "user", text: sent }]).map((t) => t.text)).toEqual(["ship it"])
 })

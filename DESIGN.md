@@ -107,9 +107,14 @@ knew which session would be 部长.
   board or lists its colleagues. An open memo goes to one session only, the
   first free one by id; it stays with that session while it is busy, so the
   gap before its claim lands does not pass it on, and its claim stops a second.
-  A named or all memo is every addressee's, each claiming it for itself, and
-  reaches only sessions that were running when it was written. The board shows
-  `✓ <who>、<who> 接了` under a claimed memo. Memos expire after 24 h.
+  A named or all memo is every addressee's, each claiming it for itself. Every
+  memo, open ones too, reaches only sessions that were running when it was
+  written: an open memo nobody claimed went to each session opened in the day
+  after, a turn spent by every short-lived helper. A claim holds while its
+  session is in the company, and for good once that session finished a turn
+  after claiming (`doneAt`, written by the claimer); one whose session went
+  away mid-work lapses, and an open memo goes back to whoever is free. The
+  board shows `✓ <who>、<who> 接了` under a claimed memo. Memos expire after 24 h.
 - **Envelopes on the org chart**: for three seconds after work is handed down a
   ✉ walks the wire from the manager's junction to the crew member's desk, and
   after it is handed back, the other way.

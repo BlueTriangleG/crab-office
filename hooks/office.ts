@@ -45,7 +45,17 @@ export type Crab = {
 // the session it was typed in. `open` waits for whoever is free first.
 export type Target = { kind: "all" } | { kind: "open" } | { kind: "team"; name: string }
 export type Memo = { id: string; at: number; text: string; to: Target }
-export type Claim = { memoId: string; at: number; sessionId: string; who: string }
+// `doneAt`: the claiming session finished a turn after taking it.
+export type Claim = { memoId: string; at: number; sessionId: string; who: string; doneAt?: number }
+
+// A claim holds while its session is in the company, and for good once that
+// session finished a turn after taking the memo; one whose session went away
+// mid-work lapses, and the memo goes back to whoever is free. A lapsed claim
+// kept the memo on a dead session's desk.
+export function heldClaims(claims: Claim[], snaps: Snapshot[], now: number): Claim[] {
+  const here = new Set(snaps.filter((s) => s.ended !== true && now - s.updatedAt < LEAVE_MS).map((s) => s.sessionId))
+  return claims.filter((c) => c.doneAt !== undefined || here.has(c.sessionId))
+}
 
 // A btw: a question to one crab, answered beside its work and never as a turn
 // of it. One to a crab of another session goes over as a file, and that session
@@ -272,8 +282,11 @@ export function promptOf(text: string): string {
   // A memo handed over is a prompt this plugin wrote, behind the engine's "The
   // <plugin> plugin sent a message:": as a task it is the memo, not the whole
   // handover with its roster of colleagues.
+  // Claude Code also closes a plugin's prompt with a line of its own ("This is
+  // how Claude Code surfaces a prompt a plugin submits…"), which a card showed.
   const sent = `${command} ${typed}`
     .trim()
+    .replace(/\s*This is how Claude Code surfaces a prompt a plugin submits[\s\S]*$/, "")
     .replace(/^The [\w-]+ plugin sent a message:\s*/, "")
     .replace(/^\[(?:螃蟹办公室 · 董事长交代|crab-office · from the chairman)\]\s*/, "")
   for (const [pattern, task] of OWN) {
@@ -768,7 +781,9 @@ export function companyOf(
     .flatMap((r) => r.teams.flat())
     .filter((s) => s.look !== "gone").length
   const memoNotes: Note[] = desk.memos.map((m) => {
-    const takers = desk.claims.filter((c) => c.memoId === m.id).map((c) => c.who)
+    const takers = heldClaims(desk.claims, snaps, now)
+      .filter((c) => c.memoId === m.id)
+      .map((c) => c.who)
     return {
       at: m.at,
       kind: "memo",
@@ -1011,6 +1026,13 @@ export function isFree(s: Snapshot, now: number): boolean {
   return !isGoneOf(s, now) && s.leader.status === "idle" && s.agents.every((a) => AT_REST.has(a.status))
 }
 
+// A memo, whoever it is for, reaches the sessions that were there to hear it. Open
+// work reached every session opened in the day after, each a turn spent on it
+// (a person who opens a dozen short-lived helpers a day paid a dozen).
+function wasThere(memo: Memo, s: Snapshot): boolean {
+  return memo.at >= s.startedAt - 60_000
+}
+
 function isHolding(s: Snapshot, memo: Memo, now: number): boolean {
   return (s.handled ?? []).includes(memo.id) && !isGoneOf(s, now) && !isFree(s, now)
 }
@@ -1020,7 +1042,7 @@ function isHolding(s: Snapshot, memo: Memo, now: number): boolean {
 // the same files, so one goes, and if it passes, the next.
 export function takerOf(memo: Memo, snaps: Snapshot[], now: number): string | undefined {
   return snaps
-    .filter((s) => isFree(s, now) && !(s.handled ?? []).includes(memo.id))
+    .filter((s) => isFree(s, now) && wasThere(memo, s) && !(s.handled ?? []).includes(memo.id))
     .map((s) => s.sessionId)
     .sort()[0]
 }
@@ -1029,8 +1051,9 @@ export function takerOf(memo: Memo, snaps: Snapshot[], now: number): string | un
 // before, and either named in it, or everyone's, or first in line for it.
 // Open work goes to whoever is free, a CEO as anyone: sessions settle work among
 // themselves, and the CEO's part is the last check, not the hand-out.
-export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], claims: Claim[], now: number): Memo | undefined {
+export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], all: Claim[], now: number): Memo | undefined {
   if (!isFree(me, now)) return undefined
+  const claims = heldClaims(all, snaps, now)
   const handled = new Set(me.handled ?? [])
   return memos
     .filter((m) => now - m.at < MEMO_TTL_MS && !handled.has(m.id))
@@ -1044,8 +1067,7 @@ export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], claims: 
           !snaps.some((s) => isHolding(s, m, now)) &&
           takerOf(m, snaps, now) === me.sessionId
         )
-      // Named and everyone's memos reach the sessions that were there to hear them.
-      return isFor(m.to, me) && m.at >= me.startedAt - 60_000
+      return isFor(m.to, me) && wasThere(m, me)
     })
 }
 

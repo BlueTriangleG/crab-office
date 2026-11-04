@@ -39,6 +39,7 @@ import {
   noted,
   chiefsOf,
   isFree,
+  heldClaims,
 } from "./office.ts"
 import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
 import type { BoardLine } from "./pixels.ts"
@@ -80,7 +81,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.2"
+const BUILD = "2026-11-05.3"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -982,6 +983,26 @@ async function restore($: EngineInterface, me: Snapshot) {
   if (before.nudged !== undefined) me.nudged = before.nudged
 }
 
+// Only a memo for whoever is free is one session's: a named or everyone's memo
+// is each addressee's to take, so each claim is a file of its own.
+function claimFileOf(memo: Memo, sessionId: string): string {
+  return `${office.base}/claims/${memo.to.kind === "open" ? memo.id : `${memo.id}.${sessionId}`}.json`
+}
+
+// The claims this session made and has now finished a turn after: done, and
+// never to lapse when it goes away.
+async function claimsDone($: EngineInterface, now: number) {
+  const me = office.me
+  if (me === undefined) return
+  for (const c of office.claims.filter((x) => x.sessionId === me.sessionId && x.doneAt === undefined)) {
+    const memo = office.memos.find((m) => m.id === c.memoId)
+    if (memo === undefined) continue
+    const done = { ...c, doneAt: now }
+    await $.fs.write(claimFileOf(memo, me.sessionId), JSON.stringify(done))
+    office.claims = office.claims.map((x) => (x === c ? done : x))
+  }
+}
+
 async function claim(
   $: EngineInterface,
   memoId: string,
@@ -991,16 +1012,13 @@ async function claim(
   if (me === undefined) return w().tool.notReady
   const memo = office.memos.find((m) => m.id === memoId)
   if (memo === undefined) return w().tool.noMemo(memoId)
-  // Only a memo for whoever is free is one session's: a named or everyone's
-  // memo is each addressee's to take, so each claim is a file of its own.
-  const isOpen = memo.to.kind === "open"
-  const file = `${office.base}/claims/${isOpen ? memoId : `${memoId}.${me.sessionId}`}.json`
+  const file = claimFileOf(memo, me.sessionId)
   const prior = await $.fs.read(file).catch(() => undefined)
   if (prior !== undefined) {
     const by = JSON.parse(prior) as Claim
-    return by.sessionId === me.sessionId
-      ? w().tool.claimedAlready
-      : w().tool.claimedBy(by.who)
+    if (by.sessionId === me.sessionId) return w().tool.claimedAlready
+    // One whose session went away mid-work is taken over.
+    if (heldClaims([by], [me, ...office.others], Date.now()).length > 0) return w().tool.claimedBy(by.who)
   }
   const claimed: Claim = {
     memoId,
@@ -1304,7 +1322,10 @@ export const register: Register = (on, options) => {
         Date.now(),
       )
       changed($)
-      if (e.agentId === undefined) await refreshTalk($).catch(() => undefined)
+      if (e.agentId === undefined) {
+        await refreshTalk($).catch(() => undefined)
+        await claimsDone($, Date.now()).catch(() => undefined)
+      }
     }
     return r
   })
