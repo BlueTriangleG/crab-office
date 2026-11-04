@@ -24,6 +24,16 @@
         "en",
         "zh"
       ]
+    },
+    "mode": {
+      "type": "string",
+      "title": "Mode",
+      "description": "full: the office works its sessions (memos, instructions, the CEO, meetings); observe: it only shows them and sends them nothing. A session run with -p or the SDK always only observes.",
+      "default": "full",
+      "options": [
+        "full",
+        "observe"
+      ]
     }
   }
 }

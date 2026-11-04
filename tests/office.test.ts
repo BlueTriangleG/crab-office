@@ -11,6 +11,8 @@ import {
   STALE_MS,
   addresseesOf,
   bandOf,
+  chiefsOf,
+  parseAddressed,
   boardOf,
   btwOf,
   inboxOf,
@@ -687,4 +689,24 @@ test("a prompt the office submitted reads on a card without Claude Code's own wr
     "The crab-office plugin sent a message:\n[crab-office · from the chairman] ship it\n\nThis is how Claude Code surfaces a prompt a plugin submits between turns — it starts this turn in the user's place. Address the message above."
   expect(promptOf(sent)).toBe("ship it")
   expect(talkOf([{ role: "user", text: sent }]).map((t) => t.text)).toEqual(["ship it"])
+})
+
+test("a command names one session and what to say to it: @who, then the words", async () => {
+  expect(parseAddressed("@voice run the tests again")).toEqual({ name: "voice", text: "run the tests again" })
+  expect(parseAddressed("  voice   ")).toEqual({ name: "voice", text: "" })
+  expect(parseAddressed("@web-app-f4 多行\n第二行")).toEqual({ name: "web-app-f4", text: "多行\n第二行" })
+  expect(parseAddressed("")).toBeUndefined()
+})
+
+test("a session in observe mode takes no work for whoever is free and heads nothing", async () => {
+  const watcher = createSnapshot("a", "web-app", undefined, T0)
+  const worker = createSnapshot("b", "web-app", undefined, T0 + 10, "docs")
+  watcher.observe = true
+  const now = T0 + 100
+  for (const s of [watcher, worker]) s.updatedAt = now
+  const open = parseSay("看一下首页", "o", T0 + 50)!
+  // the watcher is first by id, and is passed over
+  expect(memoFor(worker, [watcher, worker], [open], [], now)?.id).toBe("o")
+  // older, and in the checkout itself, it would head web-app; it does not
+  expect([...chiefsOf([watcher, worker], now)]).toEqual(["b"])
 })

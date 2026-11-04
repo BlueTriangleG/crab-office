@@ -160,3 +160,11 @@ test("an addition to a job reads as a short task on a card, in either language",
   }
   setLanguage("zh")
 })
+
+test("a session in observe mode is given no job and no post", async () => {
+  const watcher = createSnapshot("w", "web-app", undefined, T0)
+  watcher.observe = true
+  const ctx = { myProject: "web-app", org: NO_ORG }
+  expect(refusalOf("assign", "a", "ceo", { ...ctx, target: watcher })).toBeDefined()
+  expect(refusalOf("appoint", "a", "ceo", { ...ctx, target: watcher })).toBeDefined()
+})

@@ -98,6 +98,9 @@ export type Snapshot = {
   // Which build of the mod wrote this snapshot, so a sync can be seen reaching
   // every session (the skills folder is watched and reloads on its own).
   build?: string
+  // Observe mode: the office shows this session and sends it nothing, no memo,
+  // instruction, job or meeting, and gives its model no tool and no prompt.
+  observe?: true
   // As CEO: when each `<job>:<rule>` was last put to it by the watchdog.
   nudged?: Record<string, number>
   // Its last few exchanges, for its card: what was said to it, what it said.
@@ -638,7 +641,7 @@ function bySeniority(a: Snapshot, b: Snapshot): number {
 // else that longest-serving session; never the CEO, who heads the company.
 export function chiefsOf(snaps: Snapshot[], now: number, org: Org = NONE): Set<string> {
   const chiefs = new Set<string>()
-  const senior = snaps.filter((s) => !isGoneOf(s, now) && s.sessionId !== org.ceo).sort(bySeniority)
+  const senior = snaps.filter((s) => !isGoneOf(s, now) && s.sessionId !== org.ceo && s.observe !== true).sort(bySeniority)
   for (const project of new Set(senior.map((s) => s.project))) {
     const staff = senior.filter((s) => s.project === project)
     const appointed = org.heads[project]
@@ -886,6 +889,7 @@ export function detailOf(
     { label: isLeader ? label.task : label.given, text: clip(crab.prompt ?? "", DETAIL_MAX) || w().notStarted },
     ...(tools ? [{ label: label.tools, text: tools }] : []),
     ...(!isLeader && crab.answer ? [{ label: label.back, text: clip(crab.answer, DETAIL_MAX) }] : []),
+    ...(isLeader && snap.observe === true ? [{ label: label.mode, text: w().observeMode }] : []),
     ...(isLeader ? jobs : [])
       .filter((j) => (isLive(j) || j.status === "chairman") && (org.ceo === snap.sessionId ? j.by === snap.sessionId : j.to === snap.sessionId))
       .map((j) => ({ label: label.job, text: `#${j.id} ${clip(j.task, 60)} · ${w().jobStatus[j.status]} · ${elapsed(now - j.since)}` })),
@@ -1042,7 +1046,7 @@ function isHolding(s: Snapshot, memo: Memo, now: number): boolean {
 // the same files, so one goes, and if it passes, the next.
 export function takerOf(memo: Memo, snaps: Snapshot[], now: number): string | undefined {
   return snaps
-    .filter((s) => isFree(s, now) && wasThere(memo, s) && !(s.handled ?? []).includes(memo.id))
+    .filter((s) => isFree(s, now) && s.observe !== true && wasThere(memo, s) && !(s.handled ?? []).includes(memo.id))
     .map((s) => s.sessionId)
     .sort()[0]
 }
@@ -1187,4 +1191,11 @@ export function handoverOf(memo: Memo, me: Snapshot, snaps: Snapshot[], now: num
     "",
     how,
   ].join("\n")
+}
+
+// "/office tell @who …", "/office btw @who …", "/office card @who": one session,
+// named as SendMessage, a job title or a team names it, then the words.
+export function parseAddressed(args: string): { name: string; text: string } | undefined {
+  const m = /^@?(\S+)(?:\s+([\s\S]*))?$/.exec(args.trim())
+  return m?.[1] === undefined ? undefined : { name: m[1], text: (m[2] ?? "").trim() }
 }

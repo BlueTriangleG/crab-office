@@ -53,6 +53,10 @@ In the desktop app, where `/plugin` does not run: click + next to the prompt box
 
 crab-office is a mod (a plugin of function hooks), so it needs a Claude Code build with mods. The office draws in the terminal; under `/tui fullscreen` the pane docks on the right.
 
+## Observe mode
+
+Set the plugin's `mode` option to `observe` and the office only shows sessions: it hands them no memo, instruction, job or meeting, and gives their models no tool and no prompt. Every session run with `-p` or the SDK only observes by itself, so the office can be installed everywhere to watch a crowd of short-lived helpers without spending a turn of theirs. A btw still works on an observed session: it is you asking, answered on the side.
+
 ## Language
 
 The office speaks English by default. To switch to Chinese, set the plugin's `language` option to `zh` in `/config` (it is also offered when you install). Everything it shows you, and everything it tells the models, follows the setting.
@@ -64,6 +68,9 @@ The office speaks English by default. To switch to Chinese, set the plugin's `la
 | `/office` | Open the office |
 | `/office say message` | Pin a memo to the board for whoever is free first |
 | `/office say @team message` | For one worktree team; `@<project>` for a department, `@everyone` for all. Typing `@` offers the names |
+| `/office tell @who instruction` | What a card's **➤ Tell it** does: it runs once that session is free. `@who` is a job title, SendMessage name or team |
+| `/office btw @who question` | Ask a session on the side; the answer shows on its card |
+| `/office card @who` | Open the office on a session's card |
 | `/office ceo @who` | Make a session CEO; `/office ceo off` to have none |
 | `/office head @who` | Make a session its repository's head; `/office head off` to go back to the longest-serving |
 | `/office band` | Show or hide the strip of crabs above the prompt |

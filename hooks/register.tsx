@@ -21,6 +21,7 @@ import {
   messageSent,
   subagentBtwOf,
   parseSay,
+  parseAddressed,
   addresseesOf,
   parseSnapshot,
   peerOf,
@@ -81,7 +82,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.3"
+const BUILD = "2026-11-05.4"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -535,11 +536,13 @@ async function tick($: EngineInterface) {
   office.titles = titlesOf(titles)
   office.meetingFiles = meetingFiles
   office.meetings = meetingsOf(meetingFiles, [me, ...office.others], now)
+  await btw($, now)
+  // An observer is sent nothing: no memo, no instruction, no CEO's handover.
+  if (me.observe === true) return
   await adjourn($, now)
   await deliver($, now)
   await handOver($, now)
   await watch($, now)
-  await btw($, now)
   await obey($, now)
   if (office.isOpen) announce($, office.others, now)
   // The elapsed times on screen move every second.
@@ -632,6 +635,7 @@ async function appoint(
     if (target === undefined) return w().nobodyNamed(a.name)
   }
   if (a.kind === "head" && !a.isOff && target !== undefined && target.sessionId === office.org.ceo) return w().ceoCantHead
+  if (!a.isOff && target?.observe === true) return w().observing(whoOf(target))
   const project = target?.project ?? me.project
   const holder = a.kind === "ceo" ? office.org.ceo : office.org.heads[project]
   const about = a.isOff ? snaps.find((s) => s.sessionId === holder) ?? target : target
@@ -748,6 +752,7 @@ async function meet($: EngineInterface, input: BoardInput, me: Snapshot, now: nu
     const one = sessionNamed(n, snaps, peers, now, office.titles)
     if (one.many.length > 1) return w().ambiguous(one.many.map((s) => peerOf(peers, s.sessionId)?.name ?? whoOf(s)))
     if (one.one === undefined) return w().nobodyNamed(n)
+    if (one.one.observe === true) return w().observing(label(one.one))
     if (one.one.sessionId !== me.sessionId && !found.includes(one.one)) found.push(one.one)
   }
   if (m !== undefined && isLiveMeeting(m)) {
@@ -808,6 +813,44 @@ async function settle($: EngineInterface, d: Decision, text: string) {
   await $.fs.write(`${office.base}/settled/${d.id}.${me.sessionId}.json`, JSON.stringify(done))
   office.pending = office.pending.filter((x) => x.id !== d.id)
   $.ui.invalidate("ui.render")
+}
+
+async function openPane($: EngineInterface): Promise<string | undefined> {
+  try {
+    await $.ui.open({ id: PANE, title: w().paneTitle, focus: true, columns: PANE_COLUMNS })
+  } catch (err) {
+    return w().paneFailed(String(err))
+  }
+  office.isOpen = true
+  office.others = await readOthers($, Date.now())
+  $.ui.invalidate("ui.render")
+  return undefined
+}
+
+// What a card's fields and a click do, from the prompt box: tell a session
+// something (as ➤ Tell it), ask it a btw, or open its card.
+async function addressed($: EngineInterface, verb: "tell" | "btw" | "card", args: string): Promise<string> {
+  const me = office.me
+  const parsed = parseAddressed(args)
+  if (me === undefined || parsed === undefined) return w().addressUsage
+  const peers = await readJsonDir<unknown>($, office.sessions)
+  const found = sessionNamed(parsed.name, [me, ...office.others], peers, Date.now(), office.titles)
+  if (found.many.length > 1) return w().ambiguous(found.many.map((s) => peerOf(peers, s.sessionId)?.name ?? whoOf(s)))
+  const s = found.one
+  if (s === undefined) return w().nobodyNamed(parsed.name)
+  const who = labelOf(s, peers, office.titles)
+  if (verb !== "card" && parsed.text === "") return w().needWords
+  if (verb === "tell") {
+    if (s.observe === true) return w().observing(who)
+    await order($, s.sessionId, parsed.text)
+    return w().toldDone(who)
+  }
+  // A session's manager is its crab of the session's own id.
+  office.selected = s.sessionId
+  if (verb === "btw") void ask($, s.sessionId, parsed.text)
+  const failed = await openPane($)
+  if (failed !== undefined) return failed
+  return verb === "btw" ? w().askedDone(who) : w().cardShown(who)
 }
 
 type BoardInput = {
@@ -1045,6 +1088,9 @@ export const register: Register = (on, options) => {
       $.env.get("CLAUDE_CODE_SESSION_KIND"),
     ])
     office.isSpare = kind === "bg"
+    // A -p run or the SDK only observes, as observe mode does; a warm background
+    // process is not one of those, though no person is at its prompt yet.
+    const isObserving = options.mode === "observe" || (!e.isInteractive && kind !== "bg")
     office.base = `${configDir || `${home}/.claude`}/crab-office`
     office.sessions = `${configDir || `${home}/.claude`}/sessions`
     // A worktree's `.git` is a file naming its repository; a checkout's is a
@@ -1060,6 +1106,7 @@ export const register: Register = (on, options) => {
     )
     office.me.build = BUILD
     await restore($, office.me)
+    if (isObserving) office.me.observe = true
     await refreshTalk($).catch(() => undefined)
     office.isDirty = true
     await $.command.register({
@@ -1068,7 +1115,7 @@ export const register: Register = (on, options) => {
       argumentHint: w().commandHint,
       immediate: true,
     })
-    await $.tool.register({
+    if (!isObserving) await $.tool.register({
       name: BOARD_TOOL,
       description:
         w().tool.description,
@@ -1121,7 +1168,7 @@ export const register: Register = (on, options) => {
     const r = await next(e)
     const me = office.me
     // A teammate's prompt is its own, not this session's.
-    if (me === undefined || e.traits.includes("teammate")) return r
+    if (me === undefined || me.observe === true || e.traits.includes("teammate")) return r
     const now = Date.now()
     const snaps = [me, ...office.others]
     const rank = rankOf(me.sessionId, office.org, chiefsOf(snaps, now, office.org))
@@ -1355,23 +1402,14 @@ export const register: Register = (on, options) => {
       }
     }
     if (arg.startsWith("say")) return { text: await say($, args.slice(3)) }
+    for (const verb of ["tell", "btw", "card"] as const)
+      if (arg === verb || arg.startsWith(`${verb} `)) return { text: await addressed($, verb, args.slice(verb.length)) }
     const appointing = parseAppoint(args)
     // A person appoints: the prompt box, or the person's own remote client.
     const isPerson = e.origin.kind === "composer" || e.origin.kind === "bridge"
     if (appointing !== undefined) return { text: isPerson ? await appoint($, appointing) : w().notByPerson }
-    try {
-      await $.ui.open({
-        id: PANE,
-        title: w().paneTitle,
-        focus: true,
-        columns: PANE_COLUMNS,
-      })
-    } catch (err) {
-      return { text: w().paneFailed(String(err)) }
-    }
-    office.isOpen = true
-    office.others = await readOthers($, Date.now())
-    $.ui.invalidate("ui.render")
+    const failed = await openPane($)
+    if (failed !== undefined) return { text: failed }
     const hint = e.presentation.isFullscreen
       ? w().hintFull
       : w().hintInline
@@ -1512,14 +1550,14 @@ export const register: Register = (on, options) => {
               detailOf(chosen.crab, chosen.snap, now, snaps, office.org, office.jobs),
               office.chats.get(chosen.crab.id) ?? [],
               `office-btw-${office.asked}-${chosen.crab.id}`,
-              chosen.crab.role === "leader"
+              chosen.crab.role === "leader" && chosen.snap.observe !== true
                 ? {
                     key: `office-order-${office.asked}-${chosen.crab.id}`,
                     obeyed: chosen.snap.obeyed ?? [],
                     talk: chosen.snap.talk ?? [],
                   }
                 : undefined,
-              chosen.crab.role === "leader"
+              chosen.crab.role === "leader" && chosen.snap.observe !== true
                 ? {
                     isCeo: office.org.ceo === chosen.snap.sessionId,
                     isHead: office.org.heads[chosen.snap.project] === chosen.snap.sessionId,

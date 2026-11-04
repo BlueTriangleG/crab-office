@@ -73,6 +73,7 @@ export function refusalOf(
 ): string | undefined {
   const { job, target } = ctx
   if (ctx.isSubagent === true && CEO_ONLY.has(action)) return w().tool.notFromSubagent
+  if ((action === "assign" || action === "appoint") && target?.observe === true) return w().tool.observing
   switch (action) {
     case "assign":
     case "appoint":

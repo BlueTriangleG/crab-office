@@ -303,6 +303,21 @@ CEO at most once in 30 min, as one prompt when it is free; what to do is the
 CEO's to decide. The decisions behind all of this are in
 `docs/specs/2026-11-04-manager-design.md` (the dev copy only).
 
+## Observe mode
+
+A session in observe mode is shown in the office and sent nothing: it takes no
+memo (not even work for whoever is free, which passes it over), obeys no
+instruction from a card (its card has no field for one, nor appointment
+buttons), is given no job, joins no meeting, heads no repository, and its model
+gets no `office_board` tool and nothing in its system prompt. A btw still
+reaches it, since that is the person asking and answers beside its work, never
+as a turn. It is the plugin's `mode` option, `observe`, and every `-p` run or
+SDK session is one by itself: a person who opens a dozen short-lived helpers
+can install the office everywhere and watch them, and none is handed a turn of
+office work. A warm background process the daemon keeps is no `-p` run, though
+no one is at its prompt yet, so it is not made an observer. The snapshot says
+`observe: true`, so every session leaves it alone.
+
 ## The chairman's list
 
 What only the chairman can decide (an approval, a choice between plans, a
