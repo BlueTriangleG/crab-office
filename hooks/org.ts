@@ -101,7 +101,7 @@ export function titleRefusal(
   const taken = Object.entries(titles).find(([id, x]) => id !== holder && present.has(id) && x.toLowerCase() === t.toLowerCase())
   if (taken === undefined) return undefined
   const s = snaps.find((x) => x.sessionId === taken[0])
-  return w().tool.titleTaken(t, s === undefined ? taken[0] : whoOf(s))
+  return w().tool.titleTaken(t, s === undefined ? taken[0] : labelOf(s, peers))
 }
 
 // Where a SendMessage addressed to a job title, or to CEO, goes now: the name

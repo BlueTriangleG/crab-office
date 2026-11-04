@@ -935,27 +935,32 @@ export const register: Register = (on, options) => {
   // another session, goes up on the shared board once it is delivered. One to
   // another session names that session's crab, found in the engine's register
   // by the name or socket it was sent to.
-  //
-  // A model's SendMessage to a job title, or to CEO, is readdressed to the name
-  // that session goes by now; one to a title nobody at work holds is refused,
-  // never guessed. Every other address passes untouched.
   on("session.send", async ($, e, next) => {
-    const me = office.me
-    const peers = await readJsonDir<unknown>($, office.sessions)
-    const now = Date.now()
-    const snaps = me === undefined ? office.others : [me, ...office.others]
-    const routed = e.origin.kind === "model" ? addressOf(e.to, office.titles, office.org, snaps, peers, now) : undefined
-    if (routed?.refusal !== undefined) return { isDelivered: false as const, reason: routed.refusal }
-    const sent = routed?.to === undefined ? e : { ...e, to: routed.to }
-    const r = await next(sent)
+    const r = await next(e)
     // A delivery office_board made itself is on the board already; another
     // plugin's is not.
     const isOurs = e.origin.kind === "plugin" && e.origin.name === "crab-office"
-    if (me !== undefined && r.isDelivered && !isOurs) {
-      messageSent(me, e.agentId, sent.to, e.text, now, peerOf(peers, sent.to)?.sessionId)
+    if (office.me !== undefined && r.isDelivered && !isOurs) {
+      const peer = peerOf(await readJsonDir<unknown>($, office.sessions), e.to)
+      messageSent(office.me, e.agentId, e.to, e.text, Date.now(), peer?.sessionId)
       changed($)
     }
     return r
+  })
+
+  // A SendMessage to a job title, or to CEO, is readdressed to the name that
+  // session goes by now, at the tool call, before the permission check: a
+  // readdress at session.send is judged again, and in auto mode that second
+  // judgement gave no verdict. A title nobody at work holds is refused, never
+  // guessed; every other address passes untouched.
+  on("tool.call", { tool: "SendMessage" }, async ($, e, next) => {
+    const me = office.me
+    const to = (e as unknown as { to?: unknown }).to
+    if (me === undefined || typeof to !== "string") return next(e)
+    const peers = await readJsonDir<unknown>($, office.sessions)
+    const routed = addressOf(to, office.titles, office.org, [me, ...office.others], peers, Date.now())
+    if (routed?.refusal !== undefined) return { deny: routed.refusal }
+    return routed?.to === undefined ? next(e) : next({ ...e, to: routed.to })
   })
 
   // The board tool the model calls to take up a memo, say something, or see

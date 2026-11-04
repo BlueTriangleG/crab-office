@@ -271,6 +271,8 @@ test("a job title is one word, the CEO's is reserved, and no two sessions at wor
   expect(titleRefusal("infra", "c", titles, snaps, peers, now)).toBeUndefined()
   for (const bad of ["", "two words", "x".repeat(25), "CEO", "ceo", "Voice", "web-app-e0"])
     expect(titleRefusal(bad, "c", titles, snaps, peers, now)).toBeDefined()
+  // a clash names its holder so it can be told from the others in its checkout
+  expect(titleRefusal("Voice", "c", titles, snaps, peers, now)).toContain("web-app-e0")
 })
 
 test("SendMessage to a job title or to CEO reaches its session by the name it has now; a title nobody at work holds is refused, never guessed", async () => {
