@@ -49,6 +49,7 @@ import {
   appointedNote,
   ceoHandoverOf,
   dutiesOf,
+  labelOf,
   orgOf,
   parseAppoint,
   prunedRecords,
@@ -564,9 +565,9 @@ async function appoint(
   if (me === undefined) return w().tool.notReady
   const now = Date.now()
   const snaps = [me, ...office.others]
+  const peers = await readJsonDir<unknown>($, office.sessions)
   let target = chosen
   if (target === undefined && a.name !== null) {
-    const peers = await readJsonDir<unknown>($, office.sessions)
     const found = sessionNamed(a.name, snaps, peers, now)
     if (found.many.length > 1) return w().ambiguous(found.many.map((s) => peerOf(peers, s.sessionId)?.name ?? whoOf(s)))
     // A head is revoked by naming its repository as well as the head.
@@ -586,7 +587,7 @@ async function appoint(
     by: "chairman",
   }
   await recordAppointment($, record, chairman(), about)
-  return w().appointDone(whoOf(about), titleOf(a.kind === "ceo" ? "ceo" : "chief"), a.isOff)
+  return w().appointDone(labelOf(about, peers), titleOf(a.kind === "ceo" ? "ceo" : "chief"), a.isOff)
 }
 
 async function recordAppointment($: EngineInterface, record: Appointment, by: Speaker, about: Snapshot) {
@@ -649,8 +650,8 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     const record: Appointment = { kind: "head", project: target.project, sessionId: target.sessionId, at: now, by: "ceo" }
     await recordAppointment($, record, by, target)
     const head = snaps.find((s) => s.sessionId === office.org.heads[target.project])
-    if (head !== undefined && head.sessionId !== target.sessionId) return w().tool.overruled(whoOf(head))
-    return w().appointDone(whoOf(target), titleOf("chief"), false)
+    if (head !== undefined && head.sessionId !== target.sessionId) return w().tool.overruled(labelOf(head, peers))
+    return w().appointDone(labelOf(target, peers), titleOf("chief"), false)
   }
   if (text === "" && action !== "accept" && action !== "withdraw") return w().tool.empty
   if (action === "duty" && target !== undefined) {
@@ -658,7 +659,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     const mine = await $.fs.read(file).then((s) => JSON.parse(s) as Record<string, Duty>).catch(() => ({}))
     await $.fs.write(file, JSON.stringify({ ...mine, [target.sessionId]: { text, at: now, by: me.sessionId } }))
     office.duties = { ...office.duties, [target.sessionId]: text }
-    return w().tool.dutyDone(whoOf(target))
+    return w().tool.dutyDone(labelOf(target, peers))
   }
   if (action === "assign" && target !== undefined) {
     const given: Assignment = {
@@ -676,7 +677,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     if (!sent.isDelivered) return w().tool.notDelivered(given.id, sent.reason)
     messageSent(me, input.agentId, nameOf(target), w().jobLine(given.id, given.task), now, target.sessionId)
     changed($)
-    return w().tool.assigned(given.id, whoOf(target))
+    return w().tool.assigned(given.id, labelOf(target, peers))
   }
   // Narrows: refusalOf has answered every report, accept and reject without a job.
   if (job === undefined) return w().tool.noJob
@@ -695,7 +696,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     if (!sent.isDelivered) return w().tool.reportHeld(sent.reason)
     messageSent(me, input.agentId, nameOf(ceo), w().reportLine(job.id, text), now, ceo.sessionId)
     changed($)
-    return w().tool.reportedTo(whoOf(ceo))
+    return w().tool.reportedTo(labelOf(ceo, peers))
   }
   const ok = action === "accept"
   const isWithdrawn = action === "withdraw"

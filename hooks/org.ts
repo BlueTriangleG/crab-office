@@ -68,6 +68,12 @@ export function prunedRecords(records: Appointment[]): Appointment[] {
   return [...latestOf.values()]
 }
 
+// A session as a reply names it: its place, and the SendMessage name that
+// tells it apart, since one checkout holds many sessions of one place.
+export function labelOf(s: Snapshot, peers: unknown[]): string {
+  return w().named(whoOf(s), peerOf(peers, s.sessionId)?.name)
+}
+
 export function rankOf(sessionId: string, org: Org, chiefs: Set<string>): Rank {
   if (org.ceo === sessionId) return "ceo"
   return chiefs.has(sessionId) ? "head" : "staff"
@@ -167,12 +173,11 @@ export function roleSectionOf(
 ): string | undefined {
   const ceo = snaps.find((s) => s.sessionId === org.ceo)
   if (ceo === undefined) return undefined
-  const named = (s: Snapshot) => w().named(whoOf(s), peerOf(peers, s.sessionId)?.name)
   if (rank === "ceo") return w().roleCeo
-  if (rank === "head") return w().roleHead(me.project, named(ceo))
+  if (rank === "head") return w().roleHead(me.project, labelOf(ceo, peers))
   const chiefs = chiefsOf(snaps, now, org)
   const head = snaps.find((s) => chiefs.has(s.sessionId) && s.project === me.project)
-  return w().roleStaff(named(ceo), head === undefined ? undefined : named(head))
+  return w().roleStaff(labelOf(ceo, peers), head === undefined ? undefined : labelOf(head, peers))
 }
 
 // What a session is handed when the chairman makes it CEO: what a CEO does, the

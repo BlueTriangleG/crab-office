@@ -6,6 +6,7 @@ import {
   appointedNote,
   ceoHandoverOf,
   dutiesOf,
+  labelOf,
   orgOf,
   parseAppoint,
   prunedRecords,
@@ -225,4 +226,17 @@ test("a team whose name ends in team is still that team", async () => {
   expect(sessionNamed("dreamteam", [s], [], T0).one?.sessionId).toBe("a")
   expect(sessionNamed("dreamteam team", [s], [], T0).one?.sessionId).toBe("a")
   expect(sessionNamed("dreamteam组", [s], [], T0).one?.sessionId).toBe("a")
+})
+
+test("a session is named by its SendMessage name too, since one checkout holds many", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0)
+  const peers = [
+    { sessionId: "a", name: "web-app-c6" },
+    { sessionId: "b", name: "web-app-e0" },
+  ]
+  expect(labelOf(a, peers)).toBe("web-app 部 · 本部（SendMessage：web-app-c6）")
+  expect(labelOf(a, peers)).not.toBe(labelOf(b, peers))
+  // one the register does not know keeps its place alone
+  expect(labelOf(a, [])).toBe("web-app 部 · 本部")
 })
