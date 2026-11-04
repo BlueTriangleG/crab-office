@@ -97,8 +97,8 @@ knew which session would be 部长.
   keeps its last forty lines and each line its first 400 characters: every
   session reads every other's snapshot each second, so the history is bounded.
 - **The chairman's memos**: `/office say [@组名|@全体] 留言`, or the framed field
-  under the board in the pane (click it, type, Enter, the names it can call
-  shown as tags beneath), pins a memo to the board. `@<worktree>` (or `@本部`) is for that team, `@全体` for every team,
+  under the board in the pane (click it, type, Enter; one dim line beneath says
+  whom it can call, and where a memo with no @ goes), pins a memo to the board. `@<worktree>` (or `@本部`) is for that team, `@全体` for every team,
   no `@` for whoever is free first. Typing `@` after `/office say` lists them
   in the typeahead, each team with what it is doing. A session takes a memo when it is finished, its manager waiting and none
   of its crew at work, with nothing typed in its prompt box, and

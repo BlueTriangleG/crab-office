@@ -1155,7 +1155,6 @@ export const register: Register = (on, options) => {
       const now = Date.now()
       const me = office.me
       const snaps = me !== undefined ? [me, ...office.others] : office.others
-      const names = addresseesOf(snaps, now, "").map((r) => r.text.trim())
       const company = companyOf(
         snaps,
         me?.sessionId ?? "",
@@ -1188,15 +1187,8 @@ export const register: Register = (on, options) => {
               submitLabel={w().post}
               onSubmit={() => undefined}
             />
-            <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
-              <Text dimColor>{w().call}</Text>
-              {names.map((name) => (
-                <Text key={`to-${name}`} color="#e8c468" backgroundColor="#2e3a33">
-                  {` ${name} `}
-                </Text>
-              ))}
-              <Text dimColor>{w().uncalled}</Text>
-            </Box>
+            {/* Whom a line can call, in one line: a tag for every team ran to three rows. */}
+            <Text dimColor>{w().sayHint(office.org.ceo !== undefined)}</Text>
           </Box>
           {note !== undefined && noteCard({ Box, Text }, note)}
           {chosen !== undefined &&

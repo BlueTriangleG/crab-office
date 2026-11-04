@@ -233,8 +233,8 @@ const EN = {
   sayLabel: "✎ Write on the board ",
   sayPlaceholder: "e.g. @everyone get the tests in before you go",
   post: "post",
-  call: "Call",
-  uncalled: "· no @ and whoever is free takes it",
+  sayHint: (hasCeo: boolean) =>
+    `@team, @department or @everyone; no @ goes to ${hasCeo ? "the CEO" : "whoever is free first"}`,
   // the office_board tool, which the model reads
   tool: {
     description:
@@ -489,8 +489,7 @@ const ZH: Words = {
   sayLabel: "✎ 写在白板上 ",
   sayPlaceholder: "比如：@全体 下班前把测试补齐",
   post: "贴上",
-  call: "点名",
-  uncalled: "· 不点名就谁有空谁接",
+  sayHint: (hasCeo) => `@组名、@部门 或 @全体；不写 @ 就${hasCeo ? "交给 CEO" : "谁先空谁接"}`,
   tool: {
     description:
       "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=withdraw 撤回还没结束的活（assignment）；action=duty 写某个会话负责什么（to、text）；action=appoint 任命某个会话为它所在 repo 的部长（to）。",
