@@ -48,7 +48,7 @@ import { LEADER_COLOR } from "../hooks/pixels.ts"
 import { orgOf } from "../hooks/org.ts"
 import { jobsOf } from "../hooks/jobs.ts"
 
-import { setLanguage } from "../hooks/words.ts"
+import { setLanguage, w } from "../hooks/words.ts"
 
 // These tests read the office in Chinese, the words it was first written in.
 setLanguage("zh")
@@ -624,4 +624,27 @@ test("a job left to the chairman stays on its cards", async () => {
   const rows = detailOf(b.leader, b, T0 + 100, snaps, org, jobs).rows.filter((r) => r.label === "派活")
   expect(rows.map((r) => r.text)).toEqual([expect.stringContaining("交董事长定")])
   expect(detailOf(a.leader, a, T0 + 100, snaps, org, jobs).rows.filter((r) => r.label === "派活")).toEqual([])
+})
+
+test("the office's own prompts read as short tasks on a card, in either language", async () => {
+  for (const lang of ["zh", "en"]) {
+    setLanguage(lang)
+    const tasks = [
+      promptOf(`${w().ceoHandoverHead}\n${w().roleCeo}`),
+      promptOf(`${w().nudgeHead}\n- #j1 fix it (web-app · docs): 12 min and no report`),
+      promptOf(w().jobEnvelope("j1", "fix the login test", "green on CI", "web-app · HQ")),
+      promptOf(w().reportEnvelope("j1", "fix the login test", "fixed", "web-app · docs")),
+      promptOf(w().rejectEnvelope("j1", "still red")),
+      promptOf(w().withdrawEnvelope("j1", "")),
+    ]
+    expect(tasks).toEqual([
+      w().ceoTask,
+      w().nudgeTask,
+      "#j1 fix the login test",
+      w().judgeTask("j1", "fix the login test"),
+      w().sentBackTask("j1"),
+      w().withdrawnTask("j1"),
+    ])
+  }
+  setLanguage("zh")
 })

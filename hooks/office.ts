@@ -272,9 +272,31 @@ export function promptOf(text: string): string {
     .trim()
     .replace(/^The [\w-]+ plugin sent a message:\s*/, "")
     .replace(/^\[(?:螃蟹办公室 · 董事长交代|crab-office · from the chairman)\]\s*/, "")
+  for (const [pattern, task] of OWN) {
+    const m = pattern.exec(sent)
+    if (m !== null) return clip(task(m))
+  }
   const memo = HANDOVER.exec(sent)?.[1]
   return clip(memo === undefined ? sent : w().memoTask(memo.trim()))
 }
+
+// The office's own prompts as tasks on a card: what the head says it is, and a
+// job's own words, not the whole text with its instructions. The CEO's card
+// showed its handover's first line, "[crab-office · the chairman…", as its task.
+const OWN: [RegExp, (m: RegExpExecArray) => string][] = [
+  [/^\[(?:螃蟹办公室 · 董事长任命你为 CEO|crab-office · the chairman has made you CEO)\]/, () => w().ceoTask],
+  [/^\[(?:螃蟹办公室 · 督促|crab-office · the watchdog)\]/, () => w().nudgeTask],
+  [
+    /^\[(?:螃蟹办公室 · CEO（[^）]*）派活 #(\w+)|crab-office · job #(\w+) from the CEO[^\]]*)\]\s*([^\n]*)/,
+    (m) => `#${m[1] ?? m[2] ?? ""} ${m[3] ?? ""}`,
+  ],
+  [
+    /^\[(?:螃蟹办公室 · [^\]]* 交差 #(\w+)|crab-office · job #(\w+) reported by [^\]]*)\]\s*(?:派的活：|The job: )([^\n]*)/,
+    (m) => w().judgeTask(m[1] ?? m[2] ?? "", m[3] ?? ""),
+  ],
+  [/^\[(?:螃蟹办公室 · #(\w+) 被 CEO 退回|crab-office · job #(\w+) sent back by the CEO)\]/, (m) => w().sentBackTask(m[1] ?? m[2] ?? "")],
+  [/^\[(?:螃蟹办公室 · CEO 撤回了 #(\w+)|crab-office · job #(\w+) withdrawn by the CEO)\]/, (m) => w().withdrawnTask(m[1] ?? m[2] ?? "")],
+]
 
 const HANDOVER = /^\[(?:螃蟹办公室 · 董事长在白板上的留言|crab-office · the chairman's memo on the board)[^\]]*\]\s*([^\n]*)/
 

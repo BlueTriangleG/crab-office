@@ -950,10 +950,17 @@ export const register: Register = (on, options) => {
       const inbox = inboxOf(me, snaps, now, office.org)
       me.seen = now
       changed($)
+      // Each read carries this session's rank and what it may do: a plugin ahead
+      // of this one can keep the system prompt's section out, and a session keeps
+      // the tool description it started with, so one started before an update
+      // never learned the CEO's actions from it.
+      const rank = rankOf(me.sessionId, office.org, chiefsOf(snaps, now, office.org))
+      const role = roleSectionOf(rank, me, snaps, office.org, await readJsonDir<unknown>($, office.sessions), now)
       return {
         result: [
           inbox.length > 0 ? w().tool.inbox(inbox) : w().tool.noInbox,
           w().tool.latest(boardOf(snaps, now, undefined, office.org)),
+          ...(role === undefined ? [] : [role]),
         ].join("\n\n"),
       }
     }
