@@ -1008,7 +1008,14 @@ function managerTitleOf(s: Snapshot, ranks: Map<string, string>): string {
   return titleOf(ranks.get(s.sessionId) ?? roleOf(s.leader, s))
 }
 
-export function rosterOf(snaps: Snapshot[], me: Snapshot, now: number, org: Org = NONE): string[] {
+// `more`: what the caller adds to each session's line (the CEO's staff list).
+export function rosterOf(
+  snaps: Snapshot[],
+  me: Snapshot,
+  now: number,
+  org: Org = NONE,
+  more: (s: Snapshot) => string = () => "",
+): string[] {
   const ranks = ranksOf(snaps, now, org)
   return snaps
     .filter((s) => !isGoneOf(s, now))
@@ -1016,7 +1023,7 @@ export function rosterOf(snaps: Snapshot[], me: Snapshot, now: number, org: Org 
       const title = managerTitleOf(s, ranks)
       const look = statusOf(lookOf(s.leader, now, false))
       const task = s.leader.title ? clip(s.leader.title, 40) : ""
-      return w().roster(whoOf(s), title, s.sessionId === me.sessionId, look, task, s.agents.length)
+      return `${w().roster(whoOf(s), title, s.sessionId === me.sessionId, look, task, s.agents.length)}${more(s)}`
     })
 }
 

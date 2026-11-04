@@ -37,13 +37,16 @@ import {
   whoOf,
   chairman,
   noted,
+  chiefsOf,
 } from "./office.ts"
 import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
 import type { BoardLine } from "./pixels.ts"
-import { SEAT_COLS, heightOf, office as draw, partOf, slicesOf, titleOf } from "./pixels.ts"
+import { LEADER_COLOR, SEAT_COLS, heightOf, office as draw, partOf, slicesOf, titleOf } from "./pixels.ts"
 import type { Speaker } from "./pixels.ts"
-import { NO_ORG, appointedNote, orgOf, parseAppoint, sessionNamed } from "./org.ts"
-import type { Appointment, Org } from "./org.ts"
+import { NO_ORG, appointedNote, dutiesOf, orgOf, parseAppoint, rankOf, sessionNamed, staffOf } from "./org.ts"
+import type { Appointment, Duty, Org } from "./org.ts"
+import { REJECTS_MAX, jobsOf, refusalOf } from "./jobs.ts"
+import type { Assignment, BoardAction, Job, Report, Verdict } from "./jobs.ts"
 import { setLanguage, w } from "./words.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
@@ -77,6 +80,9 @@ const office = {
   records: [] as Appointment[],
   org: NO_ORG as Org,
   ceoWho: "",
+  // The CEO's jobs as their files come to, and who is responsible for what.
+  jobs: [] as Job[],
+  duties: {} as Record<string, string>,
   isDirty: true,
   lastWrite: 0,
   isOpen: false,
@@ -225,6 +231,7 @@ const CHAT_KEPT = 5
 // A question to another session waits this long for its answer, and an ask this
 // session finds older than it is left alone: whoever asked has given up on it.
 const ASK_WAIT_MS = 120_000
+const JOB_KEEP_MS = 7 * 24 * 60 * 60_000
 
 function idOf(now: number): string {
   return `${now.toString(36)}${Math.floor(Math.random() * 1296).toString(36)}`
@@ -381,11 +388,15 @@ async function readOthers(
   return texts.map(parseSnapshot).filter((s): s is Snapshot => s !== undefined)
 }
 
-async function readJsonDir<T>($: EngineInterface, dir: string): Promise<T[]> {
+// `maxAgeMs`: files untouched that long are left unread, so a folder that only
+// grows (the jobs) costs the tick no more as weeks go by.
+// ponytail: a job silent for JOB_KEEP_MS drops out unanswered; archive it if that bites.
+async function readJsonDir<T>($: EngineInterface, dir: string, maxAgeMs = Number.POSITIVE_INFINITY): Promise<T[]> {
   const entries = await $.fs.list(dir).catch(() => [])
+  const now = Date.now()
   const texts = await Promise.all(
     entries
-      .filter((f) => f.kind === "file" && f.name.endsWith(".json"))
+      .filter((f) => f.kind === "file" && f.name.endsWith(".json") && now - f.mtimeMs < maxAgeMs)
       .map((f) => $.fs.read(`${dir}/${f.name}`).catch(() => "")),
   )
   return texts.flatMap((text) => {
@@ -445,6 +456,14 @@ async function tick($: EngineInterface) {
   office.org = org
   office.memos = await readJsonDir<Memo>($, `${office.base}/memos`)
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
+  const [given, reported, judged, duties] = await Promise.all([
+    readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
+    readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
+    readJsonDir<Verdict>($, `${office.base}/verdicts`, JOB_KEEP_MS),
+    readJsonDir<Record<string, Duty>>($, `${office.base}/duties`),
+  ])
+  office.jobs = jobsOf(given, reported, judged)
+  office.duties = dutiesOf(duties)
   await deliver($, now)
   await btw($, now)
   await obey($, now)
@@ -509,6 +528,111 @@ async function recordAppointment($: EngineInterface, record: Appointment, by: Sp
   noted(me, appointedNote(by, about, record.kind, record.sessionId === null, record.at))
   changed($)
   $.ui.invalidate("ui.render")
+}
+
+type BoardInput = {
+  action?: string
+  memo?: string
+  text?: string
+  to?: string
+  assignment?: string
+  standard?: string
+  agentId?: string
+}
+
+const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "appoint"])
+
+// The CEO's actions, a head's duties and a session's report: each judged by
+// refusalOf before anything is written, each delivery through the engine's own
+// cross-session channel, each recorded on the board when it arrives.
+async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: number): Promise<string> {
+  const action = input.action ?? ""
+  if (!MANAGING.has(action)) return w().tool.actions
+  const snaps = [me, ...office.others]
+  const peers = await readJsonDir<unknown>($, office.sessions)
+  const nameOf = (s: Snapshot) => peerOf(peers, s.sessionId)?.name ?? whoOf(s)
+  const rank = rankOf(me.sessionId, office.org, chiefsOf(snaps, now, office.org))
+  const id = input.assignment?.trim().replace(/^#/, "")
+  const job = office.jobs.find((j) => j.id === id)
+  let target: Snapshot | undefined
+  if (action === "assign" || action === "duty" || action === "appoint") {
+    if (!input.to) return w().tool.needTo
+    const found = sessionNamed(input.to, snaps, peers, now)
+    if (found.many.length > 1) return w().ambiguous(found.many.map(nameOf))
+    if (found.one === undefined) return w().nobodyNamed(input.to)
+    target = found.one
+  }
+  const refusal = refusalOf(action as BoardAction, me.sessionId, rank, { job, target, myProject: me.project, org: office.org })
+  if (refusal !== undefined) return refusal
+  if (action === "staff") return staffOf(snaps, me, office.org, office.duties, office.jobs, peers, now).join("\n")
+  const text = input.text?.trim() ?? ""
+  if (action === "appoint" && target !== undefined) {
+    const by = { name: titleOf("ceo"), color: LEADER_COLOR, id: me.sessionId }
+    const record: Appointment = { kind: "head", project: target.project, sessionId: target.sessionId, at: now, by: "ceo" }
+    await recordAppointment($, record, by, target)
+    return w().appointDone(whoOf(target), titleOf("chief"), false)
+  }
+  if (text === "" && action !== "accept") return w().tool.empty
+  if (action === "duty" && target !== undefined) {
+    const file = `${office.base}/duties/${me.sessionId}.json`
+    const mine = await $.fs.read(file).then((s) => JSON.parse(s) as Record<string, Duty>).catch(() => ({}))
+    await $.fs.write(file, JSON.stringify({ ...mine, [target.sessionId]: { text, at: now, by: me.sessionId } }))
+    office.duties = { ...office.duties, [target.sessionId]: text }
+    return w().tool.dutyDone(whoOf(target))
+  }
+  if (action === "assign" && target !== undefined) {
+    const given: Assignment = {
+      id: idOf(now),
+      at: now,
+      by: me.sessionId,
+      to: target.sessionId,
+      task: text,
+      ...(input.standard?.trim() ? { standard: input.standard.trim() } : {}),
+    }
+    await $.fs.write(`${office.base}/jobs/${given.id}.json`, JSON.stringify(given))
+    office.jobs = [...office.jobs, ...jobsOf([given], [], [])]
+    const envelope = w().jobEnvelope(given.id, given.task, given.standard, whoOf(me))
+    const sent = await $.session.send({ to: { sessionId: target.sessionId }, text: envelope })
+    if (!sent.isDelivered) return w().tool.notDelivered(given.id, sent.reason)
+    messageSent(me, input.agentId, nameOf(target), w().jobLine(given.id, given.task), now, target.sessionId)
+    changed($)
+    return w().tool.assigned(given.id, whoOf(target))
+  }
+  // Narrows: refusalOf has answered every report, accept and reject without a job.
+  if (job === undefined) return w().tool.noJob
+  if (action === "report") {
+    const said: Report = { id: job.id, n: job.reports.length + 1, at: now, from: me.sessionId, text }
+    await $.fs.write(`${office.base}/reports/${job.id}.${said.n}.json`, JSON.stringify(said))
+    office.jobs = office.jobs.map((j) => (j.id === job.id ? (jobsOf([j], [...j.reports, said], j.verdicts)[0] ?? j) : j))
+    const ceo = snaps.find((s) => s.sessionId === office.org.ceo)
+    if (ceo === undefined) {
+      messageSent(me, input.agentId, w().chairman, w().reportLine(job.id, text), now)
+      changed($)
+      return w().tool.noCeoKept
+    }
+    const sent = await $.session.send({ to: { sessionId: ceo.sessionId }, text: w().reportEnvelope(job.id, job.task, text, whoOf(me)) })
+    if (!sent.isDelivered) return w().tool.reportHeld(sent.reason)
+    messageSent(me, input.agentId, nameOf(ceo), w().reportLine(job.id, text), now, ceo.sessionId)
+    changed($)
+    return w().tool.reportedTo(whoOf(ceo))
+  }
+  const ok = action === "accept"
+  const judged: Verdict = { id: job.id, n: job.verdicts.length + 1, at: now, by: me.sessionId, ok, note: text }
+  await $.fs.write(`${office.base}/verdicts/${job.id}.${judged.n}.json`, JSON.stringify(judged))
+  office.jobs = office.jobs.map((j) => (j.id === job.id ? (jobsOf([j], j.reports, [...j.verdicts, judged])[0] ?? j) : j))
+  const worker = snaps.find((s) => s.sessionId === job.to)
+  messageSent(me, input.agentId, worker ? nameOf(worker) : job.to, w().verdictLine(job.id, ok, text), now, job.to)
+  changed($)
+  const rejects = job.verdicts.filter((v) => !v.ok).length + (ok ? 0 : 1)
+  if (rejects > REJECTS_MAX) {
+    $.ui.toast(w().toChairmanToast(job.id, job.task))
+    return w().tool.toChairman(job.id)
+  }
+  if (!ok) {
+    const sent = await $.session.send({ to: { sessionId: job.to }, text: w().rejectEnvelope(job.id, text) })
+    if (!sent.isDelivered) return w().tool.notDelivered(job.id, sent.reason)
+  }
+  return w().tool.judged(job.id, ok)
 }
 
 // A reload starts the module over; the board and the memos already handed are
@@ -601,8 +725,10 @@ export const register: Register = (on, options) => {
       inputSchema: {
         type: "object",
         properties: {
-          action: { type: "string", enum: ["read", "post", "claim"] },
+          action: { type: "string", enum: ["read", "post", "claim", "staff", "duty", "assign", "report", "accept", "reject", "appoint"] },
           memo: { type: "string", description: w().tool.memo },
+          assignment: { type: "string", description: w().tool.assignment },
+          standard: { type: "string", description: w().tool.standard },
           text: { type: "string", description: w().tool.text },
           to: { type: "string", description: w().tool.to },
         },
@@ -674,7 +800,8 @@ export const register: Register = (on, options) => {
   // by the name or socket it was sent to.
   on("session.send", async ($, e, next) => {
     const r = await next(e)
-    if (office.me !== undefined && r.isDelivered) {
+    // A delivery office_board made itself is on the board already.
+    if (office.me !== undefined && r.isDelivered && e.origin.kind === "model") {
       const peer = peerOf(await readJsonDir<unknown>($, office.sessions), e.to)
       messageSent(office.me, e.agentId, e.to, e.text, Date.now(), peer?.sessionId)
       changed($)
@@ -686,13 +813,7 @@ export const register: Register = (on, options) => {
   // who else is in the company. Matched by pattern: a tool the mod registers
   // is not among the names the types know until the mod has loaded.
   on("tool.call", { tool: /^mcp__crab-office__office_board$/ }, async ($, e) => {
-    const input = e as unknown as {
-      action?: string
-      memo?: string
-      text?: string
-      to?: string
-      agentId?: string
-    }
+    const input = e as unknown as BoardInput
     const me = office.me
     if (me === undefined) return { result: w().tool.notReady }
     const now = Date.now()
@@ -738,7 +859,7 @@ export const register: Register = (on, options) => {
       const heard = target === undefined ? w().tool.heardByChairman : w().tool.heardBy(reach)
       return { result: `${w().tool.written(heard)}${nudge}` }
     }
-    return { result: `${w().tool.actions}${nudge}` }
+    return { result: `${await manage($, input, me, now)}${nudge}` }
   })
 
   on("tool.call", async ($, e, next) => {

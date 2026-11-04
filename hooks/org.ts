@@ -1,4 +1,5 @@
-import { LEAVE_MS, isGoneOf, peerOf, teamNameOf, whoOf } from "./office.ts"
+import type { Job } from "./jobs.ts"
+import { LEAVE_MS, isGoneOf, peerOf, rosterOf, teamNameOf, whoOf } from "./office.ts"
 import type { Note, Snapshot } from "./office.ts"
 import { LEADER_COLOR, titleOf } from "./pixels.ts"
 import type { Speaker } from "./pixels.ts"
@@ -101,4 +102,37 @@ export function appointedNote(by: Speaker, target: Snapshot, kind: "ceo" | "head
     to: { name: whoOf(target), color: LEADER_COLOR, id: target.sessionId },
     text: w().appointedLine(titleOf(kind === "ceo" ? "ceo" : "chief"), isRevoked),
   }
+}
+
+// What a session is responsible for, as the CEO or its repository's head wrote
+// it: each writer keeps its own file (`duties/<sessionId>.json`), the latest
+// word on a session standing.
+export type Duty = { text: string; at: number; by: string }
+
+export function dutiesOf(files: Record<string, Duty>[]): Record<string, string> {
+  const latest: Record<string, Duty> = {}
+  for (const file of files)
+    for (const [id, duty] of Object.entries(file)) {
+      const held = latest[id]
+      if (held === undefined || duty.at > held.at) latest[id] = duty
+    }
+  return Object.fromEntries(Object.entries(latest).map(([id, duty]) => [id, duty.text]))
+}
+
+// The CEO's list of who is at work: the roster, and for each session the name
+// SendMessage reaches it by, its duty and the jobs it holds open.
+export function staffOf(
+  snaps: Snapshot[],
+  me: Snapshot,
+  org: Org,
+  duties: Record<string, string>,
+  jobs: Job[],
+  peers: unknown[],
+  now: number,
+): string[] {
+  const open = (id: string) =>
+    jobs.filter((j) => j.to === id && j.status !== "accepted" && j.status !== "chairman").map((j) => j.id)
+  return rosterOf(snaps, me, now, org, (s) =>
+    w().staffMore(peerOf(peers, s.sessionId)?.name, duties[s.sessionId], open(s.sessionId)),
+  )
 }

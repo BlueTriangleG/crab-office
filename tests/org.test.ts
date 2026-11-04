@@ -1,7 +1,8 @@
 import { expect, test } from "claude-code/testing"
 
 import { LEAVE_MS, chairman, chiefsOf, companyOf, createSnapshot } from "../hooks/office.ts"
-import { appointedNote, orgOf, parseAppoint, sessionNamed } from "../hooks/org.ts"
+import { appointedNote, dutiesOf, orgOf, parseAppoint, sessionNamed, staffOf } from "../hooks/org.ts"
+import { jobsOf } from "../hooks/jobs.ts"
 import type { Appointment } from "../hooks/org.ts"
 import { titleOf } from "../hooks/pixels.ts"
 import { setLanguage } from "../hooks/words.ts"
@@ -102,4 +103,32 @@ test("an appointment is a line on the board naming who and what", async () => {
   // written where the chairman clicked, it names the session it is about
   a.board = [made]
   expect(companyOf([a, b], "a", T0 + 3).board?.at(-1)?.to.name).toContain("api-server 部 · 本部")
+})
+
+test("duties: the latest word on each session wins", async () => {
+  const fromCeo = { b: { text: "auth and login", at: T0 + 5, by: "a" }, c: { text: "the api", at: T0, by: "a" } }
+  const fromHead = { b: { text: "docs only", at: T0 + 1, by: "h" }, c: { text: "the api and its tests", at: T0 + 9, by: "h" } }
+  expect(dutiesOf([fromCeo, fromHead])).toEqual({ b: "auth and login", c: "the api and its tests" })
+})
+
+test("staff lists each present session with its SendMessage name, rank, duty and open jobs", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0 + 1, "docs")
+  const c = createSnapshot("c", "api-server", undefined, T0 + 2)
+  const gone = createSnapshot("g", "api-server", undefined, T0 + 3, "old")
+  for (const s of [a, b, c]) s.updatedAt = T0 + 10
+  gone.updatedAt = T0 - LEAVE_MS
+  const snaps = [a, b, c, gone]
+  const org = orgOf([{ kind: "ceo", sessionId: "a", at: T0, by: "chairman" }], snaps, T0 + 10)
+  const jobs = jobsOf([{ id: "j1", at: T0, by: "a", to: "b", task: "fix the login test" }], [], [])
+  const peers = [{ sessionId: "b", name: "web-app-8b" }]
+  const lines = staffOf(snaps, a, org, { b: "auth and login" }, jobs, peers, T0 + 10)
+  expect(lines).toHaveLength(3)
+  const line = (who: string) => lines.find((l) => l.includes(who)) ?? ""
+  expect(line("web-app 部 · 本部")).toContain("CEO")
+  expect(line("web-app 部 · docs")).toContain("部长")
+  expect(line("web-app 部 · docs")).toContain("web-app-8b")
+  expect(line("web-app 部 · docs")).toContain("auth and login")
+  expect(line("web-app 部 · docs")).toContain("#j1")
+  expect(line("api-server 部 · 本部")).toContain("部长")
 })
