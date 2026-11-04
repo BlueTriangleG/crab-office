@@ -301,6 +301,7 @@ const OWN: [RegExp, (m: RegExpExecArray) => string][] = [
   ],
   [/^\[(?:螃蟹办公室 · #(\w+) 被 CEO 退回|crab-office · job #(\w+) sent back by the CEO)\]/, (m) => w().sentBackTask(m[1] ?? m[2] ?? "")],
   [/^\[(?:螃蟹办公室 · CEO 撤回了 #(\w+)|crab-office · job #(\w+) withdrawn by the CEO)\]/, (m) => w().withdrawnTask(m[1] ?? m[2] ?? "")],
+  [/^\[(?:螃蟹办公室 · CEO 补充了 #(\w+) 的要求|crab-office · job #(\w+) added to by the CEO)\]/, (m) => w().amendTask(m[1] ?? m[2] ?? "")],
 ]
 
 const HANDOVER = /^\[(?:螃蟹办公室 · 董事长在白板上的留言|crab-office · the chairman's memo on the board)[^\]]*\]\s*([^\n]*)/

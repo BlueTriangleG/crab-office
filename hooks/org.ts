@@ -104,10 +104,10 @@ export function titleRefusal(
   return w().tool.titleTaken(taken[1], s === undefined ? taken[0] : labelOf(s, peers, titles))
 }
 
-// Where a SendMessage addressed to a job title, or to CEO, goes now: the name
-// its session goes by at this moment. A real name, socket or id is the
-// engine's and passes untouched; a title nobody at work holds, or two do, is
-// refused rather than guessed.
+// Where a SendMessage addressed to a job title, or to CEO, in any case, goes:
+// its session, whatever name that goes by now, as a title is kept by session
+// id. A real name, socket or id is the engine's and passes untouched; a title
+// nobody at work holds, or two do, is refused rather than guessed.
 export function addressOf(
   to: string,
   titles: Record<string, string>,
@@ -115,7 +115,7 @@ export function addressOf(
   snaps: Snapshot[],
   peers: unknown[],
   now: number,
-): { to?: string; refusal?: string } | undefined {
+): { sessionId?: string; refusal?: string } | undefined {
   const name = to.trim()
   if (peerOf(peers, name) !== undefined) return undefined
   const isCeo = name.toLowerCase() === "ceo"
@@ -130,9 +130,7 @@ export function addressOf(
   const here = held.filter((id) => snaps.some((s) => s.sessionId === id && !isGoneOf(s, now)))
   if (here.length > 1) return { refusal: w().tool.titleShared(name) }
   const [id] = here
-  const peer = id === undefined ? undefined : peerOf(peers, id)
-  const address = peer?.name ?? (peer?.messagingSocketPath === undefined ? undefined : `uds:${peer.messagingSocketPath}`)
-  return address === undefined ? { refusal: w().tool.titleAway(name) } : { to: address }
+  return id === undefined ? { refusal: w().tool.titleAway(name) } : { sessionId: id }
 }
 
 export function rankOf(sessionId: string, org: Org, chiefs: Set<string>): Rank {

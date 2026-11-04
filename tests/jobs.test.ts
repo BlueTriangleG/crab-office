@@ -1,10 +1,10 @@
 import { expect, test } from "claude-code/testing"
 
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "../hooks/jobs.ts"
-import type { Assignment, Job, Report, Verdict } from "../hooks/jobs.ts"
-import { createSnapshot } from "../hooks/office.ts"
+import type { Amend, Assignment, Job, Report, Verdict } from "../hooks/jobs.ts"
+import { createSnapshot, promptOf } from "../hooks/office.ts"
 import { NO_ORG } from "../hooks/org.ts"
-import { setLanguage } from "../hooks/words.ts"
+import { setLanguage, w } from "../hooks/words.ts"
 
 setLanguage("zh")
 
@@ -34,7 +34,7 @@ test("only the CEO assigns, judges and appoints; a head writes duties for its ow
   const b = createSnapshot("b", "web-app", undefined, T0, "docs")
   const c = createSnapshot("c", "api-server", undefined, T0)
   const ctx = { myProject: "web-app", org: NO_ORG }
-  const as = (status: Job["status"], to = "b"): Job => ({ ...job("j1", to), status, since: T0, reports: [], verdicts: [] })
+  const as = (status: Job["status"], to = "b"): Job => ({ ...job("j1", to), status, since: T0, reports: [], verdicts: [], amends: [] })
   expect(refusalOf("assign", "b", "staff", { ...ctx, target: c })).toBeDefined()
   expect(refusalOf("assign", "a", "ceo", { ...ctx, target: a })).toBeDefined()
   expect(refusalOf("assign", "a", "ceo", { ...ctx, target: b })).toBeUndefined()
@@ -63,7 +63,7 @@ test("the watchdog: idle 10 min, waiting for approval 5 min, gone, working 60 mi
     s.updatedAt = updatedAt
     return s
   }
-  const open = (id: string, to: string): Job => ({ ...job(id, to), status: "assigned", since: T0, reports: [], verdicts: [] })
+  const open = (id: string, to: string): Job => ({ ...job(id, to), status: "assigned", since: T0, reports: [], verdicts: [], amends: [] })
   const rules = (jobs: Job[], snaps: ReturnType<typeof worker>[], now: number, nudged = {}) =>
     nudgesOf(jobs, snaps, now, nudged).map((n) => `${n.id}:${n.rule}`)
   // 1: idle since before the job
@@ -102,7 +102,7 @@ test("the CEO may withdraw an open job, which closes it and quiets the watchdog"
   expect(withdrawn?.status).toBe("withdrawn")
   expect(nudgesOf(withdrawn ? [withdrawn] : [], [], T0 + WATCH.workingMs * 2, {})).toEqual([])
   const ctx = { myProject: "web-app", org: NO_ORG }
-  const as = (status: Job["status"]): Job => ({ ...job("j1", "b"), status, since: T0, reports: [], verdicts: [] })
+  const as = (status: Job["status"]): Job => ({ ...job("j1", "b"), status, since: T0, reports: [], verdicts: [], amends: [] })
   expect(refusalOf("withdraw", "a", "ceo", { ...ctx, job: as("assigned") })).toBeUndefined()
   expect(refusalOf("withdraw", "a", "ceo", { ...ctx, job: as("reported") })).toBeUndefined()
   expect(refusalOf("withdraw", "b", "staff", { ...ctx, job: as("assigned") })).toBeDefined()
@@ -113,7 +113,7 @@ test("the CEO may withdraw an open job, which closes it and quiets the watchdog"
 test("the CEO's subagents cannot act as the CEO", async () => {
   const b = createSnapshot("b", "web-app", undefined, T0, "docs")
   const ctx = { myProject: "web-app", org: NO_ORG, isSubagent: true }
-  const reported: Job = { ...job("j1", "b"), status: "reported", since: T0, reports: [], verdicts: [] }
+  const reported: Job = { ...job("j1", "b"), status: "reported", since: T0, reports: [], verdicts: [], amends: [] }
   for (const action of ["assign", "appoint", "duty"] as const)
     expect(refusalOf(action, "a", "ceo", { ...ctx, target: b })).toBeDefined()
   for (const action of ["accept", "reject", "withdraw"] as const)
@@ -134,4 +134,29 @@ test("a session sets its own job title; a head its repository's; the CEO anyone'
   expect(refusalOf("title", "h", "head", { ...ctx, target: c })).toBeDefined()
   expect(refusalOf("title", "a", "ceo", { ...ctx, target: c })).toBeUndefined()
   expect(refusalOf("title", "a", "ceo", { ...ctx, target: c, isSubagent: true })).toBeDefined()
+})
+
+test("the CEO adds to a job still being done; the job carries its additions in order", async () => {
+  const amend = (n: number, at: number, text: string): Amend => ({ id: "j1", n, at, by: "a", text })
+  const [j] = jobsOf([job("j1", "b")], [], [], [amend(2, T0 + 5, "and the docs"), amend(1, T0 + 2, "share the context")])
+  expect(j?.amends.map((x) => x.text)).toEqual(["share the context", "and the docs"])
+  expect(j?.status).toBe("assigned")
+  const as = (status: Job["status"]): Job => ({ ...job("j1", "b"), status, since: T0, reports: [], verdicts: [], amends: [] })
+  const ctx = { myProject: "web-app", org: NO_ORG }
+  expect(refusalOf("amend", "a", "ceo", { ...ctx, job: as("assigned") })).toBeUndefined()
+  expect(refusalOf("amend", "a", "ceo", { ...ctx, job: as("rejected") })).toBeUndefined()
+  // reported, it is sent back with what is missing, not added to
+  for (const status of ["reported", "accepted", "withdrawn", "chairman"] as const)
+    expect(refusalOf("amend", "a", "ceo", { ...ctx, job: as(status) })).toBeDefined()
+  expect(refusalOf("amend", "b", "staff", { ...ctx, job: as("assigned") })).toBeDefined()
+  expect(refusalOf("amend", "a", "ceo", ctx)).toBeDefined()
+  expect(refusalOf("amend", "a", "ceo", { ...ctx, job: as("assigned"), isSubagent: true })).toBeDefined()
+})
+
+test("an addition to a job reads as a short task on a card, in either language", async () => {
+  for (const lang of ["zh", "en"]) {
+    setLanguage(lang)
+    expect(promptOf(`The crab-office plugin sent a message: ${w().amendEnvelope("j1", "share the context")}`)).toBe(w().amendTask("j1"))
+  }
+  setLanguage("zh")
 })

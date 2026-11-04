@@ -188,13 +188,15 @@ the session restarts or resumes (one CEO went 38, 39, 12 in an afternoon), and
 a name kept for later stops reaching it. Its session id does not change. So a
 session may hold one job title (`office_board title`: one word, set by the
 session itself, its repository's head or the CEO; `titles/<writer>.json`,
-keyed by session id). A model's SendMessage to a job title, or to `CEO`, is
-refused by a `tool.call` hook with the name that session goes by now, for the
-model to send again; it is not readdressed. Auto mode reviews a tool call
-server-side as the model wrote it, before any hook, and refuses one whose
-input a hook changed ("a hook changed this call's input after auto mode
-reviewed it"): a readdress at `session.send` failed so, and one at the tool
-call too. A title nobody at work holds, or two do, is refused with a reason,
+keyed by session id). A model's SendMessage to a job title, or to `CEO`, in any
+case, is delivered by a `tool.call` hook to that session by its id
+(`$.session.send`) and answered as SendMessage answers (`{ success, message }`);
+it is not readdressed. Auto mode reviews a tool call server-side as the model
+wrote it, before any hook, and refuses one whose input a hook changed ("a hook
+changed this call's input after auto mode reviewed it"): a readdress at
+`session.send` failed so, and one at the tool call too; refusing with the real
+name to send again cost every such message a failed call. A title nobody at
+work holds, or two do, is refused with a reason,
 never guessed, and a real name, socket or id always passes untouched. A title must
 not clash with another at work, with a real name, or with `CEO`; a clash is
 refused, not numbered. The title is on the crab's name plate, in `staff`, in
@@ -269,12 +271,16 @@ other and meet without routing through it.
 The CEO runs the work through `office_board`, each action judged by
 `refusalOf` before anything is written: `staff` (who is at work, their
 SendMessage names, duties and open jobs), `assign`, `accept`, `reject`,
-`withdraw`, `appoint` (the CEO's), `duty` (the CEO's, or a head's for its own
+`amend` (adds to a job still being done, kept with the job and sent to its
+session; a reported job is sent back with `reject` instead), `withdraw`,
+`appoint` (the CEO's), `duty` (the CEO's, or a head's for its own
 repository), `report` (only the session the job was given to). The CEO's
 actions are refused to its subagents, which share its session id. `withdraw`
 closes an open job and tells its session to stop; without it a job whose
-session had gone was put to the CEO every half hour for a week. A job is three kinds of file,
-one writer each: `jobs/<id>.json` by the assigning CEO, `reports/<id>.<n>.json`
+session had gone was put to the CEO every half hour for a week. A job is four kinds of file,
+one writer each: `jobs/<id>.json` by the assigning CEO, `amends/<id>.<n>.json`
+by the CEO (an addition sent only as a message was not kept with the job, so
+the report and the verdict went by two standards), `reports/<id>.<n>.json`
 by the session doing it, `verdicts/<id>.<n>.json` by the judging CEO. Delivery
 goes through the engine's own cross-session channel (`$.session.send`), at
 once, busy or not, so whatever the engine holds back (a session in another

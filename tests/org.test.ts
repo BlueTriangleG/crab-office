@@ -285,12 +285,13 @@ test("a job title is one word, the CEO's is reserved, and no two sessions at wor
   expect(clash).not.toContain("Voice")
 })
 
-test("a job title, or CEO, resolves to the name its session goes by now; a title nobody at work holds is refused, never guessed", async () => {
+test("a job title, or CEO, in any case, resolves to its session, whatever name it goes by now; a title nobody at work holds is refused, never guessed", async () => {
   const { b, snaps, peers, org, titles } = posts()
   const now = T0 + 10
-  expect(addressOf("voice", titles, org, snaps, peers, now)).toEqual({ to: "web-app-e0" })
-  expect(addressOf("Voice", titles, org, snaps, peers, now)).toEqual({ to: "web-app-e0" })
-  expect(addressOf("CEO", titles, org, snaps, peers, now)).toEqual({ to: "web-app-12" })
+  expect(addressOf("voice", titles, org, snaps, peers, now)).toEqual({ sessionId: "b" })
+  expect(addressOf("Voice", titles, org, snaps, peers, now)).toEqual({ sessionId: "b" })
+  expect(addressOf("CEO", titles, org, snaps, peers, now)).toEqual({ sessionId: "a" })
+  expect(addressOf("ceo", titles, org, snaps, peers, now)).toEqual({ sessionId: "a" })
   // a real name, a socket or an id is the engine's to deliver
   for (const real of ["api-server-34", "uds:/tmp/cc-socks/1.sock", "c"]) expect(addressOf(real, titles, org, snaps, peers, now)).toBeUndefined()
   // nobody by that name at all: the engine says so

@@ -63,7 +63,7 @@ import {
 } from "./org.ts"
 import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
-import type { Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
+import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
 import type { Meeting, MeetingFile } from "./meetings.ts"
 import { setLanguage, w } from "./words.ts"
@@ -78,7 +78,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-04.3"
+const BUILD = "2026-11-04.4"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -484,15 +484,16 @@ async function tick($: EngineInterface) {
   office.org = org
   office.memos = await readJsonDir<Memo>($, `${office.base}/memos`)
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
-  const [given, reported, judged, duties, titles, meetingFiles] = await Promise.all([
+  const [given, reported, judged, duties, titles, meetingFiles, amends] = await Promise.all([
     readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
     readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
     readJsonDir<Verdict>($, `${office.base}/verdicts`, JOB_KEEP_MS),
     readJsonDir<Record<string, Duty>>($, `${office.base}/duties`),
     readJsonDir<Record<string, Duty>>($, `${office.base}/titles`),
     readJsonDir<MeetingFile>($, `${office.base}/meetings`, JOB_KEEP_MS),
+    readJsonDir<Amend>($, `${office.base}/amends`, JOB_KEEP_MS),
   ])
-  office.jobs = jobsOf(given, reported, judged)
+  office.jobs = jobsOf(given, reported, judged, amends)
   office.duties = dutiesOf(duties)
   office.titles = titlesOf(titles)
   office.meetingFiles = meetingFiles
@@ -749,7 +750,7 @@ type BoardInput = {
   agentId?: string
 }
 
-const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint", "title"])
+const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "amend", "withdraw", "appoint", "title"])
 
 // The CEO's actions, a head's duties and a session's report: each judged by
 // refusalOf before anything is written, each delivery through the engine's own
@@ -829,6 +830,17 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
   }
   // Narrows: refusalOf has answered every report, accept and reject without a job.
   if (job === undefined) return w().tool.noJob
+  if (action === "amend") {
+    const added: Amend = { id: job.id, n: job.amends.length + 1, at: now, by: me.sessionId, text }
+    await $.fs.write(`${office.base}/amends/${job.id}.${added.n}.json`, JSON.stringify(added))
+    office.jobs = office.jobs.map((j) => (j.id === job.id ? { ...j, amends: [...j.amends, added] } : j))
+    const sent = await $.session.send({ to: { sessionId: job.to }, text: w().amendEnvelope(job.id, text) })
+    if (!sent.isDelivered) return w().tool.notDelivered(job.id, sent.reason)
+    const worker = snaps.find((s) => s.sessionId === job.to)
+    messageSent(me, input.agentId, worker ? nameOf(worker) : job.to, w().amendLine(job.id, text), now, job.to)
+    changed($)
+    return w().tool.amended(job.id)
+  }
   if (action === "report") {
     const said: Report = { id: job.id, n: job.reports.length + 1, at: now, from: me.sessionId, text }
     await $.fs.write(`${office.base}/reports/${job.id}.${said.n}.json`, JSON.stringify(said))
@@ -840,7 +852,8 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
       $.ui.toast(w().noCeoToast(whoOf(me), job.id))
       return w().tool.noCeoKept
     }
-    const sent = await $.session.send({ to: { sessionId: ceo.sessionId }, text: w().reportEnvelope(job.id, job.task, text, whoOf(me)) })
+    const task = [job.task, ...job.amends.map((a) => `+ ${a.text}`)].join("\n")
+    const sent = await $.session.send({ to: { sessionId: ceo.sessionId }, text: w().reportEnvelope(job.id, task, text, whoOf(me)) })
     if (!sent.isDelivered) return w().tool.reportHeld(sent.reason)
     messageSent(me, input.agentId, nameOf(ceo), w().reportLine(job.id, text), now, ceo.sessionId)
     changed($)
@@ -975,7 +988,7 @@ export const register: Register = (on, options) => {
         properties: {
           action: {
             type: "string",
-            enum: ["read", "post", "claim", "meet", "close", "staff", "duty", "assign", "report", "accept", "reject", "withdraw", "appoint", "title"],
+            enum: ["read", "post", "claim", "meet", "close", "staff", "duty", "assign", "report", "accept", "reject", "amend", "withdraw", "appoint", "title"],
           },
           meeting: { type: "string", description: w().tool.meeting },
           memo: { type: "string", description: w().tool.memo },
@@ -1079,13 +1092,14 @@ export const register: Register = (on, options) => {
     return r
   })
 
-  // A SendMessage to a job title, or to CEO, is answered with the name that
-  // session goes by now, for the model to send again. It is not readdressed:
-  // auto mode reviews the call server-side as the model wrote it, before any
-  // hook, and refuses one whose input a hook changed ("a hook changed this
-  // call's input after auto mode reviewed it"), at session.send and at the
-  // tool call alike. A title nobody at work holds is refused, never guessed;
-  // every other address passes untouched.
+  // A SendMessage to a job title, or to CEO, is delivered here, to that session
+  // by its id, and answered as SendMessage answers. It is not readdressed: auto
+  // mode reviews the call server-side as the model wrote it, before any hook,
+  // and refuses one whose input a hook changed ("a hook changed this call's
+  // input after auto mode reviewed it"), at session.send and at the tool call
+  // alike; answering with the real name to send again cost a failed call every
+  // time. A title nobody at work holds is refused, never guessed; every other
+  // address passes untouched.
   on("tool.call", { tool: "SendMessage" }, async ($, e, next) => {
     const me = office.me
     const { to, message } = e as unknown as { to?: unknown; message?: unknown }
@@ -1096,7 +1110,16 @@ export const register: Register = (on, options) => {
     if (m !== undefined) return speak($, m, me, typeof message === "string" ? message : String(message ?? ""), e.agentId, peers)
     const routed = addressOf(to, office.titles, office.org, [me, ...office.others], peers, Date.now())
     if (routed?.refusal !== undefined) return { deny: routed.refusal }
-    return routed?.to === undefined ? next(e) : { deny: w().tool.titleNow(to, routed.to) }
+    if (routed?.sessionId === undefined) return next(e)
+    if (routed.sessionId === me.sessionId) return { deny: w().tool.notToSelf }
+    const text = typeof message === "string" ? message : String(message ?? "")
+    const sent = await $.session.send({ to: { sessionId: routed.sessionId }, text })
+    const target = office.others.find((s) => s.sessionId === routed.sessionId)
+    const who = target === undefined ? to : labelOf(target, peers, office.titles)
+    if (!sent.isDelivered) return { deny: w().tool.titleNotDelivered(who, sent.reason) }
+    messageSent(me, e.agentId, to, text, Date.now(), routed.sessionId)
+    changed($)
+    return { result: { success: true, message: w().tool.titleSent(who) } }
   })
 
   // The board tool the model calls to take up a memo, say something, or see
