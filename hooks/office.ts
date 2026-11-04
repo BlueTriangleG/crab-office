@@ -5,6 +5,7 @@
 import { HQ, LEADER_COLOR, MANAGER_HATS, titleOf } from "./pixels.ts"
 import { CHAIRMAN_NAMES, HQ_NAMES, w } from "./words.ts"
 import type { BoardLine, Company, Room, SeatData, Speaker } from "./pixels.ts"
+import type { Org } from "./org.ts"
 
 export type Status =
   | "thinking"
@@ -225,10 +226,10 @@ function colorOf(crab: Crab): string {
     : (crab.color ?? CREW_COLORS[0] ?? LEADER_COLOR)
 }
 
-// A session's own crab is 部长 in the repository's checkout and 组长 in a
-// worktree; a subagent goes by its type's title.
-function roleOf(crab: Crab, s: Snapshot): string {
-  return crab.role === "leader" && s.team !== undefined ? "lead" : crab.role
+// A session's own crab is 组长 unless it ranks higher (ranksOf): the CEO, or its
+// repository's 部长. A subagent goes by its type's title.
+function roleOf(crab: Crab, _s: Snapshot): string {
+  return crab.role === "leader" ? "lead" : crab.role
 }
 
 function speakerOf(crab: Crab, s: Snapshot): Speaker {
@@ -501,7 +502,7 @@ function clockOf(at: number): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
 }
 
-function isGoneOf(s: Snapshot, now: number): boolean {
+export function isGoneOf(s: Snapshot, now: number): boolean {
   return s.ended === true || now - s.updatedAt > STALE_MS
 }
 
@@ -561,43 +562,58 @@ function teamOf(s: Snapshot, now: number, hat: string | undefined, letters = new
   if (leader === undefined) return crew
   const task = leader.task || s.team || ""
   if (hat === CHIEF) return [{ ...leader, role: CHIEF, task }, ...crew]
+  if (hat === CEO) return [{ ...leader, role: CEO, hat: CEO, task }, ...crew]
   return [{ ...leader, role: roleOf(s.leader, s), task, ...(hat ? { hat } : {}) }, ...crew]
 }
 
 const CHIEF = "chief"
+const CEO = "ceo"
+const NONE: Org = { heads: {} }
 
 function bySeniority(a: Snapshot, b: Snapshot): number {
   return a.startedAt - b.startedAt || a.sessionId.localeCompare(b.sessionId)
 }
 
-// One crown a department: its 大部长, the longest-serving session in the
+// One crown a department: its 部长, the longest-serving session in the
 // repository's own checkout, or in a worktree where none is. One crown for the
 // whole company left every other repository headless. Every other manager gets
 // a hat of its own, handed out by seniority, so a newcomer never takes an old
 // hand's hat and no two match while there are hats to go round.
-export function chiefsOf(snaps: Snapshot[], now: number): Set<string> {
+//
+// A repository's 部长 is the one the chairman or the CEO appointed (org.heads),
+// else that longest-serving session; never the CEO, who heads the company.
+export function chiefsOf(snaps: Snapshot[], now: number, org: Org = NONE): Set<string> {
   const chiefs = new Set<string>()
-  const senior = snaps.filter((s) => !isGoneOf(s, now)).sort(bySeniority)
+  const senior = snaps.filter((s) => !isGoneOf(s, now) && s.sessionId !== org.ceo).sort(bySeniority)
   for (const project of new Set(senior.map((s) => s.project))) {
     const staff = senior.filter((s) => s.project === project)
-    const chief = staff.find((s) => s.team === undefined) ?? staff[0]
+    const appointed = org.heads[project]
+    const chief = staff.find((s) => s.sessionId === appointed) ?? staff.find((s) => s.team === undefined) ?? staff[0]
     if (chief !== undefined) chiefs.add(chief.sessionId)
   }
   return chiefs
 }
 
-export function hatsOf(snaps: Snapshot[], now: number): Map<string, string> {
-  const chiefs = chiefsOf(snaps, now)
+export function hatsOf(snaps: Snapshot[], now: number, org: Org = NONE): Map<string, string> {
+  const chiefs = chiefsOf(snaps, now, org)
   const hats = new Map<string, string>()
   ;[...snaps]
     .sort(bySeniority)
-    .filter((s) => !chiefs.has(s.sessionId))
+    .filter((s) => !chiefs.has(s.sessionId) && s.sessionId !== org.ceo)
     .forEach((s, i) => {
       const hat = MANAGER_HATS[i % MANAGER_HATS.length]
       if (hat !== undefined) hats.set(s.sessionId, hat)
     })
   for (const id of chiefs) hats.set(id, CHIEF)
+  if (org.ceo !== undefined) hats.set(org.ceo, CEO)
   return hats
+}
+
+// Each session's title above 组长: the CEO's, and each repository's 部长's.
+function ranksOf(snaps: Snapshot[], now: number, org: Org = NONE): Map<string, string> {
+  const ranks = new Map<string, string>([...chiefsOf(snaps, now, org)].map((id) => [id, CHIEF]))
+  if (org.ceo !== undefined) ranks.set(org.ceo, CEO)
+  return ranks
 }
 
 const RESTING = new Set([
@@ -625,9 +641,10 @@ export function companyOf(
   snaps: Snapshot[],
   mine: string,
   now: number,
-  desk: { memos: Memo[]; claims: Claim[] } = { memos: [], claims: [] },
+  desk: { memos: Memo[]; claims: Claim[]; org?: Org } = { memos: [], claims: [] },
   older = 0,
 ): Company {
+  const org = desk.org ?? NONE
   const present = snaps.filter(
     (s) => now - s.updatedAt < LEAVE_MS || s.sessionId === mine,
   )
@@ -636,7 +653,7 @@ export function companyOf(
   const projects = [...new Set(present.map((s) => s.project))].sort((a, b) =>
     isMine(a) === isMine(b) ? a.localeCompare(b) : isMine(a) ? -1 : 1,
   )
-  const hats = hatsOf(present, now)
+  const hats = hatsOf(present, now, org)
   const letters = lettersOf(present, now)
   const rooms: Room[] = projects.map((project) => {
     // The 大部长's team first, which the drawing seats alone on the top row;
@@ -671,7 +688,7 @@ export function companyOf(
       text: takers.length === 0 ? m.text : w().taken(m.text, takers),
     }
   })
-  const chiefs = chiefsOf(present, now)
+  const ranks = ranksOf(present, now, org)
   // A line between two sessions names the sender's too, since a title alone
   // (部长) is one in every session; the session reads its own lines as its own.
   const across = (n: Note, s: Snapshot): Note =>
@@ -679,7 +696,7 @@ export function companyOf(
       ? { ...n, from: { ...n.from, name: `${whoOf(s)} ${n.from.name}` } }
       : n
   const all = [
-    ...present.flatMap((s) => (s.board ?? []).map((n) => across(shownNote(n, s, chiefs, present), s))),
+    ...present.flatMap((s) => (s.board ?? []).map((n) => across(shownNote(n, s, ranks, present), s))),
     ...memoNotes,
   ].sort((a, b) => a.at - b.at)
   // `older`: how many lines back from the newest the board is paged.
@@ -697,7 +714,7 @@ export function companyOf(
 }
 
 // The strip above the prompt: this session's team on one row of desks.
-export function bandOf(s: Snapshot, snaps: Snapshot[], now: number): Company {
+export function bandOf(s: Snapshot, snaps: Snapshot[], now: number, org: Org = NONE): Company {
   return {
     rooms: [
       {
@@ -705,7 +722,7 @@ export function bandOf(s: Snapshot, snaps: Snapshot[], now: number): Company {
         footer: "",
         bare: true,
         flat: true,
-        teams: [teamOf(s, now, hatsOf(snaps, now).get(s.sessionId), lettersOf(snaps, now))],
+        teams: [teamOf(s, now, hatsOf(snaps, now, org).get(s.sessionId), lettersOf(snaps, now))],
       },
     ],
     lang: w().lang,
@@ -736,7 +753,7 @@ export type Detail = { title: string; where: string; state: string; color: strin
 const DETAIL_MAX = 160
 
 // `snaps`, the company, so a 大部长's card names it as the drawing does.
-export function detailOf(crab: Crab, snap: Snapshot, now: number, snaps: Snapshot[] = [snap]): Detail {
+export function detailOf(crab: Crab, snap: Snapshot, now: number, snaps: Snapshot[] = [snap], org: Org = NONE): Detail {
   const look = lookOf(crab, now, isGoneOf(snap, now))
   const tools = crab.tools.slice(-3).join(" · ")
   const label = w().labels
@@ -747,7 +764,7 @@ export function detailOf(crab: Crab, snap: Snapshot, now: number, snaps: Snapsho
     ...(!isLeader && crab.answer ? [{ label: label.back, text: clip(crab.answer, DETAIL_MAX) }] : []),
   ]
   return {
-    title: isLeader ? managerTitleOf(snap, chiefsOf(snaps, now)) : titleOf(roleOf(crab, snap)),
+    title: isLeader ? managerTitleOf(snap, ranksOf(snaps, now, org)) : titleOf(roleOf(crab, snap)),
     where: whoOf(snap),
     state: `${statusOf(look)} · ${elapsed(now - crab.since)}`,
     color: colorOf(crab),
@@ -847,8 +864,8 @@ export function peerOf(peers: unknown[], to: string): Peer | undefined {
 // What colleagues in other sessions wrote to this one since it last read the
 // board. A message never wakes its reader: it waits here, so two sessions
 // cannot talk each other into turns without end.
-export function inboxOf(me: Snapshot, snaps: Snapshot[], now: number): string[] {
-  const chiefs = chiefsOf(snaps, now)
+export function inboxOf(me: Snapshot, snaps: Snapshot[], now: number, org: Org = NONE): string[] {
+  const ranks = ranksOf(snaps, now, org)
   return snaps
     .filter((s) => s.sessionId !== me.sessionId)
     .flatMap((s) =>
@@ -857,7 +874,7 @@ export function inboxOf(me: Snapshot, snaps: Snapshot[], now: number): string[] 
           const to = n.kind === "message" ? targetOf(n.to.name) : undefined
           return to !== undefined && n.at > (me.seen ?? me.startedAt) && isFor(to, me)
         })
-        .map((n) => ({ n: shownNote(n, s, chiefs, snaps), s })),
+        .map((n) => ({ n: shownNote(n, s, ranks, snaps), s })),
     )
     .sort((a, b) => a.n.at - b.n.at)
     .map(({ n, s }) => w().inboxLine(clockOf(n.at), whoOf(s), n.from.name, n.to.name, n.text))
@@ -865,10 +882,10 @@ export function inboxOf(me: Snapshot, snaps: Snapshot[], now: number): string[] 
 
 // The board as a session reads it: the latest lines from every session, each
 // saying whose it is, since a title alone (部长) names one in every session.
-export function boardOf(snaps: Snapshot[], now: number, limit = BOARD_SHOWN): string[] {
-  const chiefs = chiefsOf(snaps, now)
+export function boardOf(snaps: Snapshot[], now: number, limit = BOARD_SHOWN, org: Org = NONE): string[] {
+  const ranks = ranksOf(snaps, now, org)
   return snaps
-    .flatMap((s) => (s.board ?? []).map((n) => ({ n: shownNote(n, s, chiefs, snaps), s })))
+    .flatMap((s) => (s.board ?? []).map((n) => ({ n: shownNote(n, s, ranks, snaps), s })))
     .sort((a, b) => a.n.at - b.n.at)
     .slice(-limit)
     .map(({ n, s }) => w().boardLine(clockOf(n.at), whoOf(s), n.from.name, n.to.name, n.text))
@@ -973,30 +990,30 @@ export function subagentBtwOf(crab: Crab, rows: readonly Row[], question: string
 // was written with, before anyone knew who would be 大部长. One sent to another
 // session names that session's crab by its department and team, not by the
 // name SendMessage took (web-app-e0, or a reply's socket).
-function shownNote(n: Note, s: Snapshot, chiefs: Set<string>, snaps: Snapshot[] = []): Note {
+function shownNote(n: Note, s: Snapshot, ranks: Map<string, string>, snaps: Snapshot[] = []): Note {
   const shown = (sp: Speaker): Speaker => {
-    if (sp.id === s.sessionId) return { ...sp, name: managerTitleOf(s, chiefs) }
+    if (sp.id === s.sessionId) return { ...sp, name: managerTitleOf(s, ranks) }
     const crab = s.agents.find((a) => a.id === sp.id)
     if (crab !== undefined) return { ...sp, name: titleOf(crab.role) }
     const other = snaps.find((o) => o.sessionId === sp.id)
     if (other !== undefined)
-      return { ...sp, name: `${whoOf(other)} ${managerTitleOf(other, chiefs)}`, color: colorOf(other.leader) }
+      return { ...sp, name: `${whoOf(other)} ${managerTitleOf(other, ranks)}`, color: colorOf(other.leader) }
     return CHAIRMAN_NAMES.has(sp.name) ? { ...sp, name: w().chairman } : sp
   }
   return { ...n, from: shown(n.from), to: shown(n.to) }
 }
 
 // A session's title as the drawing gives it: its department's 大部长 is one.
-function managerTitleOf(s: Snapshot, chiefs: Set<string>): string {
-  return titleOf(chiefs.has(s.sessionId) ? CHIEF : roleOf(s.leader, s))
+function managerTitleOf(s: Snapshot, ranks: Map<string, string>): string {
+  return titleOf(ranks.get(s.sessionId) ?? roleOf(s.leader, s))
 }
 
-export function rosterOf(snaps: Snapshot[], me: Snapshot, now: number): string[] {
-  const chiefs = chiefsOf(snaps, now)
+export function rosterOf(snaps: Snapshot[], me: Snapshot, now: number, org: Org = NONE): string[] {
+  const ranks = ranksOf(snaps, now, org)
   return snaps
     .filter((s) => !isGoneOf(s, now))
     .map((s) => {
-      const title = managerTitleOf(s, chiefs)
+      const title = managerTitleOf(s, ranks)
       const look = statusOf(lookOf(s.leader, now, false))
       const task = s.leader.title ? clip(s.leader.title, 40) : ""
       return w().roster(whoOf(s), title, s.sessionId === me.sessionId, look, task, s.agents.length)
@@ -1005,14 +1022,14 @@ export function rosterOf(snaps: Snapshot[], me: Snapshot, now: number): string[]
 
 // What a session is handed: the memo, who it is, its colleagues, and how to
 // take it on or pass, through the office_board tool.
-export function handoverOf(memo: Memo, me: Snapshot, snaps: Snapshot[], now: number): string {
+export function handoverOf(memo: Memo, me: Snapshot, snaps: Snapshot[], now: number, org: Org = NONE): string {
   const how = w().handover[memo.to.kind === "team" ? "team" : memo.to.kind === "all" ? "all" : "open"]
   return [
     w().handover.head(addresseeOf(memo.to), memo.id),
     memo.text,
     "",
-    w().handover.youAre(managerTitleOf(me, chiefsOf(snaps, now)), whoOf(me)),
-    ...rosterOf(snaps, me, now),
+    w().handover.youAre(managerTitleOf(me, ranksOf(snaps, now, org)), whoOf(me)),
+    ...rosterOf(snaps, me, now, org),
     "",
     how,
   ].join("\n")

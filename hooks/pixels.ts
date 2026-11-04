@@ -206,10 +206,12 @@ export function titleOf(role: string): string {
   return words().titles[role] ?? words().intern
 }
 
-// Hats sit on the two pixel rows above the head. The crown is the 大部长's
-// alone; when every manager wore one, a crown said nothing.
+// Hats sit on the two pixel rows above the head. The crown is each
+// repository's 部长's alone, and the top hat the CEO's; when every manager wore
+// a crown, it said nothing.
 const HATS: Record<string, { color: string; rows: [string, string] }> = {
   chief: { color: "#e8c468", rows: ["   █  █  █   ", "   ███████   "] },
+  ceo: { color: "#2b2b33", rows: ["    █████    ", "  █████████  "] },
   mortarboard: { color: "#3fa598", rows: [" ███████████ ", "    █████ █  "] },
   chef: { color: "#efe9dc", rows: ["   ███████   ", "    █████    "] },
   viking: { color: "#b7c3d3", rows: ["█           █", " ███████████ "] },
@@ -493,7 +495,7 @@ function drawSeat(
   const isGone = look === "gone"
   const isResting = (look === "idle" || look === "asleep") && seat.finish !== "cheer"
   const body = isGone ? GONE : isResting ? restingOf(seat.color) : seat.color
-  const isManager = seat.role === "chief" || seat.role === "leader" || seat.role === "lead"
+  const isManager = seat.role === "ceo" || seat.role === "chief" || seat.role === "leader" || seat.role === "lead"
   const desk = isManager ? WALNUT : OAK
 
   if (isGone) {

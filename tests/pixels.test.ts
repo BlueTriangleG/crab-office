@@ -264,7 +264,7 @@ test("a department of several teams has a row to itself; one-team departments sh
   expect(narrow.find((s) => s.id === "web")!.cy).toBeGreaterThan(narrow.find((s) => s.id === "api")!.cy)
 })
 
-test("a 大部长 sits alone on the department's top row, centred, the other teams below", async () => {
+test("a 部长 sits alone on the department's top row, centred, the other teams below", async () => {
   const one = (id: string, role: string) => [seat(id, role, "idle")]
   const company: Company = {
     rooms: [{ title: "web-app 部", footer: "", signs: ["本部", "a 组", "b 组"], teams: [one("hq", "chief"), one("a", "lead"), one("b", "lead")] }],
@@ -275,7 +275,7 @@ test("a 大部长 sits alone on the department's top row, centred, the other tea
   expect(at("a").cy).toBeGreaterThan(at("hq").cy + SEAT_ROWS)
   // centred over the row below
   expect(at("hq").cx + SEAT_COLS / 2).toBe((at("a").cx + at("b").cx + SEAT_COLS) / 2)
-  expect(drawn.cells[at("hq").cy + 5]!.map((c) => c.ch).join("")).toContain("大部长")
+  expect(drawn.cells[at("hq").cy + 5]!.map((c) => c.ch).join("")).toContain("部长")
 })
 
 test("a big office splits into bands of rows, each tree well under the serialized bound", async () => {
@@ -356,6 +356,16 @@ test("a crab who has just written to, or heard from, another has a ✉ by its he
   const at = office(bandOf(plain), 40, 0).seats[0]!
   expect(office(bandOf({ ...plain, letter: true }), 40, 0).cells[at.cy]![at.cx]!.ch).toBe("✉")
   expect(office(bandOf(plain), 40, 0).cells[at.cy]![at.cx]!.ch).not.toBe("✉")
+})
+
+test("the CEO's hat is its own, not the crown", async () => {
+  const bandOf = (s: SeatData): Company => ({ rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[s]] }] })
+  const ceo = office(bandOf({ ...seat("s", "ceo", "idle"), hat: "ceo" }), 40, 0)
+  const head = office(bandOf(seat("s", "chief", "idle")), 40, 0)
+  const at = ceo.seats[0]!
+  const row = (d: typeof ceo) => JSON.stringify(d.cells[at.cy]!.slice(at.cx, at.cx + SEAT_COLS))
+  expect(row(ceo)).not.toBe(row(head))
+  expect(row(ceo)).not.toBe(row(office(bandOf(seat("s", "lead", "idle")), 40, 0)))
 })
 
 test("a resting crab's monitor stands still; a working crab's moves", async () => {

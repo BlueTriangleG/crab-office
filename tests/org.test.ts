@@ -1,0 +1,67 @@
+import { expect, test } from "claude-code/testing"
+
+import { LEAVE_MS, chiefsOf, companyOf, createSnapshot } from "../hooks/office.ts"
+import { orgOf } from "../hooks/org.ts"
+import type { Appointment } from "../hooks/org.ts"
+import { titleOf } from "../hooks/pixels.ts"
+import { setLanguage } from "../hooks/words.ts"
+
+setLanguage("zh")
+
+const T0 = 1_000_000
+
+test("the chairman's latest CEO stands until revoked or gone", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "api-server", undefined, T0)
+  for (const s of [a, b]) s.updatedAt = T0
+  const ceo = (sessionId: string | null, at: number): Appointment => ({ kind: "ceo", sessionId, at, by: "chairman" })
+  expect(orgOf([ceo("a", T0), ceo("b", T0 + 5)], [a, b], T0 + 10).ceo).toBe("b")
+  // two writers' files, read in either order: the latest stands
+  expect(orgOf([ceo("b", T0 + 5), ceo("a", T0 + 1)], [a, b], T0 + 10).ceo).toBe("b")
+  expect(orgOf([ceo("a", T0), ceo(null, T0 + 5)], [a, b], T0 + 10).ceo).toBeUndefined()
+  // gone from the company, the appointment lapses
+  expect(orgOf([ceo("a", T0)], [a, b], T0 + LEAVE_MS).ceo).toBeUndefined()
+})
+
+test("a department's 部长: the chairman's pick, else the CEO's, else the longest-serving, never the CEO", async () => {
+  const hq = createSnapshot("a", "web-app", undefined, T0)
+  const wt = createSnapshot("b", "web-app", undefined, T0 + 1, "docs")
+  const wt2 = createSnapshot("c", "web-app", undefined, T0 + 2, "auth")
+  for (const s of [hq, wt, wt2]) s.updatedAt = T0 + 10
+  const snaps = [hq, wt, wt2]
+  const head = (sessionId: string | null, at: number, by: Appointment["by"]): Appointment => ({
+    kind: "head",
+    project: "web-app",
+    sessionId,
+    at,
+    by,
+  })
+  expect([...chiefsOf(snaps, T0 + 10)]).toEqual(["a"])
+  const ceoIsA: Appointment = { kind: "ceo", sessionId: "a", at: T0, by: "chairman" }
+  expect([...chiefsOf(snaps, T0 + 10, orgOf([ceoIsA], snaps, T0 + 10))]).toEqual(["b"])
+  expect([...chiefsOf(snaps, T0 + 10, orgOf([ceoIsA, head("c", T0 + 3, "ceo")], snaps, T0 + 10))]).toEqual(["c"])
+  const both = [ceoIsA, head("b", T0 + 2, "chairman"), head("c", T0 + 3, "ceo")]
+  expect([...chiefsOf(snaps, T0 + 10, orgOf(both, snaps, T0 + 10))]).toEqual(["b"])
+  // the chairman's pick revoked, the CEO's stands again
+  expect([...chiefsOf(snaps, T0 + 10, orgOf([...both, head(null, T0 + 4, "chairman")], snaps, T0 + 10))]).toEqual(["c"])
+  // nobody may be both
+  expect([...chiefsOf(snaps, T0 + 10, orgOf([ceoIsA, head("a", T0 + 3, "chairman")], snaps, T0 + 10))]).toEqual(["b"])
+})
+
+test("the CEO wears its own hat and title; a 部长 the crown; everyone else is 组长", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0 + 1, "docs")
+  const d = createSnapshot("d", "web-app", undefined, T0 + 2)
+  const c = createSnapshot("c", "api-server", undefined, T0 + 3)
+  const snaps = [a, b, d, c]
+  for (const s of snaps) s.updatedAt = T0 + 10
+  const org = orgOf([{ kind: "ceo", sessionId: "a", at: T0, by: "chairman" }], snaps, T0 + 10)
+  const seats = companyOf(snaps, "a", T0 + 10, { memos: [], claims: [], org }).rooms.flatMap((r) => r.teams.flat())
+  const at = (id: string) => seats.find((s) => s.id === id)
+  expect([at("a")?.role, at("a")?.hat]).toEqual(["ceo", "ceo"])
+  // the checkout's next session heads web-app once its longest-serving is CEO
+  expect(at("d")?.role).toBe("chief")
+  expect(at("b")?.role).toBe("lead")
+  expect(at("c")?.role).toBe("chief")
+  expect(["ceo", "chief", "lead"].map(titleOf)).toEqual(["CEO", "部长", "组长"])
+})

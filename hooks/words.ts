@@ -8,8 +8,9 @@ const EN = {
   lang: "en",
   // the drawing
   titles: {
-    chief: "Director",
-    leader: "Head",
+    ceo: "CEO",
+    chief: "Head",
+    leader: "Lead",
     lead: "Lead",
     Explore: "Scout",
     Plan: "Planner",
@@ -195,8 +196,9 @@ export type Words = typeof EN
 const ZH: Words = {
   lang: "zh",
   titles: {
-    chief: "大部长",
-    leader: "部长",
+    ceo: "CEO",
+    chief: "部长",
+    leader: "组长",
     lead: "组长",
     Explore: "调研员",
     Plan: "规划师",

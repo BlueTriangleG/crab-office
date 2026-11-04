@@ -210,8 +210,8 @@ test("a click finds the crab and its detail carries what passed between them", a
     { label: "收到", text: "List every package" },
     { label: "交回", text: "seven" },
   ])
-  // the manager's card names it as the drawing does: alone in its department, 大部长
-  expect(detailOf(s.leader, s, T0 + 2, [s]).title).toBe("大部长")
+  // the manager's card names it as the drawing does: alone in its department, 部长
+  expect(detailOf(s.leader, s, T0 + 2, [s]).title).toBe("部长")
 })
 
 test("a snapshot file that is not one is ignored", async () => {
@@ -226,10 +226,10 @@ test("the shared board hears work handed down, handed back and messages passed",
   messageSent(s, "a1", "s1", "one more thing", T0 + 6)
   messageSent(s, undefined, "reviewer", "please look", T0 + 7)
   expect(s.board?.map((n) => [n.kind, n.from.name, n.to.name, n.text])).toEqual([
-    ["assign", "部长", "调研员", "map packages"],
-    ["report", "调研员", "部长", "seven packages"],
-    ["message", "调研员", "部长", "one more thing"],
-    ["message", "部长", "reviewer", "please look"],
+    ["assign", "组长", "调研员", "map packages"],
+    ["report", "调研员", "组长", "seven packages"],
+    ["message", "调研员", "组长", "one more thing"],
+    ["message", "组长", "reviewer", "please look"],
   ])
 })
 
@@ -283,10 +283,10 @@ test("worktree teams are led by 组长 under their own sign; the checkout's head
   expect(alone?.signs).toBeUndefined()
 })
 
-test("each department crowns its 大部长, seated first; every other manager a hat of its own", async () => {
+test("each department crowns its 部长, seated first; every other manager a hat of its own", async () => {
   const big = withAgent()
   const second = createSnapshot("s2", "web-app", undefined, T0 + 5)
-  // the longest-serving of web-app, but a worktree's 组长, so not its 大部长
+  // the longest-serving of web-app, but a worktree's 组长, so not its 部长
   const wt = createSnapshot("w1", "web-app", undefined, T0 - 20, "docs")
   const api = createSnapshot("a", "api-server", undefined, T0 - 10)
   // a department of worktrees alone crowns its longest-serving
@@ -298,12 +298,12 @@ test("each department crowns its 大部长, seated first; every other manager a 
   const others = ["s2", "w1"].map((id) => hats.get(id))
   expect(new Set(others).size).toBe(2)
   expect(others).not.toContain("chief")
-  // viewed from s2: the 大部长 first all the same, then by seniority
+  // viewed from s2: the 部长 first all the same, then by seniority
   const room = companyOf(snaps, "s2", T0 + 10).rooms[0]
   expect(room?.teams.map((team) => [team[0]?.role, team[0]?.hat])).toEqual([
     ["chief", undefined],
     ["lead", hats.get("w1")],
-    ["leader", hats.get("s2")],
+    ["lead", hats.get("s2")],
   ])
   expect(room?.here).toBe(2)
 })
@@ -401,7 +401,7 @@ test("the handover names the memo, who you are, your colleagues and how to take 
   expect(text).toContain("memo m1")
   expect(text).toContain("周五前把测试补齐")
   expect(text).toContain("web-app 部 · checkout-redesign 的组长")
-  expect(text).toContain("- web-app 部 · 本部 大部长")
+  expect(text).toContain("- web-app 部 · 本部 部长")
   expect(text).toContain("office_board")
   const board = companyOf([hq], "a", T0, { memos: [memo], claims: [{ memoId: "m1", at: T0, sessionId: "b", who: "web-app 部 · checkout-redesign" }] }).board
   expect(board?.at(-1)?.from.name).toBe("董事长")
@@ -443,7 +443,7 @@ test("a colleague's message waits in its addressee's inbox until the board is re
   const snaps = [hq, wt, api]
   const inbox = inboxOf(wt, snaps, T0 + 100)
   expect(inbox).toHaveLength(2)
-  expect(inbox[0]).toContain("web-app 部 · 本部 的大部长（写给 docs）：我改了 schema")
+  expect(inbox[0]).toContain("web-app 部 · 本部 的部长（写给 docs）：我改了 schema")
   expect(inbox[1]).toContain("别动 main")
   // the chairman's line is the board's, nobody's inbox; a sender's own lines are not its mail
   expect(inboxOf(hq, snaps, T0 + 100)).toHaveLength(1)
@@ -452,7 +452,7 @@ test("a colleague's message waits in its addressee's inbox until the board is re
   expect(inboxOf(wt, snaps, T0 + 100)).toHaveLength(0)
   const board = boardOf(snaps, T0 + 100)
   expect(board).toHaveLength(3)
-  expect(board[2]).toContain("api-server 部 · 本部 的大部长 → 全体：别动 main")
+  expect(board[2]).toContain("api-server 部 · 本部 的部长 → 全体：别动 main")
 })
 
 test("a SendMessage between two sessions names both on the board and puts a ✉ by both crabs", async () => {
@@ -472,9 +472,9 @@ test("a SendMessage between two sessions names both on the board and puts a ✉ 
   expect(peerOf(peers, "nobody-00")).toBeUndefined()
   messageSent(hq, undefined, "api-server-e0", "你那边的 /token 挂了", T0 + 10, peerOf(peers, "api-server-e0")?.sessionId)
   const line = companyOf([hq, api], "a", T0 + 20).board?.at(-1)
-  expect(line?.from.name).toBe("web-app 部 · 本部 大部长")
-  expect(line?.to.name).toBe("api-server 部 · 本部 大部长")
-  expect(boardOf([hq, api], T0 + 20).at(-1)).toContain("web-app 部 · 本部 的大部长 → api-server 部 · 本部 大部长：你那边的 /token 挂了")
+  expect(line?.from.name).toBe("web-app 部 · 本部 部长")
+  expect(line?.to.name).toBe("api-server 部 · 本部 部长")
+  expect(boardOf([hq, api], T0 + 20).at(-1)).toContain("web-app 部 · 本部 的部长 → api-server 部 · 本部 部长：你那边的 /token 挂了")
   const lettered = (now: number) =>
     companyOf([hq, api], "a", now).rooms.flatMap((r) => r.teams.flat()).filter((s) => s.letter).map((s) => s.id)
   expect(lettered(T0 + 20).sort()).toEqual(["a", "c"])

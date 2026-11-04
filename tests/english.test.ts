@@ -23,10 +23,10 @@ test("in English the office, its board and its memos speak English", async () =>
     expect(room.title).toBe("web-app")
     expect(room.signs).toEqual(["HQ", "checkout"])
     expect(room.footer).toBe("1 working  2 waiting")
-    expect(company.board?.[0]?.from.name).toBe("Director")
+    expect(company.board?.[0]?.from.name).toBe("Head")
 
     const text = office(company, 60, 0).cells.map((line) => line.map((c) => c.ch).join("")).join("\n")
-    expect(text).toContain("Director")
+    expect(text).toContain("Head")
     expect(text).toContain("Done!")
     expect(text).toContain("◀ you")
     expect(text).toContain("Whiteboard")
@@ -38,7 +38,7 @@ test("in English the office, its board and its memos speak English", async () =>
     const handover = handoverOf(memo, wt, [hq, wt], T0 + 5)
     expect(handover).toContain("[crab-office · the chairman's memo on the board · checkout · memo m1]")
     expect(handover).toContain("You are the Lead of web-app · checkout.")
-    expect(handover).toContain("- web-app · HQ Director: waiting for you, 1 crew")
+    expect(handover).toContain("- web-app · HQ Head: waiting for you, 1 crew")
   } finally {
     setLanguage("zh")
   }
