@@ -358,7 +358,7 @@ test("a crab who has just written to, or heard from, another has a ✉ by its he
   expect(office(bandOf(plain), 40, 0).cells[at.cy]![at.cx]!.ch).not.toBe("✉")
 })
 
-test("the CEO's hat is its own, not the crown", async () => {
+test("the CEO's hat is not the 部长's", async () => {
   const bandOf = (s: SeatData): Company => ({ rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[s]] }] })
   const ceo = office(bandOf({ ...seat("s", "ceo", "idle"), hat: "ceo" }), 40, 0)
   const head = office(bandOf(seat("s", "chief", "idle")), 40, 0)
@@ -366,6 +366,18 @@ test("the CEO's hat is its own, not the crown", async () => {
   const row = (d: typeof ceo) => JSON.stringify(d.cells[at.cy]!.slice(at.cx, at.cx + SEAT_COLS))
   expect(row(ceo)).not.toBe(row(head))
   expect(row(ceo)).not.toBe(row(office(bandOf(seat("s", "lead", "idle")), 40, 0)))
+})
+
+test("the CEO wears the crown; a 部长 the top hat", async () => {
+  const bandOf = (s: SeatData): Company => ({ rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[s]] }] })
+  const hatRow = (s: SeatData) => {
+    const drawn = office(bandOf(s), 40, 0)
+    const at = drawn.seats[0]!
+    return drawn.cells[at.cy]!.slice(at.cx + 1, at.cx + 7).flatMap((c) => [c.fg, c.bg])
+  }
+  const GOLD = "#e8c468"
+  expect(hatRow({ ...seat("s", "ceo", "editing"), hat: "ceo" })).toContain(GOLD)
+  expect(hatRow(seat("s", "chief", "editing"))).not.toContain(GOLD)
 })
 
 test("a resting crab's monitor stands still; a working crab's moves", async () => {
@@ -396,7 +408,7 @@ test("a board with more lines than it shows has a way back and a way forward", a
   expect(newest.pagers.map((p) => p.dir)).toEqual(["older"])
 })
 
-test("the CEO's top hat stands out from the floor, at work or at rest", async () => {
+test("the CEO's crown stands out from the floor, at work or at rest", async () => {
   const lum = (hex: string | undefined) => {
     const n = parseInt((hex ?? "#000000").slice(1), 16)
     return 0.3 * (n >> 16) + 0.59 * ((n >> 8) & 255) + 0.11 * (n & 255)

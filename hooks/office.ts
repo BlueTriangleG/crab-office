@@ -677,15 +677,33 @@ export function companyOf(
   )
   const isMine = (project: string) =>
     present.some((s) => s.sessionId === mine && s.project === project)
-  const projects = [...new Set(present.map((s) => s.project))].sort((a, b) =>
+  // The CEO leaves its department for an office of its own, a row to itself
+  // at the very top.
+  const ceo = present.find((s) => s.sessionId === org.ceo)
+  const staff = present.filter((s) => s !== ceo)
+  const projects = [...new Set(staff.map((s) => s.project))].sort((a, b) =>
     isMine(a) === isMine(b) ? a.localeCompare(b) : isMine(a) ? -1 : 1,
   )
   const hats = hatsOf(present, now, org)
   const letters = lettersOf(present, now)
+  const ceoTeam = ceo === undefined ? undefined : teamOf(ceo, now, hats.get(ceo.sessionId), letters)
+  const top: Room[] =
+    ceo === undefined || ceoTeam === undefined
+      ? []
+      : [
+          {
+            title: w().ceoRoom,
+            footer: footerOf(ceoTeam),
+            teams: [ceoTeam],
+            top: true,
+            ...(ceoTeam[0]?.finish === "cheer" ? { isCheering: true } : {}),
+            ...(ceo.sessionId === mine ? { here: 0 } : {}),
+          },
+        ]
   const rooms: Room[] = projects.map((project) => {
-    // The 大部长's team first, which the drawing seats alone on the top row;
+    // The 部长's team first, which the drawing seats alone on the top row;
     // the rest by seniority.
-    const sessions = present
+    const sessions = staff
       .filter((s) => s.project === project)
       .sort((a, b) => Number(hats.get(b.sessionId) === CHIEF) - Number(hats.get(a.sessionId) === CHIEF) || bySeniority(a, b))
     const here = sessions.findIndex((s) => s.sessionId === mine)
@@ -702,6 +720,7 @@ export function companyOf(
       ...(here >= 0 ? { here } : {}),
     }
   })
+  rooms.unshift(...top)
   const onDuty = rooms
     .flatMap((r) => r.teams.flat())
     .filter((s) => s.look !== "gone").length
@@ -738,7 +757,6 @@ export function companyOf(
   }))
   const boardView = { first: last - board.length + 1, last, total: all.length }
   // The CEO's work at a glance: jobs still open, and of them those waiting to be judged.
-  const ceo = present.find((s) => s.sessionId === org.ceo)
   const live = (desk.jobs ?? []).filter(isLive)
   const run = ceo === undefined ? undefined : { who: whoOf(ceo), open: live.length, waiting: live.filter((j) => j.status === "reported").length }
   return { header: w().header(onDuty, run), rooms, board, boardView, lang: w().lang }

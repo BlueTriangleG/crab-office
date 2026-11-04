@@ -126,17 +126,18 @@ colours, which is all a terminal cell can show.
 - **Clawd** is drawn from Claude Code's own parts (arms, eyes, feet, turned
   frames; body `rgb(215,119,87)` for managers, eyes `clawd_background`). Crew
   colours come in hiring order so a team never repeats one.
-- **A crown a department**: each department's 部长 is the session the chairman
+- **A head a department**: each department's 部长 is the session the chairman
   or the CEO appointed, else its longest-serving session in the repository's
   own checkout, or in a worktree where none is, never the CEO; it wears the
-  crown, and its team sits alone on the department's top row, centred, the
-  other teams below. Every other session's crab is 组长 and wears a hat of its
+  silver top hat, and its team sits alone on the department's top row,
+  centred, the other teams below. Every other session's crab is 组长 and wears a hat of its
   own, handed out by seniority so a newcomer never takes an old hand's:
   mortarboard, chef's hat, viking helmet, pom beanie, bunny ears, cowboy hat,
   propeller cap; an eighth manager starts the list again. A crown on every
-  manager said nothing, and one crown for the whole company left every other
-  repository headless.
-- **The CEO**: a top hat and the title CEO. The header leads with its work
+  manager said nothing; the one crown is the CEO's.
+- **The CEO**: the crown and the title CEO, in an office of its own (CEO 办公室)
+  on a row to itself at the very top, its subagents with it and out of its
+  department; the head is what the chairman looks to first. The header leads with its work
   (jobs open, jobs to judge), then names it; a card lists the open jobs its
   session was given, and the CEO's card the jobs it gave. Its appointments,
   jobs, reports and verdicts are lines on the board, with the ✉ on both crabs.

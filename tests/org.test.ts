@@ -63,7 +63,7 @@ test("a department's 部长: the chairman's pick, else the CEO's, else the longe
   expect([...chiefsOf(snaps, T0 + 10, orgOf([ceoIsA, head("a", T0 + 3, "chairman")], snaps, T0 + 10))]).toEqual(["b"])
 })
 
-test("the CEO wears its own hat and title; a 部长 the crown; everyone else is 组长", async () => {
+test("the CEO wears its own hat and title; a 部长 its own; everyone else is 组长", async () => {
   const a = createSnapshot("a", "web-app", undefined, T0)
   const b = createSnapshot("b", "web-app", undefined, T0 + 1, "docs")
   const d = createSnapshot("d", "web-app", undefined, T0 + 2)

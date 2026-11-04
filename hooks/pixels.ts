@@ -46,6 +46,9 @@ export type Room = {
   // The team, by its place in `teams`, of the session whose pane this is: a
   // gold wall beside it, and "你在这" on its sign, or the title without one.
   here?: number
+  // The CEO's office: a row of its own at the very top, never shared with the
+  // one-team departments that otherwise pair up.
+  top?: boolean
 }
 // `lang`: the words the drawing's own labels are in, since a Client runs apart
 // from the hooks that chose them.
@@ -206,13 +209,13 @@ export function titleOf(role: string): string {
   return words().titles[role] ?? words().intern
 }
 
-// Hats sit on the two pixel rows above the head. The crown is each
-// repository's 部长's alone, and the top hat the CEO's; when every manager wore
-// a crown, it said nothing.
+// Hats sit on the two pixel rows above the head. The crown is the CEO's alone,
+// and the silver top hat each repository's 部长's; when every manager wore a
+// crown, it said nothing.
 const HATS: Record<string, { color: string; rows: [string, string] }> = {
-  chief: { color: "#e8c468", rows: ["   █  █  █   ", "   ███████   "] },
+  ceo: { color: "#e8c468", rows: ["   █  █  █   ", "   ███████   "] },
   // Silver: a black hat vanished into the dark floors.
-  ceo: { color: "#c9ced6", rows: ["    █████    ", "  █████████  "] },
+  chief: { color: "#c9ced6", rows: ["    █████    ", "  █████████  "] },
   mortarboard: { color: "#3fa598", rows: [" ███████████ ", "    █████ █  "] },
   chef: { color: "#efe9dc", rows: ["   ███████   ", "    █████    "] },
   viking: { color: "#b7c3d3", rows: ["█           █", " ███████████ "] },
@@ -714,7 +717,7 @@ type Placed = { room: Room; x: number; y: number; w: number; h: number; bands: B
 // grow as it cheers.
 function layoutOf(company: Company, cols: number): { rooms: Placed[]; bottom: number } {
   const insideOf = (w: number) => w - 2 - 2 * PAD
-  const isShared = (room: Room) => !room.bare && room.teams.length <= 1
+  const isShared = (room: Room) => !room.bare && room.top !== true && room.teams.length <= 1
   const shared = company.rooms.filter(isShared)
   const least = Math.max(
     0,

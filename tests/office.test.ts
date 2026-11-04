@@ -44,7 +44,7 @@ import {
   turnFinished,
   turnStarted,
 } from "../hooks/office.ts"
-import { LEADER_COLOR } from "../hooks/pixels.ts"
+import { LEADER_COLOR, office as draw } from "../hooks/pixels.ts"
 import { orgOf } from "../hooks/org.ts"
 import { jobsOf } from "../hooks/jobs.ts"
 
@@ -647,4 +647,21 @@ test("the office's own prompts read as short tasks on a card, in either language
     ])
   }
   setLanguage("zh")
+})
+
+test("the CEO sits alone at the top of the office, in a room of its own, out of its department", async () => {
+  const { a, b, c, snaps, org } = working()
+  const company = companyOf(snaps, "a", T0 + 100, { memos: [], claims: [], org })
+  const [top, ...rest] = company.rooms
+  expect(top?.title).toBe("CEO 办公室")
+  expect(top?.teams.map((team) => team[0]?.id)).toEqual(["c"])
+  expect(rest.flatMap((r) => r.teams.flat()).some((s) => s.id === "c")).toBe(false)
+  // c was api-server's only session: that department has no one left in it
+  expect(rest.map((r) => r.title)).toEqual(["web-app 部"])
+  const drawn = draw(company, 60, 0)
+  const at = (id: string) => drawn.seats.find((s) => s.id === id)!
+  expect(at("c").cy).toBeLessThan(Math.min(at("a").cy, at("b").cy))
+  expect(drawn.seats.filter((s) => s.cy === at("c").cy).map((s) => s.id)).toEqual(["c"])
+  void a
+  void b
 })
