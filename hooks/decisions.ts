@@ -1,4 +1,4 @@
-import { whoOf } from "./office.ts"
+import { clip, whoOf } from "./office.ts"
 import type { Snapshot } from "./office.ts"
 import { w } from "./words.ts"
 
@@ -28,4 +28,12 @@ export function rowsOf(pending: Decision[], snaps: Snapshot[], titles: Record<st
     const s = snaps.find((x) => x.sessionId === d.by)
     return { id: d.id, who: titles[d.by] ?? (s === undefined ? d.by : whoOf(s)), text: d.text }
   })
+}
+
+// The chairman's answer, typed under an item on the list: it goes to the session
+// that asked as an instruction from a card does, the chairman's own words in its
+// prompt, and not as one session's message to another, which a session rightly
+// does not take as the chairman's approval.
+export function answerOf(d: Decision, answer: string): string {
+  return w().chairmanAnswer(d.id, clip(d.text, 120), answer)
 }

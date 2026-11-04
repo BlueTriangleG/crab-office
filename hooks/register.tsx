@@ -64,7 +64,7 @@ import {
 import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
 import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
-import { pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
+import { answerOf, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
 import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
 import type { Meeting, MeetingFile } from "./meetings.ts"
@@ -80,7 +80,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.1"
+const BUILD = "2026-11-05.2"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -154,9 +154,9 @@ const CHALK = "#5d7a66"
 
 // A board line shown whole, on a card the colour of the board.
 // What is waiting on the chairman, under everything else: who asked and what,
-// each with a ✓ that takes it off.
-function chairmanCard(el: Pick<ClientElements, "Box" | "Text" | "Button">, rows: { id: string; who: string; text: string }[]) {
-  const { Box, Text, Button } = el
+// each with a field to answer it there and a ✓ that takes it off unanswered.
+function chairmanCard(el: Pick<ClientElements, "Box" | "Text" | "Button" | "Input">, rows: { id: string; who: string; text: string }[]) {
+  const { Box, Text, Button, Input } = el
   if (rows.length === 0)
     return (
       <Text key="chairman-card" dimColor>
@@ -169,10 +169,13 @@ function chairmanCard(el: Pick<ClientElements, "Box" | "Text" | "Button">, rows:
         {w().chairmanList(rows.length)}
       </Text>
       {rows.map((r) => (
-        <Box key={`decision-${r.id}`} flexDirection="row" columnGap={1}>
-          <Button key={`office-settle-${r.id}`} label="✓" onPress={() => undefined} />
-          <Text bold>{r.who}</Text>
-          <Text wrap="wrap">{r.text}</Text>
+        <Box key={`decision-${r.id}`} flexDirection="column">
+          <Box flexDirection="row" columnGap={1}>
+            <Button key={`office-settle-${r.id}`} label="✓" onPress={() => undefined} />
+            <Text bold>{r.who}</Text>
+            <Text wrap="wrap">{r.text}</Text>
+          </Box>
+          <Input key={`office-answer-${r.id}`} label="  ➤ " placeholder={w().answerPlaceholder} submitLabel={w().send} onSubmit={() => undefined} />
         </Box>
       ))}
     </Box>
@@ -1380,6 +1383,16 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  on("ui.input", { element: /^office-answer-/ }, async ($, e, next) => {
+    const d = office.pending.find((x) => `office-answer-${x.id}` === e.element)
+    if (e.kind !== "submit" || d === undefined || e.value.trim() === "") return next(e)
+    await order($, d.by, answerOf(d, e.value.trim()))
+    await settle($, d, e.value.trim())
+    const asker = [...(office.me ? [office.me] : []), ...office.others].find((s) => s.sessionId === d.by)
+    $.ui.toast(w().answeredToast(asker === undefined ? d.by : (office.titles[d.by] ?? whoOf(asker))))
+    return next(e)
+  })
+
   on("ui.press", { element: /^office-settle-/ }, async ($, e, next) => {
     const d = office.pending.find((x) => `office-settle-${x.id}` === e.element)
     if (d !== undefined) await settle($, d, w().settledByChairman)
@@ -1492,7 +1505,7 @@ export const register: Register = (on, options) => {
                   }
                 : undefined,
             )}
-          {chairmanCard({ Box, Text, Button }, rowsOf(office.pending, snaps, office.titles))}
+          {chairmanCard({ Box, Text, Button, Input }, rowsOf(office.pending, snaps, office.titles))}
         </Box>
       )
     },

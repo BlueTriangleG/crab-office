@@ -14,7 +14,7 @@ Every Claude Code session running on your machine, and every subagent it hires, 
 - **A CEO you appoint**, modelled on DeepSeek's super-agent design ([below](#the-ceo-a-super-agent-built-from-claude-code)): make any session CEO from its card, and it wears the crown in an office of its own at the top. Hand it work and it gives each job to the session best placed, with how it will be judged; it can add to a job while it is being done, judges what comes back, and answers you. A watchdog nudges it when work stalls. The CEO is the last check, not a go-between.
 - **Colleagues**: sessions talk one to one with Claude Code's own SendMessage, and the board shows it with a ✉ by both crabs. Every session is told to go straight to the colleague who knows, and may have one review its work before handing it back. Give a session a one-word **job title** and a SendMessage to that title, or to `CEO`, reaches it, whatever name it goes by after a restart.
 - **Meetings**: when three or more sessions must agree, any of them calls a meeting. Its members leave their desks for a meeting room, a SendMessage to the meeting's name reaches everyone at the table, and whoever called it closes it with the conclusion. A meeting quiet for 15 minutes ends by itself, and after 30 messages it passes on no more.
-- **Waiting on you**: what only you can decide (an approval, a choice between plans), any session puts on your list at the bottom of the pane: who is waiting, and on what, each with a ✓. It stays there, through compactions, until it is settled.
+- **Waiting on you**: what only you can decide (an approval, a choice between plans), any session puts on your list at the bottom of the pane: who is waiting, and on what. Answer each right there, and the answer goes to the session that asked as your own words; ✓ takes one off unanswered. It stays there, through compactions, until it is settled.
 - **The board tool**: every session gets an `office_board` tool to read the board, write to a whole department, everyone or you without interrupting anyone, call and close meetings, and, under a CEO, run the work.
 
 ![A manager's card: its task, tools and recent conversation, an instruction delivered, and fields to give another or ask a btw](docs/card.png)
@@ -75,7 +75,7 @@ In the pane:
 - Click a line on the board to select the crab who said it and read the line whole. With more lines than fit, page with **▲ older** and **▼ newer** on the board's edges.
 - Type in the field under the board and press Enter to pin a memo.
 - A gold mark shows the team you are viewing from (◀ you).
-- At the very bottom, **Waiting on you** lists what sessions need you to decide; ✓ takes an item off.
+- At the very bottom, **Waiting on you** lists what sessions need you to decide. Type an answer under an item and press Enter: it reaches the session that asked as your own instruction, run once that session is free, and the item comes off. ✓ takes one off without answering.
 
 ## How it works
 

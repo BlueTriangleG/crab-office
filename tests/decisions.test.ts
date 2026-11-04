@@ -1,8 +1,8 @@
 import { expect, test } from "claude-code/testing"
 
-import { pendingOf, rowsOf, settleRefusal } from "../hooks/decisions.ts"
+import { answerOf, pendingOf, rowsOf, settleRefusal } from "../hooks/decisions.ts"
 import type { Decision } from "../hooks/decisions.ts"
-import { createSnapshot, whoOf } from "../hooks/office.ts"
+import { createSnapshot, orderPromptOf, promptOf, whoOf } from "../hooks/office.ts"
 import { setLanguage } from "../hooks/words.ts"
 
 setLanguage("zh")
@@ -30,4 +30,13 @@ test("each row names who is waiting by its job title, else its place; one that l
   const rows = rowsOf([asked("d1", "a", T0, "x"), asked("d2", "b", T0, "y"), asked("d3", "gone", T0, "z")], [a, b], { a: "voice" })
   expect(rows.map((r) => r.who)).toEqual(["voice", whoOf(b), "gone"])
   expect(rows.map((r) => r.id)).toEqual(["d1", "d2", "d3"])
+})
+
+test("the chairman's answer goes to the session that asked as the chairman's own words, naming what it answers", async () => {
+  const text = orderPromptOf(answerOf(asked("d1", "b", T0, "方案 D 上不上"), "上，但先在 dev 跑一天"))
+  expect(text).toContain("#d1")
+  expect(text).toContain("方案 D 上不上")
+  expect(text).toContain("上，但先在 dev 跑一天")
+  // on the asker's card it reads as the answer, not as the office's wrapping
+  expect(promptOf(`The crab-office plugin sent a message: ${text}`)).not.toContain("[")
 })

@@ -305,9 +305,14 @@ meeting's conclusion left to the chairman) any session puts on the chairman's
 list with `office_board ask`; kept until then in the asker's own context, a
 compaction lost the detail and no other session saw what was stuck on the
 chairman. The list is at the very bottom of the pane, who is waiting (its job
-title, else its place) and on what, each with a ✓ that takes it off; `read`
-carries it too. Once the chairman has answered, the session that asked, or the
-CEO, takes it off with `office_board settle`. `decisions/<id>.json` is the
+title, else its place) and on what, each with a field to answer it and a ✓
+that takes it off unanswered; `read` carries it too. An answer typed there goes
+to the session that asked as an instruction from a card does, the chairman's
+own words submitted in its prompt once it is free, and the item is settled with
+it. It is not one session's message to another: a session rightly does not take
+such a message as the chairman's approval, and an answer is often exactly
+that. Answered elsewhere, the session that asked, or the CEO, takes it off with
+`office_board settle`. `decisions/<id>.json` is the
 asker's, `settled/<id>.<writer>.json` whoever settled it, so each file has one
 writer; a session that left keeps its item on the list, since what it asked may
 still need deciding.
