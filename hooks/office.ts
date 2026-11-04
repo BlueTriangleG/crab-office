@@ -1044,9 +1044,12 @@ function isHolding(s: Snapshot, memo: Memo, now: number): boolean {
 // Who looks at a memo for whoever is free: of the free sessions that have not
 // passed on it, the first by id. Every session works the same answer out from
 // the same files, so one goes, and if it passes, the next.
-export function takerOf(memo: Memo, snaps: Snapshot[], now: number): string | undefined {
+// `isReturned`: its taker went away mid-work, so it is back for anyone free, a
+// session opened since too; held to those there when it was posted, a memo
+// whose only taker died had nobody left to take it.
+export function takerOf(memo: Memo, snaps: Snapshot[], now: number, isReturned = false): string | undefined {
   return snaps
-    .filter((s) => isFree(s, now) && s.observe !== true && wasThere(memo, s) && !(s.handled ?? []).includes(memo.id))
+    .filter((s) => isFree(s, now) && s.observe !== true && (isReturned || wasThere(memo, s)) && !(s.handled ?? []).includes(memo.id))
     .map((s) => s.sessionId)
     .sort()[0]
 }
@@ -1069,7 +1072,7 @@ export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], all: Cla
         return (
           !claims.some((c) => c.memoId === m.id) &&
           !snaps.some((s) => isHolding(s, m, now)) &&
-          takerOf(m, snaps, now) === me.sessionId
+          takerOf(m, snaps, now, all.some((c) => c.memoId === m.id)) === me.sessionId
         )
       return isFor(m.to, me) && wasThere(m, me)
     })

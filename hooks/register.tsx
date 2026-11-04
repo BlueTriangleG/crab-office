@@ -82,7 +82,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.4"
+const BUILD = "2026-11-05.5"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -358,7 +358,10 @@ async function order($: EngineInterface, sessionId: string, text: string) {
   office.chats.set(sessionId, [...(office.chats.get(sessionId) ?? []), chat].slice(-CHAT_KEPT))
   office.asked += 1
   $.ui.invalidate("ui.render")
-  if (!isRemote) return void (await $.prompt.submit({ text: chat.question }))
+  // Not awaited: a submit resolves once the session is idle, and a command
+  // hook awaiting it kept the session from ever being (/office tell to itself
+  // answered "no command.run hook answered it" and no turn ran).
+  if (!isRemote) return void $.prompt.submit({ text: chat.question })
   const sent: Order = { id: chat.id, at: now, to: sessionId, text: chat.question }
   await $.fs.write(`${office.base}/orders/${chat.id}.json`, JSON.stringify(sent))
 }
@@ -1032,7 +1035,7 @@ function claimFileOf(memo: Memo, sessionId: string): string {
   return `${office.base}/claims/${memo.to.kind === "open" ? memo.id : `${memo.id}.${sessionId}`}.json`
 }
 
-// The claims this session made and has now finished a turn after: done, and
+// The claims this session made and has now answered a turn after: done, and
 // never to lapse when it goes away.
 async function claimsDone($: EngineInterface, now: number) {
   const me = office.me
@@ -1371,7 +1374,8 @@ export const register: Register = (on, options) => {
       changed($)
       if (e.agentId === undefined) {
         await refreshTalk($).catch(() => undefined)
-        await claimsDone($, Date.now()).catch(() => undefined)
+        // Interrupted (Ctrl-C), refused or failed, the memo is not done.
+        if (e.reason === "answer") await claimsDone($, Date.now()).catch(() => undefined)
       }
     }
     return r

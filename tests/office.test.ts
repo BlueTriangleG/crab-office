@@ -710,3 +710,14 @@ test("a session in observe mode takes no work for whoever is free and heads noth
   // older, and in the checkout itself, it would head web-app; it does not
   expect([...chiefsOf([watcher, worker], now)]).toEqual(["b"])
 })
+
+test("a memo whose only taker went away mid-work goes back to anyone free, even a session opened since", async () => {
+  const late = createSnapshot("b", "web-app", undefined, T0 + 60 * 60_000, "docs")
+  const now = T0 + 61 * 60_000
+  late.updatedAt = now
+  const open = parseSay("看一下首页", "o", T0 + 50)!
+  const taken = { memoId: "o", at: T0 + 60, sessionId: "a", who: "web-app · 本部" }
+  expect(memoFor(late, [late], [open], [taken], now)?.id).toBe("o")
+  // never taken, it still does not go to sessions opened since
+  expect(memoFor(late, [late], [open], [], now)).toBeUndefined()
+})

@@ -111,9 +111,12 @@ knew which session would be 部长.
   memo, open ones too, reaches only sessions that were running when it was
   written: an open memo nobody claimed went to each session opened in the day
   after, a turn spent by every short-lived helper. A claim holds while its
-  session is in the company, and for good once that session finished a turn
-  after claiming (`doneAt`, written by the claimer); one whose session went
-  away mid-work lapses, and an open memo goes back to whoever is free. The
+  session is in the company, and for good once that session answered a turn
+  after claiming (`doneAt`, written by the claimer; a turn interrupted with
+  Ctrl-C, refused or failed does not count); one whose session went away
+  mid-work lapses, and an open memo goes back to anyone free, a session opened
+  since as well: held to those there when it was posted, a memo whose only
+  taker died had nobody left to take it. The
   board shows `✓ <who>、<who> 接了` under a claimed memo. Memos expire after 24 h.
 - **Envelopes on the org chart**: for three seconds after work is handed down a
   ✉ walks the wire from the manager's junction to the crew member's desk, and
