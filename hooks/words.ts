@@ -122,7 +122,8 @@ const EN = {
       "A job from the CEO carries an id (#…): do it as you would any task; when it is done, write the result in this session first, then hand it back with office_board report (assignment, text). It goes to the CEO.",
       "Anything the chairman must decide, ask the chairman here, as always.",
     ].join("\n"),
-  ceoHandoverHead: "[crab-office · the chairman has made you CEO]\nThe sessions at work now:",
+  ceoHandoverHead: "[crab-office · the chairman has made you CEO]",
+  ceoStaffHead: "The sessions at work now:",
   nudgeHead: "[crab-office · the watchdog] These jobs have stalled:",
   nudgeLine: (rule: number, id: string, task: string, who: string, minutes: number) => {
     const what = [
@@ -139,7 +140,7 @@ const EN = {
   approvalToast: (id: string, who: string, minutes: number) => `Job #${id}: ${who} has waited ${minutes} min for your approval`,
   ceoWaiting: "Reported and waiting for your verdict:",
   waitingLine: (id: string, task: string, who: string) => `- #${id} ${task} (from ${who})`,
-  ceoHandoverTail: "Your instructions say what a CEO does; office_board staff gives this list again any time.",
+  ceoHandoverTail: "office_board staff gives this list again any time.",
   staffMore: (name: string | undefined, duty: string | undefined, jobs: string[]) =>
     `${name ? ` · SendMessage: ${name}` : ""}${duty ? ` · duty: ${duty}` : ""}${jobs.length > 0 ? ` · open: ${jobs.map((id) => `#${id}`).join(" ")}` : ""}`,
   appointedLine: (title: string, isRevoked: boolean) => (isRevoked ? `removed as ${title}` : `appointed ${title}`),
@@ -406,7 +407,8 @@ const ZH: Words = {
       "CEO 派来的活带编号（#…），照常做；做完先在你自己的会话里写清结果，再用 office_board report（assignment、text）交差，交差会送到 CEO。",
       "需要董事长决定的事，照常在你的会话里问董事长。",
     ].join("\n"),
-  ceoHandoverHead: "[螃蟹办公室 · 董事长任命你为 CEO]\n现在在岗的会话：",
+  ceoHandoverHead: "[螃蟹办公室 · 董事长任命你为 CEO]",
+  ceoStaffHead: "现在在岗的会话：",
   nudgeHead: "[螃蟹办公室 · 督促] 这几件活卡住了：",
   nudgeLine: (rule, id, task, who, minutes) => {
     const what = [
@@ -423,7 +425,7 @@ const ZH: Words = {
   approvalToast: (id, who, minutes) => `#${id}：${who} 等你批准已经 ${minutes} 分钟`,
   ceoWaiting: "已经交差、等你验收的：",
   waitingLine: (id, task, who) => `- #${id} ${task}（${who} 交的）`,
-  ceoHandoverTail: "CEO 该做什么写在你的说明里；随时用 office_board staff 再看这张表。",
+  ceoHandoverTail: "随时用 office_board staff 再看这张表。",
   staffMore: (name, duty, jobs) =>
     `${name ? ` · SendMessage：${name}` : ""}${duty ? ` · 职责：${duty}` : ""}${jobs.length > 0 ? ` · 在办：${jobs.map((id) => `#${id}`).join(" ")}` : ""}`,
   appointedLine: (title, isRevoked) => `${isRevoked ? "撤销" : "任命为"}${/^[A-Za-z]/.test(title) ? ` ${title}` : title}`,

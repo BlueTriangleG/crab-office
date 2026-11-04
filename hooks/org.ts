@@ -175,8 +175,10 @@ export function roleSectionOf(
   return w().roleStaff(named(ceo), head === undefined ? undefined : named(head))
 }
 
-// What a session is handed when the chairman makes it CEO: the sessions at work,
-// and the reports that came in while there was no CEO to judge them.
+// What a session is handed when the chairman makes it CEO: what a CEO does, the
+// sessions at work, and the reports that came in while there was no CEO. The
+// instructions come whole here as well as in the system prompt, since a plugin
+// ahead of this one may pass prompt.compose on without it (one did, live).
 export function ceoHandoverOf(
   me: Snapshot,
   snaps: Snapshot[],
@@ -193,6 +195,9 @@ export function ceoHandoverOf(
   }
   return [
     w().ceoHandoverHead,
+    w().roleCeo,
+    "",
+    w().ceoStaffHead,
     ...staffOf(snaps, me, org, duties, jobs, peers, now),
     ...(waiting.length > 0 ? ["", w().ceoWaiting, ...waiting.map((j) => w().waitingLine(j.id, j.task, whoIs(j.to)))] : []),
     "",

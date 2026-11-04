@@ -198,6 +198,11 @@ test("the CEO's handover lists reports waiting for a verdict", async () => {
   expect(text).not.toContain("#j2")
   expect(text).toContain(b.team ?? "")
   expect(text).toContain("staff")
+  // the whole of a CEO's instructions, since another plugin may keep the
+  // system prompt's section from ever being added
+  expect(text).toContain("assign")
+  expect(text).toContain("withdraw")
+  expect(text).toContain("accept")
 })
 
 test("pruning keeps the latest appointment of each kind, repository and appointer", async () => {
