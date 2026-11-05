@@ -59,6 +59,16 @@ In the desktop app, where `/plugin` does not run: click + next to the prompt box
 
 crab-office is a mod (a plugin of function hooks), so it needs a Claude Code build with mods. The office draws in the terminal; under `/tui fullscreen` the pane docks on the right.
 
+## Themes
+
+A theme changes how the office names you, the ranks and its own terms, and the voice the crabs use with each other and with you. Only names and tone change: what a report says stays plain, and code, commits, PRs and docs never take it. The office as it is is the default theme.
+
+The first theme is **字节**: the office in Chinese, the way ByteDance colleagues talk. Colleagues are 同学 (never 老师 or 某总), the conclusion comes first, and there is no empty jargon. Meetings are 组会, the board is 大群, the tracker is 需求看板, and you are X总: switch it on with `/office theme 字节`, and the CEO asks you what X is.
+
+![The 字节 theme: 螃蟹跳动, 需求看板, 组会 and 大群, and the chairman addressed as 高总](docs/theme-bytedance.png)
+
+Your own themes are JSON files in `~/.claude/crab-office/themes/`: a name, a language, how you are addressed, renamed titles and terms, a voice and a few example lines.
+
 ## Observe mode
 
 Set the plugin's `mode` option to `observe` and the office only shows sessions: it hands them no memo, instruction, job or meeting, and gives their models no tool and no prompt. Every session run with `-p` or the SDK only observes by itself, so the office can be installed everywhere to watch a crowd of short-lived helpers without spending a turn of theirs. A btw still works on an observed session: it is you asking, answered on the side.
