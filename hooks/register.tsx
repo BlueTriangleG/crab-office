@@ -68,7 +68,7 @@ import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
 import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
 import { answerOf, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
 import { cardText, linesText, officeText } from "./text.ts"
-import { LINE_STATUSES, lineRefusal, lineRowsOf, linesOf } from "./lines.ts"
+import { LINE_STATUSES, askOfLine, lineRefusal, lineRowsOf, linesOf } from "./lines.ts"
 import type { Line, LineRow, LineStatus } from "./lines.ts"
 import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
@@ -85,7 +85,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.9"
+const BUILD = "2026-11-05.10"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -571,7 +571,7 @@ async function tick($: EngineInterface) {
     readJsonDir<Record<string, Line>>($, `${office.base}/lines`),
   ])
   office.pending = pendingOf(asked, settled)
-  office.lines = linesOf(tracked, now)
+  office.lines = linesOf(tracked)
   office.jobs = jobsOf(given, reported, judged, amends)
   office.duties = dutiesOf(duties)
   office.titles = titlesOf(titles)
@@ -1022,9 +1022,17 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     const file = `${office.base}/lines/${me.sessionId}.json`
     const mine = await $.fs.read(file).then((s) => JSON.parse(s) as Record<string, Line>).catch(() => ({}))
     await $.fs.write(file, JSON.stringify({ ...mine, [key]: line }))
-    office.lines = linesOf([Object.fromEntries(office.lines.map((l) => [l.name.toLowerCase(), l])), { [key]: line }], now)
+    office.lines = linesOf([Object.fromEntries(office.lines.map((l) => [l.name.toLowerCase(), l])), { [key]: line }])
+    // The line's question to the chairman, if one is open, is replaced or, the
+    // line moving on, settled: one item per line on the chairman's board.
+    for (const d of office.pending.filter((x) => x.line?.toLowerCase() === key)) await settle($, d, line.text)
+    if (line.status === "waiting") {
+      const asked = askOfLine(line, idOf(now))
+      await $.fs.write(`${office.base}/decisions/${asked.id}.json`, JSON.stringify(asked))
+      office.pending = [...office.pending, asked]
+    }
     $.ui.invalidate("ui.render")
-    return w().tool.tracked(name)
+    return line.status === "waiting" ? w().tool.trackedWaiting(name) : line.status === "done" ? w().tool.trackedOff(name) : w().tool.tracked(name)
   }
   if (action === "title" && target !== undefined) {
     const titleRefused = titleRefusal(text, target.sessionId, office.titles, snaps, peers, now)

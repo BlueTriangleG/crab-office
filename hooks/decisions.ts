@@ -8,7 +8,8 @@ import { w } from "./words.ts"
 // context alone, a compaction lost the detail and no other session saw what
 // was stuck on the chairman. One writer a file: `decisions/<id>.json` the
 // asker's, `settled/<id>.<writer>.json` whoever settled it.
-export type Decision = { id: string; by: string; at: number; text: string }
+// `line`: put there from the CEO's tracker, a line waiting on the chairman.
+export type Decision = { id: string; by: string; at: number; text: string; line?: string }
 export type Settled = { id: string; by: string; at: number; text: string }
 
 export function pendingOf(asked: Decision[], settled: Settled[]): Decision[] {

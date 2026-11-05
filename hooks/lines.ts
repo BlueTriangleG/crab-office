@@ -1,4 +1,5 @@
-import { clockOf, whoOf } from "./office.ts"
+import type { Decision } from "./decisions.ts"
+import { clip, clockOf, whoOf } from "./office.ts"
 import type { Snapshot } from "./office.ts"
 import { w } from "./words.ts"
 
@@ -10,12 +11,16 @@ import { w } from "./words.ts"
 export type LineStatus = "stuck" | "waiting" | "risk" | "ok" | "done"
 export type Line = { name: string; status: LineStatus; text: string; owner?: string; at: number; by: string }
 
-// The most urgent first, which is how the tracker is read.
-export const LINE_STATUSES: LineStatus[] = ["stuck", "waiting", "risk", "ok", "done"]
-export const LINE_DONE_KEEP_MS = 24 * 60 * 60_000
+export const LINE_STATUSES: LineStatus[] = ["stuck", "risk", "ok", "waiting", "done"]
+// What the tracker shows, the most urgent first: lines still being worked. One
+// waiting on the chairman is on the chairman's board instead, and one done is
+// off it; the chairman wanted the tracker to hold what is on track, and no more.
+const SHOWN: LineStatus[] = ["stuck", "risk", "ok"]
 const NAME_MAX = 24
+// One short line, where it stands: lines of a hundred characters read as reports.
+const TEXT_MAX = 40
 
-export function linesOf(files: Record<string, Line>[], now: number): Line[] {
+export function linesOf(files: Record<string, Line>[]): Line[] {
   const latest = new Map<string, Line>()
   for (const file of files)
     for (const line of Object.values(file)) {
@@ -23,15 +28,22 @@ export function linesOf(files: Record<string, Line>[], now: number): Line[] {
       if (held === undefined || line.at > held.at) latest.set(line.name.toLowerCase(), line)
     }
   return [...latest.values()]
-    .filter((line) => line.status !== "done" || now - line.at <= LINE_DONE_KEEP_MS)
-    .sort((a, b) => LINE_STATUSES.indexOf(a.status) - LINE_STATUSES.indexOf(b.status) || b.at - a.at)
+    .filter((line) => SHOWN.includes(line.status))
+    .sort((a, b) => SHOWN.indexOf(a.status) - SHOWN.indexOf(b.status) || b.at - a.at)
+}
+
+// A line waiting on the chairman, as the CEO's question on the chairman's board:
+// the chairman answers it there, and the answer goes to the CEO.
+export function askOfLine(line: Line, id: string): Decision {
+  return { id, by: line.by, at: line.at, text: `${line.name}：${line.text}`, line: line.name }
 }
 
 export function lineRefusal(name: string, status: string, text: string): string | undefined {
   const n = name.trim()
   if (n === "" || n.length > NAME_MAX || /\s/.test(n)) return w().tool.badLineName(NAME_MAX)
   if (!LINE_STATUSES.includes(status as LineStatus)) return w().tool.badLineStatus(LINE_STATUSES.join(", "))
-  return text.trim() === "" ? w().tool.empty : undefined
+  if (text.trim() === "") return w().tool.empty
+  return [...text.trim()].length > TEXT_MAX ? w().tool.lineTooLong(TEXT_MAX) : undefined
 }
 
 export type LineRow = { name: string; status: LineStatus; owner?: string; text: string; when: string }
@@ -41,6 +53,6 @@ export function lineRowsOf(lines: Line[], snaps: Snapshot[], titles: Record<stri
   return lines.map((line) => {
     const s = line.owner === undefined ? undefined : snaps.find((x) => x.sessionId === line.owner)
     const owner = line.owner === undefined ? undefined : (titles[line.owner] ?? (s === undefined ? undefined : whoOf(s)))
-    return { name: line.name, status: line.status, text: line.text, when: clockOf(line.at), ...(owner === undefined ? {} : { owner }) }
+    return { name: line.name, status: line.status, text: clip(line.text, TEXT_MAX), when: clockOf(line.at), ...(owner === undefined ? {} : { owner }) }
   })
 }

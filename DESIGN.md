@@ -343,16 +343,19 @@ no one is at its prompt yet, so it is not made an observer. The snapshot says
 ## The CEO's tracker
 
 The CEO keeps each line of work on a tracker (`office_board track`: a line's
-one-word name, its status, stuck, waiting (on the chairman), risk, ok or done,
-where it stands and the next step, and the session that owns it, which stands
-until another is named). The state lives in files, not in the CEO's context,
+one-word name, its status, stuck, risk or ok, one short line on where it
+stands, at most 40 characters, and the session that owns it, which stands until
+another is named). The tracker holds what is on track and no more, as the
+chairman asked: a line waiting on the chairman (`waiting`) goes onto the
+chairman's board as the CEO's question (`askOfLine`, the decision naming its
+line), so it is answered there and the answer comes to the CEO, and tracking
+the line again settles that question; a line `done` leaves the tracker at once. The state lives in files, not in the CEO's context,
 which a compaction cuts to a summary. Each CEO writes its own file,
 `lines/<sessionId>.json`, a line's name in lower case to the line; the latest
 word on a line stands whichever CEO wrote it, so a new CEO takes the tracker
 over. It sits in the pane under the CEO's office, the most urgent line first,
 each status in its colour (at the top while the CEO is at a meeting), and in
-`/office text` and the CEO's `read`. A line done folds away after a day. Not
-built: jobs counted against a line, and nudging the CEO about a line left
+`/office text` and the CEO's `read`. Not built: jobs counted against a line, and nudging the CEO about a line left
 quiet.
 
 ## The chairman's list
