@@ -1,5 +1,7 @@
 # 🦀 crab-office
 
+**English** | [简体中文](README.zh-CN.md)
+
 Every Claude Code session running on your machine, and every subagent it hires, drawn as a pixel-art office.
 
 ![The pane: the CEO in an office of its own with its tracker under it, three sessions at a meeting (one with a ? for you), a head delegating to three crew, what waits on you just above the shared whiteboard, and the field to write on the board](docs/office.png)
