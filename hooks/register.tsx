@@ -74,7 +74,7 @@ import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
 import type { Meeting, MeetingFile } from "./meetings.ts"
 import { setLanguage, setTheme, w } from "./words.ts"
-import { DEFAULT_THEME, chairmanFor, nameFrom, needsName, parseTheme, parseThemeArgs, themeNamed, themeNote, themeOff } from "./themes.ts"
+import { DEFAULT_THEME, chairmanFor, nameFrom, namesFor, needsName, parseTheme, parseThemeArgs, themeNamed, themeNote, themeOff } from "./themes.ts"
 import type { Theme, ThemeChoice } from "./themes.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
@@ -87,7 +87,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.20"
+const BUILD = "2026-11-05.21"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -870,9 +870,7 @@ function applyTheme($: EngineInterface) {
   office.themeKey = key
   office.themeChairman = chairman
   setLanguage(theme?.language ?? office.language)
-  // The chairman's own name through every word that names the chairman, too.
-  const terms = { ...theme?.terms, ...(chairman ? { 董事长: chairman } : {}) }
-  setTheme(theme === undefined ? undefined : { ...(chairman ? { chairman } : {}), ...(theme.titles ? { titles: theme.titles } : {}), terms })
+  setTheme(theme === undefined ? undefined : namesFor(theme, chairman))
   $.ui.invalidate("ui.render")
 }
 

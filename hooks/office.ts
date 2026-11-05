@@ -3,7 +3,7 @@
 // here, so the tests drive it directly.
 
 import { HQ, LEADER_COLOR, MANAGER_HATS, titleOf } from "./pixels.ts"
-import { HQ_NAMES, isChairmanName, w } from "./words.ts"
+import { HQ_NAMES, isChairmanName, themeWords, w } from "./words.ts"
 import type { BoardLine, Company, Room, SeatData, Speaker } from "./pixels.ts"
 import type { Org } from "./org.ts"
 import type { Job } from "./jobs.ts"
@@ -831,7 +831,8 @@ export function companyOf(
   // The CEO's work at a glance: jobs still open, and of them those waiting to be judged.
   const live = (desk.jobs ?? []).filter(isLive)
   const run = ceo === undefined ? undefined : { who: whoOf(ceo), open: live.length, waiting: live.filter((j) => j.status === "reported").length }
-  return { header: w().header(onDuty, run), rooms, board, boardView, lang: w().lang }
+  const theme = themeWords()
+  return { header: w().header(onDuty, run), rooms, board, boardView, lang: w().lang, ...(theme === undefined ? {} : { theme }) }
 }
 
 // The strip above the prompt: this session's team on one row of desks.
@@ -847,6 +848,7 @@ export function bandOf(s: Snapshot, snaps: Snapshot[], now: number, org: Org = N
       },
     ],
     lang: w().lang,
+    ...(themeWords() === undefined ? {} : { theme: themeWords() }),
   }
 }
 

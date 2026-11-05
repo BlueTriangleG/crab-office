@@ -1,4 +1,5 @@
 import { w } from "./words.ts"
+import type { ThemeWords } from "./words.ts"
 
 // A theme: how the office names the chairman and its ranks, and the voice the
 // crabs talk in, to each other and to the chairman. Names and tone alone: what a
@@ -117,4 +118,16 @@ export function nameFrom(answer: string): string {
     .replace(/^(叫我|我是|就叫|称呼我)/, "")
     .replace(/总$/, "")
     .trim()
+}
+
+// The words a theme puts over the office's: its titles and terms, and the
+// chairman's name wherever the office names the chairman, 董事长, or waits on
+// the chairman, 等你. Two 等你 speak to a session, whose 你 is itself, and keep it.
+export function namesFor(theme: Theme, chairman: string): ThemeWords {
+  const named: Record<string, string> = chairman === "" ? {} : { 董事长: chairman, 等你: `等${chairman}`, 等你验收: "等你验收", 不等你: "不等你" }
+  return {
+    ...(chairman === "" ? {} : { chairman }),
+    ...(theme.titles ? { titles: theme.titles } : {}),
+    terms: { ...theme.terms, ...named },
+  }
 }

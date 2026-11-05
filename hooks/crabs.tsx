@@ -1,7 +1,7 @@
 import type { ClientModule } from "claude-code"
 
 import { SEAT_COLS, SEAT_ROWS, drawPart, runsOf } from "./pixels.ts"
-import { setLanguage } from "./words.ts"
+import { setLanguage, setTheme } from "./words.ts"
 import type { Part } from "./pixels.ts"
 
 // The drawing surface: the hooks hand it its share of the office, laid out, and
@@ -38,7 +38,10 @@ const Crabs: ClientModule<CrabsProps, State> = (props, surface) => {
   // move in step: a crab cut across two of them stays whole. The count stands
   // in where a surface has no clock to read.
   const t = typeof Date === "undefined" ? state.t : Math.floor(Date.now() / TICK_MS)
+  // The theme too: drawn apart from the hooks, the board's title and the
+  // nameplates kept the default words under a theme.
   setLanguage(props.part.lang)
+  setTheme(props.part.theme)
   const started = typeof Date === "undefined" ? 0 : Date.now()
   const drawn = drawPart(props.part, columns, t, props.selected, props.rows)
   const [from, to] = props.rows ?? [0, drawn.rows]

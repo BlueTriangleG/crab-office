@@ -796,7 +796,7 @@ const ZH: Words = {
   },
 }
 
-type ThemeWords = { chairman?: string; titles?: Record<string, string>; terms?: Record<string, string> }
+export type ThemeWords = { chairman?: string; titles?: Record<string, string>; terms?: Record<string, string> }
 
 let base: Words = EN
 let theme: ThemeWords = {}
@@ -862,15 +862,26 @@ function themed() {
 }
 
 export function setLanguage(lang: string | undefined) {
-  base = lang === "zh" ? ZH : EN
+  const next = lang === "zh" ? ZH : EN
+  if (next === base) return
+  base = next
   themed()
 }
 
 // A theme's names: how the chairman is addressed, ranks' and roles' names, and
 // terms renamed through the office's own words.
+// Set on every frame by the drawing, so the same theme again is no work.
 export function setTheme(t: ThemeWords | undefined) {
-  theme = t ?? {}
+  const next = t ?? {}
+  if (JSON.stringify(next) === JSON.stringify(theme)) return
+  theme = next
   themed()
+}
+
+// The theme in force as plain data, for a drawing made apart from the hooks:
+// none, where there is none.
+export function themeWords(): ThemeWords | undefined {
+  return Object.keys(theme).length === 0 ? undefined : theme
 }
 
 export function w(): Words {

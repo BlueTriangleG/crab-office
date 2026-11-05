@@ -1,4 +1,5 @@
 import { w as words } from "./words.ts"
+import type { ThemeWords } from "./words.ts"
 
 // The pixel office: every seat drawn into a buffer at quadrant resolution (two
 // pixels across and two down per terminal cell), then each cell turned into one
@@ -64,6 +65,8 @@ export type Company = {
   // Which lines of how many the board shows, counted from the oldest kept.
   boardView?: { first: number; last: number; total: number }
   lang?: string
+  // The theme's words, for a drawing made apart from the hooks that chose them.
+  theme?: ThemeWords
 }
 export type Cell = {
   ch: string
@@ -1094,6 +1097,7 @@ export type Part = {
   rows: number
   header?: string
   lang?: string
+  theme?: ThemeWords
   rooms: { room: Room; x: number; y: number; w: number; h: number; lamp?: { from: number; row: number }; teams: PlacedTeam[] }[]
   board?: { y: number; lines: BoardLine[]; view?: Company["boardView"] }
 }
@@ -1133,6 +1137,7 @@ export function partOf(company: Company, cols: number, only?: [number, number]):
     rows,
     ...(company.header === undefined ? {} : { header: company.header }),
     ...(company.lang === undefined ? {} : { lang: company.lang }),
+    ...(company.theme === undefined ? {} : { theme: company.theme }),
     rooms,
     ...(isBoardShown ? { board: { y: layout.bottom, lines, ...view } } : {}),
   }

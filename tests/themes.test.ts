@@ -1,7 +1,8 @@
 import { expect, test } from "claude-code/testing"
 
 import { companyOf, createSnapshot, messageSent, promptOf, targetOf } from "../hooks/office.ts"
-import { chairmanFor, nameFrom, needsName, parseTheme, parseThemeArgs, themeNamed, themeNote, themeOff } from "../hooks/themes.ts"
+import { chairmanFor, nameFrom, namesFor, needsName, parseTheme, parseThemeArgs, themeNamed, themeNote, themeOff } from "../hooks/themes.ts"
+import { partOf } from "../hooks/pixels.ts"
 import { setLanguage, setTheme, w } from "../hooks/words.ts"
 
 setLanguage("zh")
@@ -118,4 +119,28 @@ test("the theme's own note names the chairman plainly, even with the chairman's 
   const note = themeNote({ id: "bytedance", name: "字节", voice: "v" }, "高总")
   expect(note).toContain("称呼董事长（用户）为「高总」")
   setTheme(undefined)
+})
+
+test("waiting on the chairman reads as waiting on the chairman's name; waiting on a session stays 等你", async () => {
+  setTheme(namesFor({ id: "bytedance", name: "字节", terms: { 共享白板: "大群" } }, "高总"))
+  expect(w().status.idle).toBe("等高总")
+  expect(w().status.approval).toBe("等高总批准")
+  expect(w().chairmanList(1)).toBe("等高总拍板（1）")
+  expect(w().chairman).toBe("高总")
+  // these speak to a session, whose 你 is itself
+  expect(w().tool.notOpen).toContain("不等你")
+  expect(w().ceoWaiting).toContain("等你验收")
+  setTheme(undefined)
+})
+
+test("the drawing gets the theme with its language, since it is drawn apart from the hooks that chose it", async () => {
+  setTheme({ terms: { 共享白板: "大群" } })
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  a.updatedAt = T0
+  const company = companyOf([a], "a", T0, { memos: [], claims: [] })
+  const part = partOf(company, 80)
+  expect(part.theme).toEqual({ terms: { 共享白板: "大群" } })
+  setTheme(undefined)
+  // with no theme, nothing is carried: an undefined prop would be refused
+  expect("theme" in partOf(companyOf([a], "a", T0, { memos: [], claims: [] }), 80)).toBe(false)
 })

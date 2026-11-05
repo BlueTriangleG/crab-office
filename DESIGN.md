@@ -358,8 +358,12 @@ wrong shape is left out, unreadable JSON is no theme and a line in the debug
 log. Tests have no file system, so the shipped files are checked by parsing
 them with `parseTheme` before a release. `/office theme <name> [how to
 address you]` chooses one office-wide (`theme.json`); every session takes it on
-its next tick. The names go over the office's words (`setTheme`), so the
-drawing, the board and every reply follow; a board line to the chairman shows
+its next tick. The names go over the office's words (`setTheme`), and
+the drawing is handed them with its language (`Company.theme`, set again in the
+surface module, which runs apart from the hooks: without it the board's title
+and the nameplates kept the default words), so the drawing, the board and every
+reply follow. The chairman's name goes through 董事长 and through 等你 (waiting
+on the chairman), but not the two 等你 that speak to a session about itself; a board line to the chairman shows
 the name the chairman goes by now, and a post to that name reaches the
 chairman. The voice reaches each session's model as one note appended to its
 own conversation (`$.session.append`), once it is free: the system prompt never
