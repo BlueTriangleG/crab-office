@@ -3,8 +3,13 @@ import { w } from "./words.ts"
 // A theme: how the office names the chairman and its ranks, and the voice the
 // crabs talk in, to each other and to the chairman. Names and tone alone: what a
 // report says, and everything a session makes (code, commits, PRs, docs,
-// product copy), is never themed. One day a theme may draw the crabs too.
+// product copy), is never themed. A theme is a folder (`themes/<id>/`) holding
+// its `theme.json`, so one day it can bring the crabs' looks and moves beside it:
+// the plugin's own folders are its built-in themes, the person's own are in
+// `~/.claude/crab-office/themes/`.
 export type Theme = {
+  // The theme's folder: themes/<id>/theme.json, beside whatever else it brings.
+  id: string
   name: string
   // How everyone addresses the chairman; the choice can name another. With
   // `{name}` in it (X总), the CEO asks the chairman what the name is, and
@@ -26,45 +31,6 @@ export type Theme = {
 // The office as it is, the theme with nothing to change.
 export const DEFAULT_THEME = "default"
 
-export const BUILT_IN: Theme[] = [
-  // From what ByteDance has said of itself: colleagues go by name or 同学, never
-  // 老师 or 某总 (Context, not Control); candid and clear, the conclusion first
-  // and the context after; OKRs aligned; every meeting its own Feishu group; and
-  // no empty 赋能 or 打造闭环, which 张一鸣 called not talking like a person.
-  // The chairman is the one exception: the person chose to be addressed as a boss.
-  {
-    name: "字节",
-    language: "zh",
-    chairman: "{name}总",
-    chairmanUnnamed: "老板",
-    nameQuestion: "以后在办公室里怎么称呼您？「X总」的 X 填什么（比如：高）",
-    titles: { chief: "TL", leader: "同学", lead: "同学" },
-    terms: {
-      螃蟹有限公司: "螃蟹跳动",
-      会议室: "会议室",
-      开会: "拉个组会",
-      会议: "组会",
-      写在白板上: "发到大群里",
-      共享白板: "大群",
-      白板: "大群",
-      "CEO 看板": "需求看板",
-      派活: "派需求",
-      交差: "交付",
-      留言: "群消息",
-      部长: "TL",
-      组长: "同学",
-    },
-    voice:
-      "像字节跳动的同学一样说话：同事之间直接叫名字或“同学”，不用“老师”“某总”这类头衔；坦诚清晰，先说结论再补 context；常说“对齐一下”“同步一下”“拉个会”“拉个群”“对一下 OKR”“+1”“辛苦”“收到”；不说“赋能”“抓手”“打造闭环”这种空话。",
-    examples: [
-      "同学你好，结账 API 的字段想跟你对齐一下，我拉个组会，10 分钟。",
-      "收到，这块我来跟，今天下班前在群里同步结论。",
-      "+1，按这个方案来。",
-      "{chairman}，同步一下进展：结论先说——",
-    ],
-  },
-]
-
 // The chosen theme, office-wide (`theme.json`): whichever session the chairman
 // chose it in, every session takes it on its next tick.
 export type ThemeChoice = { name: string; chairman?: string; at: number }
@@ -77,10 +43,45 @@ export function parseThemeArgs(args: string): { name: string; chairman?: string 
   return chairman === "" ? { name } : { name, chairman }
 }
 
-// The person's own file of a name wins over a built-in one.
-export function themeNamed(name: string, files: Theme[]): Theme | undefined {
+// By its folder or its name; the person's own are listed first, so one of theirs
+// wins over a built-in one of the same name.
+export function themeNamed(name: string, themes: Theme[]): Theme | undefined {
   const key = name.trim().toLowerCase()
-  return [...files, ...BUILT_IN].find((t) => t.name.toLowerCase() === key)
+  return themes.find((t) => t.id.toLowerCase() === key || t.name.toLowerCase() === key)
+}
+
+const str = (v: unknown): string | undefined => (typeof v === "string" && v !== "" ? v : undefined)
+const strings = (v: unknown): Record<string, string> | undefined => {
+  if (v === null || typeof v !== "object" || Array.isArray(v)) return undefined
+  const kept = Object.entries(v).filter((e): e is [string, string] => typeof e[1] === "string")
+  return kept.length === 0 ? undefined : Object.fromEntries(kept)
+}
+
+// A folder's theme.json, kept to what a theme may hold: a field of the wrong
+// shape is left out, not the theme; unreadable JSON is no theme. Fields a later
+// version reads (the crabs' looks) are left for it.
+export function parseTheme(text: string, id: string): Theme | undefined {
+  let raw: Record<string, unknown>
+  try {
+    const parsed: unknown = JSON.parse(text)
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return undefined
+    raw = parsed as Record<string, unknown>
+  } catch {
+    return undefined
+  }
+  const language = raw.language === "zh" || raw.language === "en" ? raw.language : undefined
+  const examples = Array.isArray(raw.examples) ? raw.examples.filter((e): e is string => typeof e === "string") : []
+  const fields = {
+    language,
+    chairman: str(raw.chairman),
+    chairmanUnnamed: str(raw.chairmanUnnamed),
+    nameQuestion: str(raw.nameQuestion),
+    titles: strings(raw.titles),
+    terms: strings(raw.terms),
+    voice: str(raw.voice),
+    examples: examples.length === 0 ? undefined : examples,
+  }
+  return { id, name: str(raw.name) ?? id, ...Object.fromEntries(Object.entries(fields).filter(([, v]) => v !== undefined)) }
 }
 
 // What a session is told when a theme comes in: once at start, again after a

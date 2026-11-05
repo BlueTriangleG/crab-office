@@ -74,7 +74,7 @@ import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
 import type { Meeting, MeetingFile } from "./meetings.ts"
 import { setLanguage, setTheme, w } from "./words.ts"
-import { BUILT_IN, DEFAULT_THEME, chairmanFor, nameFrom, needsName, parseThemeArgs, themeNamed, themeNote, themeOff } from "./themes.ts"
+import { DEFAULT_THEME, chairmanFor, nameFrom, needsName, parseTheme, parseThemeArgs, themeNamed, themeNote, themeOff } from "./themes.ts"
 import type { Theme, ThemeChoice } from "./themes.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
@@ -87,7 +87,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.18"
+const BUILD = "2026-11-05.19"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -127,6 +127,8 @@ const office = {
   // (`themes/*.json`), and the theme in force: its key and how the chairman is called.
   themeChoice: undefined as ThemeChoice | undefined,
   themes: [] as Theme[],
+  // The themes the plugin ships, a folder each under its own `themes/`.
+  shipped: [] as Theme[],
   themeKey: `${DEFAULT_THEME}|`,
   themeChairman: "",
   // The language the person set, which a theme's own stands over while it is on.
@@ -588,7 +590,7 @@ async function tick($: EngineInterface) {
   office.meetings = meetingsOf(meetingFiles, [me, ...office.others], now)
   await btw($, now)
   office.themeChoice = await $.fs.read(`${office.base}/theme.json`).then((s) => JSON.parse(s) as ThemeChoice).catch(() => undefined)
-  office.themes = await readJsonDir<Theme>($, `${office.base}/themes`)
+  office.themes = await readThemes($, `${office.base}/themes`)
   applyTheme($)
   // An observer is sent nothing: no memo, no instruction, no CEO's handover.
   if (me.observe === true) return
@@ -835,11 +837,33 @@ async function meet($: EngineInterface, input: BoardInput, me: Snapshot, now: nu
   return w().tool.meetOpened(name, sent.heard, sent.missed)
 }
 
+// The person's own themes first, so one of theirs wins over a shipped one.
+function allThemes(): Theme[] {
+  return [...office.themes, ...office.shipped]
+}
+
+// Each folder's theme.json under `dir`; one that will not read is said in the
+// debug log and left out, never a reason to fail the rest.
+async function readThemes($: EngineInterface, dir: string): Promise<Theme[]> {
+  const entries = await $.fs.list(dir).catch(() => [])
+  const read = await Promise.all(
+    entries
+      .filter((e) => e.kind === "dir")
+      .map(async (e) => {
+        const text = await $.fs.read(`${dir}/${e.name}/theme.json`).catch(() => undefined)
+        const theme = text === undefined ? undefined : parseTheme(text, e.name)
+        if (theme === undefined) $.ui.log(`crab-office: theme ${dir}/${e.name} has no readable theme.json`, { to: "debug" })
+        return theme
+      }),
+  )
+  return read.filter((t): t is Theme => t !== undefined)
+}
+
 // The theme in force: its names over the office's words, so the drawing and
 // every reply name the chairman and the ranks its way.
 function applyTheme($: EngineInterface) {
   const choice = office.themeChoice
-  const theme = choice === undefined || choice.name === DEFAULT_THEME ? undefined : themeNamed(choice.name, office.themes)
+  const theme = choice === undefined || choice.name === DEFAULT_THEME ? undefined : themeNamed(choice.name, allThemes())
   const chairman = theme === undefined || choice === undefined ? "" : chairmanFor(theme, choice)
   const key = theme === undefined ? `${DEFAULT_THEME}|` : `${theme.name}|${chairman}`
   if (key === office.themeKey) return
@@ -860,7 +884,7 @@ async function tellTheme($: EngineInterface, now: number) {
   const me = office.me
   if (me === undefined || me.themeSeen === office.themeKey || !isFree(me, now)) return
   const isDefault = office.themeKey.startsWith(`${DEFAULT_THEME}|`)
-  const theme = isDefault ? undefined : themeNamed(office.themeKey.split("|")[0] ?? "", office.themes)
+  const theme = isDefault ? undefined : themeNamed(office.themeKey.split("|")[0] ?? "", allThemes())
   const text = theme !== undefined ? themeNote(theme, office.themeChairman || w().chairman) : me.themeSeen === undefined ? undefined : themeOff()
   me.themeSeen = office.themeKey
   changed($)
@@ -870,12 +894,12 @@ async function tellTheme($: EngineInterface, now: number) {
 // "/office theme": the themes there are; "/office theme <name> [how to address
 // you]"; "/office theme default".
 async function chooseTheme($: EngineInterface, args: string): Promise<string> {
-  const names = [DEFAULT_THEME, ...new Set([...BUILT_IN, ...office.themes].map((t) => t.name))]
+  const names = [DEFAULT_THEME, ...new Set(allThemes().map((t) => t.name))]
   const current = office.themeKey.split("|")[0] ?? DEFAULT_THEME
   const parsed = parseThemeArgs(args)
   if (parsed === undefined) return w().themeList(names, current)
   const isDefault = parsed.name.toLowerCase() === DEFAULT_THEME
-  const theme = isDefault ? undefined : themeNamed(parsed.name, office.themes)
+  const theme = isDefault ? undefined : themeNamed(parsed.name, allThemes())
   if (!isDefault && theme === undefined) return w().noTheme(parsed.name)
   const choice: ThemeChoice = { name: theme?.name ?? DEFAULT_THEME, at: Date.now(), ...(parsed.chairman ? { chairman: parsed.chairman } : {}) }
   await $.fs.write(`${office.base}/theme.json`, JSON.stringify(choice))
@@ -896,7 +920,7 @@ async function chooseTheme($: EngineInterface, args: string): Promise<string> {
 // office-wide, so every session is told the name in its next note.
 async function nameChairman($: EngineInterface, d: Decision, answer: string): Promise<string> {
   const choice = office.themeChoice
-  const theme = choice === undefined ? undefined : themeNamed(choice.name, office.themes)
+  const theme = choice === undefined ? undefined : themeNamed(choice.name, allThemes())
   const name = nameFrom(answer)
   await settle($, d, answer)
   if (choice === undefined || theme === undefined || name === "") return w().themeDefault
@@ -1322,6 +1346,7 @@ export const register: Register = (on, options) => {
       place.team,
     )
     office.me.build = BUILD
+    office.shipped = await readThemes($, `${$.plugin.root}/themes`)
     await restore($, office.me)
     if (isObserving) office.me.observe = true
     await refreshTalk($).catch(() => undefined)

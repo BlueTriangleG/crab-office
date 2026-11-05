@@ -347,9 +347,16 @@ rename terms through the office's own words (开会 → 拉个组会, 共享白�
 first so a longer word can keep itself (会议室 over 会议), but never inside what
 the office writes and reads back (envelopes, the memo handover), or its cards
 would no longer know its own prompts; and it may set the office's language
-while it is on, where its terms are in one (字节's are Chinese). A person's own
-themes are JSON files in `themes/` (name, language, chairman, titles, terms,
-voice, examples with `{chairman}`); one of the same name wins over the built-in. `/office theme <name> [how to
+while it is on, where its terms are in one (字节's are Chinese). A theme is a
+folder, `themes/<id>/theme.json` (name, language, chairman, titles, terms,
+voice, examples with `{chairman}`; `themes/README.md` lists them), so it can one
+day bring the crabs' looks and moves beside it. The plugin's own folders are
+the built-in themes, read once at start from `$.plugin.root`; the person's own
+are folders in `~/.claude/crab-office/themes/`, read each tick, and one of the
+same name wins. A theme.json is kept to what a theme may hold: a field of the
+wrong shape is left out, unreadable JSON is no theme and a line in the debug
+log. Tests have no file system, so the shipped files are checked by parsing
+them with `parseTheme` before a release. `/office theme <name> [how to
 address you]` chooses one office-wide (`theme.json`); every session takes it on
 its next tick. The names go over the office's words (`setTheme`), so the
 drawing, the board and every reply follow; a board line to the chairman shows
