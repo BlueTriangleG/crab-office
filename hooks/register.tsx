@@ -87,7 +87,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.17"
+const BUILD = "2026-11-05.18"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000

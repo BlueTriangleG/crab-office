@@ -88,3 +88,10 @@ test("字节 calls the chairman X总, and until the chairman has said what X is,
 test("the answer to what X is, however it is put, is the name alone", async () => {
   for (const said of ["高", "高总", " 叫我高总 ", "我是高总。"]) expect(nameFrom(said)).toBe("高")
 })
+
+test("the theme's own note names the chairman plainly, even with the chairman's name among the terms", async () => {
+  setTheme({ chairman: "高总", terms: { 董事长: "高总" } })
+  const note = themeNote({ name: "字节", voice: "v" }, "高总")
+  expect(note).toContain("称呼董事长（用户）为「高总」")
+  setTheme(undefined)
+})

@@ -822,6 +822,9 @@ const KEPT = new Set([
   "meetingEnvelope",
   "meetingClosedEnvelope",
   "chairmanAnswer",
+  // The theme's own note names the chairman and the new name side by side.
+  "themeNote",
+  "themeOff",
 ])
 
 // Every term in one pass, the longest first, so a term may keep a longer word
