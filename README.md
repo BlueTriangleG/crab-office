@@ -61,35 +61,13 @@ crab-office is a mod (a plugin of function hooks), so it needs a Claude Code bui
 
 ## Themes
 
-A theme changes how the office names you, the ranks and its own terms, and the voice the crabs use with each other and with you. Only names and tone change: what a report says stays plain, and code, commits, PRs and docs never take it. The office as it is is the default theme.
+A theme changes how the office names you, the ranks and its own terms, and the voice the crabs use with each other and with you. Only names and tone change: what a report says stays plain, and code, commits, PRs and docs never take it. The office as it is is the default theme; `/office theme <name>` switches.
 
-The first theme is **字节**: the office in Chinese, the way ByteDance colleagues talk. Colleagues are 同学 (never 老师 or 某总), the conclusion comes first, and there is no empty jargon. Meetings are 组会, the board is 大群, the tracker is 需求看板, and you are X总: switch it on with `/office theme 字节`, and the CEO asks you what X is.
+Each theme is a folder in [`themes/`](themes/), with a README of its own:
 
-![The 字节 theme: 螃蟹跳动, 需求看板, 组会 and 大群, and the chairman addressed as 高总](docs/theme-bytedance.png)
+- [**字节**](themes/bytedance/README.md): the office in Chinese, the way ByteDance colleagues talk; you are X总, and the CEO asks you what X is.
 
-The voice the 字节 theme gives the crabs:
-
-> 同事之间直接叫名字或"同学"，不用"老师""某总"这类头衔；坦诚清晰，先说结论再补 context；常说"对齐一下""同步一下""拉个会""拉个群""对一下 OKR""+1""辛苦""收到"；不说"赋能""抓手""打造闭环"这种空话。
->
-> *Colleagues go by name or 同学, never by titles; candid and clear, the conclusion first and the context after; "let's align", "a quick sync", "+1", "thanks", "got it"; no empty jargon.*
-
-What it sounds like, from a real run with the names and numbers changed:
-
-> **feedback → mobile**: mobile 同学你好，手机端对话反馈有三件事想跟你对齐一下，结论先说：……你回个 +1 或者改动意见就行，辛苦！
-> *(Hi mobile, three things on the feedback button to align on, conclusion first: … just +1 or tell me what to change, thanks!)*
->
-> **mobile → feedback**: feedback 同学，三件事都 +1。……补充 context，有一处要对齐：那条 PR 并没有重写这排按钮……辛苦！
-> *(+1 to all three. … One more piece of context to align on: that PR does not rewrite the row of buttons …)*
->
-> **feedback → mobile**: 收到，+1，辛苦！原因我写错了，谢谢纠正。
-> *(Got it, +1, thanks! I had the reason wrong; thanks for the correction.)*
->
-> **feedback → 高总** (on the board): 高总，手机端反馈和 mobile 对齐完了，结论先说：……排期得您来定。
-> *(Mr Gao, aligned with mobile on the feedback button, conclusion first: … the schedule is yours to set.)*
-
-The tone changes, the substance does not: the conclusion comes first, the facts stay concrete, and a mistake is corrected on the spot.
-
-A theme is a folder: the shipped ones are in [`themes/`](themes/) (字节 is `themes/bytedance/theme.json`), and your own go in `~/.claude/crab-office/themes/<name>/theme.json`: a name, a language, how you are addressed, renamed titles and terms, a voice and a few example lines ([what a theme.json may hold](themes/README.md)). Being a folder, a theme can later bring the crabs' looks and moves too.
+Your own themes go in `~/.claude/crab-office/themes/<name>/` ([what a theme folder holds](themes/README.md)). Being folders, themes can later bring the crabs' looks and moves too.
 
 ## Observe mode
 

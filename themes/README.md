@@ -1,9 +1,15 @@
 # Themes
 
+| Theme | What it is |
+| --- | --- |
+| [字节](bytedance/README.md) | The office in Chinese, the way ByteDance colleagues talk; you are X总, and the CEO asks you what X is |
+
 A theme is a folder: `themes/<id>/theme.json`. The folders here ship with the
 plugin; your own go in `~/.claude/crab-office/themes/<id>/theme.json`, and one
 of yours with the same name wins over a shipped one. Switch with
 `/office theme <id or name>`.
+
+Each folder has a `README.md` of its own, saying what the theme changes and how it sounds.
 
 `theme.json` may hold:
 

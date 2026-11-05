@@ -1,6 +1,6 @@
 {
   "name": "crab-office",
-  "version": "0.6.6",
+  "version": "0.6.7",
   "description": "Every running Claude Code session and its subagents as a pixel-art office: departments by project, org-chart teams, a shared board, a CEO you appoint, meetings between sessions, and btw questions to any crab",
   "author": {
     "name": "Gavin Hao"
