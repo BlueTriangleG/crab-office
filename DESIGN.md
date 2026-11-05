@@ -345,7 +345,8 @@ no one is at its prompt yet, so it is not made an observer. The snapshot says
 The tracker holds the product work being built, at the level of what is
 wanted (a feature or a change, named for it), not incidents, chores, checks or
 waits on someone outside, which crowded it. The CEO keeps each line on it (`office_board track`: a line's
-one-word name, its status, stuck, risk or ok, one short line on where it
+short title as the chairman would say it, spaces and all (a one-word rule,
+borrowed from meeting names, had titles written as hyphenated slugs), its status, stuck, risk or ok, one short line on where it
 stands, at most 40 characters, and the session that owns it, which stands until
 another is named). The tracker holds what is on track and no more, as the
 chairman asked: a line waiting on the chairman (`waiting`) goes onto the

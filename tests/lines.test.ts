@@ -38,9 +38,14 @@ test("a line waiting on the chairman goes onto the chairman's board as the CEO's
   expect(d).toEqual({ id: "d9", by: "c", at: T0, text: "feedback：等你说开工", line: "feedback" })
 })
 
-test("a line is one word with a known status and a word on where it stands; only the CEO's own loop writes one", async () => {
+test("a line has a short title, a known status and a word on where it stands; only the CEO's own loop writes one", async () => {
   expect(lineRefusal("phoenix-down", "stuck", "查 ECS 事件")).toBeUndefined()
-  expect(lineRefusal("two words", "stuck", "x")).toBeDefined()
+  // a title, in the chairman's own words, not a one-word name
+  expect(lineRefusal("对话反馈", "ok", "x")).toBeUndefined()
+  expect(lineRefusal("Onboarding 断点续上", "ok", "x")).toBeUndefined()
+  expect(lineRefusal("字".repeat(25), "ok", "x")).toBeDefined()
+  expect(lineRefusal("two\nlines", "ok", "x")).toBeDefined()
+  expect(lineRefusal("  ", "ok", "x")).toBeDefined()
   expect(lineRefusal("x", "sideways", "x")).toBeDefined()
   expect(lineRefusal("x", "ok", "")).toBeDefined()
   // one short line: where it stands, not the whole story

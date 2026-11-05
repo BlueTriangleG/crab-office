@@ -85,7 +85,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.11"
+const BUILD = "2026-11-05.12"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -1010,7 +1010,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
   }
   if (text === "" && action !== "accept" && action !== "withdraw") return w().tool.empty
   if (action === "track") {
-    const name = input.line?.trim() ?? ""
+    const name = (input.line ?? "").trim().replace(/\s+/g, " ")
     const status = input.status?.trim().toLowerCase() ?? ""
     const lineRefused = lineRefusal(name, status, text)
     if (lineRefused !== undefined) return lineRefused

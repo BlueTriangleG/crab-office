@@ -16,6 +16,9 @@ export const LINE_STATUSES: LineStatus[] = ["stuck", "risk", "ok", "waiting", "d
 // waiting on the chairman is on the chairman's board instead, and one done is
 // off it; the chairman wanted the tracker to hold what is on track, and no more.
 const SHOWN: LineStatus[] = ["stuck", "risk", "ok"]
+// A line's name is its title as the chairman reads it, spaces and all: a
+// one-word rule, borrowed from meeting names (which SendMessage is addressed
+// to), had the CEO write titles as hyphenated slugs.
 const NAME_MAX = 24
 // One short line, where it stands: lines of a hundred characters read as reports.
 const TEXT_MAX = 40
@@ -40,7 +43,7 @@ export function askOfLine(line: Line, id: string): Decision {
 
 export function lineRefusal(name: string, status: string, text: string): string | undefined {
   const n = name.trim()
-  if (n === "" || n.length > NAME_MAX || /\s/.test(n)) return w().tool.badLineName(NAME_MAX)
+  if (n === "" || [...n].length > NAME_MAX || /[\r\n]/.test(n)) return w().tool.badLineName(NAME_MAX)
   if (!LINE_STATUSES.includes(status as LineStatus)) return w().tool.badLineStatus(LINE_STATUSES.join(", "))
   if (text.trim() === "") return w().tool.empty
   return [...text.trim()].length > TEXT_MAX ? w().tool.lineTooLong(TEXT_MAX) : undefined
