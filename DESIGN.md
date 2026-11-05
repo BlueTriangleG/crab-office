@@ -342,7 +342,9 @@ no one is at its prompt yet, so it is not made an observer. The snapshot says
 
 ## The CEO's tracker
 
-The CEO keeps each line of work on a tracker (`office_board track`: a line's
+The tracker holds the product work being built, at the level of what is
+wanted (a feature or a change, named for it), not incidents, chores, checks or
+waits on someone outside, which crowded it. The CEO keeps each line on it (`office_board track`: a line's
 one-word name, its status, stuck, risk or ok, one short line on where it
 stands, at most 40 characters, and the session that owns it, which stands until
 another is named). The tracker holds what is on track and no more, as the
@@ -354,7 +356,8 @@ which a compaction cuts to a summary. Each CEO writes its own file,
 `lines/<sessionId>.json`, a line's name in lower case to the line; the latest
 word on a line stands whichever CEO wrote it, so a new CEO takes the tracker
 over. It sits in the pane under the CEO's office, the most urgent line first,
-each status in its colour (at the top while the CEO is at a meeting), and in
+each line a dot in its status's colour, its name and where it stands (the
+status's word, owner and time were more than the chairman wanted) (at the top while the CEO is at a meeting), and in
 `/office text` and the CEO's `read`. Not built: jobs counted against a line, and nudging the CEO about a line left
 quiet.
 

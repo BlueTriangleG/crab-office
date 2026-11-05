@@ -85,7 +85,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.10"
+const BUILD = "2026-11-05.11"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -162,8 +162,9 @@ const CHALK = "#5d7a66"
 // A board line shown whole, on a card the colour of the board.
 const LINE_COLORS: Record<LineStatus, string> = { stuck: "#e5534b", waiting: "#f2c037", risk: "#d9a441", ok: "#57ab5a", done: "#768390" }
 
-// The CEO's tracker, under its office: each line, its status in its colour, its
-// owner and where it stands.
+// The CEO's tracker, under its office: each line as a dot in its status's
+// colour, its name and where it stands. The status's word, the owner and the
+// time were more than the chairman wanted to read.
 function trackerCard(el: Pick<ClientElements, "Box" | "Text">, rows: LineRow[]) {
   const { Box, Text } = el
   if (rows.length === 0)
@@ -180,12 +181,10 @@ function trackerCard(el: Pick<ClientElements, "Box" | "Text">, rows: LineRow[]) 
       {rows.map((r) => (
         <Box key={`line-${r.name}`} flexDirection="row" columnGap={1}>
           <Text bold color={LINE_COLORS[r.status]}>
-            {`● ${w().lineStatus[r.status]}`}
+            ●
           </Text>
           <Text bold>{r.name}</Text>
-          {r.owner !== undefined && <Text dimColor>{r.owner}</Text>}
           <Text wrap="wrap">{r.text}</Text>
-          <Text dimColor>{r.when}</Text>
         </Box>
       ))}
     </Box>
