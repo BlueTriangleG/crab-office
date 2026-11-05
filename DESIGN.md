@@ -315,7 +315,8 @@ CEO's to decide. The decisions behind all of this are in
 ## Text mode
 
 Where the pane will not open, or a click will not land, the office answers by
-command, as text: `/office text` (each room and session, by title, with its ?,
+command, as text: `/office text` (the CEO's tracker as the pane shows it, a
+🔴🟡🟢 dot, since text has no colour, a title and a line; each room and session, by title, with its ?,
 ! or ✉, what waits on the chairman with each item's id, and the board's last
 ten lines), `/office card @who` (the card: its rows, talk, each instruction
 delivered or waiting, each btw with its answer), `/office answer #id …` and

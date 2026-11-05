@@ -23,11 +23,12 @@ function seatLine(seat: SeatData, indent: string, sign: string | null | undefine
   return `${indent}${mark} ${name}${sign ? ` [${sign}]` : ""}  ${status}${seat.task ? ` · ${clip(seat.task, TASK_MAX)}` : ""}`
 }
 
+// As the pane shows it, a dot for how it stands, its title and where it is; text
+// has no colour, so the dot is one that carries its own.
+const DOTS: Record<string, string> = { stuck: "🔴", risk: "🟡", ok: "🟢", waiting: "🟡", done: "⚪" }
+
 export function linesText(lines: LineRow[]): string[] {
-  return [
-    w().linesHead(lines.length),
-    ...lines.map((l) => `  ${l.name}  ${w().lineStatus[l.status]}  ${l.owner === undefined ? "" : `${l.owner} · `}${clip(l.text, TASK_MAX * 2)} · ${l.when}`),
-  ]
+  return [w().linesHead(lines.length), ...lines.map((l) => `  ${DOTS[l.status] ?? "●"} ${l.name}  ${l.text}`)]
 }
 
 export function officeText(company: Company, waiting: { id: string; who: string; text: string }[], lines: LineRow[] = []): string {

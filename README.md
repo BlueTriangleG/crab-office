@@ -2,7 +2,7 @@
 
 Every Claude Code session running on your machine, and every subagent it hires, drawn as a pixel-art office.
 
-![The office: the CEO in an office of its own, three sessions at a meeting (one with a ? for you), a head delegating to three crew, and the shared whiteboard](docs/office.png)
+![The pane: the CEO in an office of its own with its tracker under it, three sessions at a meeting (one with a ? for you), a head delegating to three crew, what waits on you just above the shared whiteboard, and the field to write on the board](docs/office.png)
 
 - **Departments**: each repository gets a room, and each git worktree of it is a team inside that room.
 - **Org charts**: a session is a team. Its manager is the session itself and its crew are its subagents, hung from one line. Each repository has a **Head** in a silver top hat (its longest-serving session, unless one is appointed); every other manager wears a hat of their own.
@@ -20,7 +20,7 @@ Every Claude Code session running on your machine, and every subagent it hires, 
 - **Observe mode**: install it everywhere and let it only watch: [observe mode](#observe-mode) shows sessions and sends them nothing, and every `-p` run or SDK session observes by itself.
 - **The board tool**: every session gets an `office_board` tool to read the board, write to a whole department, everyone or you without interrupting anyone, call and close meetings, and, under a CEO, run the work.
 
-![A manager's card: its task, tools and recent conversation, an instruction delivered, and fields to give another or ask a btw](docs/card.png)
+![A head's card: its task, tools and recent conversation, an instruction delivered, fields to give another or ask a btw, and buttons to make it CEO or head](docs/card.png)
 
 ## The CEO: a super-agent built from Claude Code
 
@@ -80,6 +80,8 @@ The office speaks English by default. To switch to Chinese, set the plugin's `la
 | `/office head @who` | Make a session its repository's head; `/office head off` to go back to the longest-serving |
 | `/office band` | Show or hide the strip of crabs above the prompt |
 | `/office close` | Close the office |
+
+![Text mode: /office text prints the tracker, every session with its marks, what waits on you with ids, and the board](docs/text.png)
 
 In the pane:
 
