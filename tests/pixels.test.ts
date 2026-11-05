@@ -1,6 +1,6 @@
 import { expect, test } from "claude-code/testing"
 
-import { SEAT_COLS, SEAT_ROWS, drawPart, heightOf, lidOf, office, partOf, restingOf, runsOf, slicesOf } from "../hooks/pixels.ts"
+import { SEAT_COLS, SEAT_ROWS, boardTopOf, drawPart, heightOf, lidOf, office, partOf, restingOf, runsOf, slicesOf } from "../hooks/pixels.ts"
 import type { Company, SeatData } from "../hooks/pixels.ts"
 
 import { setLanguage } from "../hooks/words.ts"
@@ -448,4 +448,23 @@ test("a crab with a job title wears it on its name plate", async () => {
   const text = (s: SeatData) => office(band(s), 40, 0).cells.map((l) => l.map((c) => c.ch).join("")).join("\n")
   expect(text({ ...seat("s", "lead", "idle"), post: "voice" })).toContain("voice")
   expect(text(seat("s", "lead", "idle"))).not.toContain("voice")
+})
+
+test("a crab with a question waiting on the chairman has a ? by its head, over any ✉", async () => {
+  const bandOf = (s: SeatData): Company => ({ rooms: [{ title: "", footer: "", bare: true, flat: true, teams: [[s]] }] })
+  const plain = seat("s", "leader", "thinking")
+  const at = office(bandOf(plain), 40, 0).seats[0]!
+  const mark = (s: SeatData) => office(bandOf(s), 40, 0).cells[at.cy]![at.cx]!.ch
+  expect(mark({ ...plain, asking: true })).toBe("?")
+  expect(mark({ ...plain, asking: true, letter: true })).toBe("?")
+  expect(mark(plain)).not.toBe("?")
+})
+
+test("the board starts on its own row, so the pane can put what waits on the chairman just above it", async () => {
+  const lines = [{ key: "k1", time: "12:03", kind: "assign", from: { name: "经理", color: "#d77757" }, to: { name: "调研员", color: "#6a9bcc" }, text: "找调用点" }]
+  const company: Company = { ...oneRoom([team(1)]), board: lines }
+  const drawn = office(company, 34, 0)
+  const top = boardTopOf(company, 34)
+  expect(drawn.cells[top]!.map((c) => c.ch).join("")).toContain("共享白板")
+  expect(drawn.cells[top - 1]!.map((c) => c.ch).join("")).not.toContain("共享白板")
 })

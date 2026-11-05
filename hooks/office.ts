@@ -611,12 +611,13 @@ function teamOf(
   hat: string | undefined,
   letters = new Set<string>(),
   titles: Record<string, string> = {},
+  asking = new Set<string>(),
 ): SeatData[] {
   const isGone = isGoneOf(s, now)
   const [first, ...crew] = [s.leader, ...s.agents].map((c) => seatOf(c, now, isGone, letters.has(c.id)))
   if (first === undefined) return crew
   const post = titles[s.sessionId]
-  const leader = post === undefined ? first : { ...first, post }
+  const leader = { ...first, ...(post === undefined ? {} : { post }), ...(asking.has(s.sessionId) ? { asking: true } : {}) }
   const task = leader.task || s.team || ""
   if (hat === CHIEF) return [{ ...leader, role: CHIEF, task }, ...crew]
   if (hat === CEO) return [{ ...leader, role: CEO, hat: CEO, task }, ...crew]
@@ -705,6 +706,8 @@ export function companyOf(
     jobs?: Job[]
     titles?: Record<string, string>
     meetings?: Meeting[]
+    // Sessions with something on the chairman's list.
+    asking?: string[]
   } = { memos: [], claims: [] },
   older = 0,
 ): Company {
@@ -729,7 +732,8 @@ export function companyOf(
   )
   const hats = hatsOf(present, now, org)
   const letters = lettersOf(present, now)
-  const ceoTeam = ceo === undefined ? undefined : teamOf(ceo, now, hats.get(ceo.sessionId), letters, titles)
+  const asking = new Set(desk.asking ?? [])
+  const ceoTeam = ceo === undefined ? undefined : teamOf(ceo, now, hats.get(ceo.sessionId), letters, titles, asking)
   const top: Room[] =
     ceo === undefined || ceoTeam === undefined || seated.has(ceo.sessionId)
       ? []
@@ -750,7 +754,7 @@ export function companyOf(
       .filter((s) => s.project === project)
       .sort((a, b) => Number(hats.get(b.sessionId) === CHIEF) - Number(hats.get(a.sessionId) === CHIEF) || bySeniority(a, b))
     const here = sessions.findIndex((s) => s.sessionId === mine)
-    const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId), letters, titles))
+    const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId), letters, titles, asking))
     const isCheering = teams.some((team) => team[0]?.finish === "cheer")
     // Signs only where a department has more than one team to tell apart.
     const signs = sessions.length > 1 ? sessions.map((s) => (s.team ? w().teamSign(s.team) : w().hq)) : undefined
@@ -766,7 +770,7 @@ export function companyOf(
   const tables: Room[] = meeting.flatMap((m) => {
     const sessions = m.members.flatMap((id) => present.filter((s) => s.sessionId === id && seated.get(id) === m))
     if (sessions.length === 0) return []
-    const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId), letters, titles))
+    const teams = sessions.map((s) => teamOf(s, now, hats.get(s.sessionId), letters, titles, asking))
     const here = sessions.findIndex((s) => s.sessionId === mine)
     return [
       {

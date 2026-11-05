@@ -20,6 +20,9 @@ export type SeatData = {
   // Just wrote to another crab, or was written to: a ✉ by its head, across
   // sessions as well as within one.
   letter?: boolean
+  // Has something on the chairman's list, waiting for an answer: a ? by its
+  // head, in the ✉'s place, which it outlasts and outranks.
+  asking?: boolean
   // A session's job title, worn on its name plate in place of its rank's.
   post?: string
 }
@@ -548,7 +551,10 @@ function drawSeat(
     for (const mark of finishBadges(seat.finish, t) ?? badges(look, t, ph, body))
       labels.push({ ...mark, x: cx + mark.x, y: cy })
   // Left of the head, where only a cheer's spark goes, which keeps its place.
-  if (seat.letter && !isGone && seat.finish !== "cheer") labels.push({ x: cx, y: cy, ch: "✉", fg: NAMEPLATE, bold: true })
+  if (!isGone && seat.finish !== "cheer") {
+    if (seat.asking) labels.push({ x: cx, y: cy, ch: "?", fg: ASKING, bold: true })
+    else if (seat.letter) labels.push({ x: cx, y: cy, ch: "✉", fg: NAMEPLATE, bold: true })
+  }
   const title = seat.post ?? titleOf(seat.role)
   const nameColor = isGone ? GONE : body
   if (isSelected) {
@@ -790,6 +796,14 @@ function rugOf(sign: string): { floor: string; ink: string } {
 function boardHeight(company: Company): number {
   if (company.board === undefined) return 0
   return 2 + Math.max(1, company.board.length * 2)
+}
+
+const ASKING = "#f2c037"
+
+// The row the board starts on: the pane draws the rooms above it and the board
+// below, with what waits on the chairman between.
+export function boardTopOf(company: Company, cols: number): number {
+  return layoutOf(company, cols).bottom
 }
 
 export function heightOf(company: Company, cols: number): number {

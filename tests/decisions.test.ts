@@ -2,7 +2,7 @@ import { expect, test } from "claude-code/testing"
 
 import { answerOf, pendingOf, rowsOf, settleRefusal } from "../hooks/decisions.ts"
 import type { Decision } from "../hooks/decisions.ts"
-import { createSnapshot, orderPromptOf, promptOf, whoOf } from "../hooks/office.ts"
+import { companyOf, createSnapshot, orderPromptOf, promptOf, whoOf } from "../hooks/office.ts"
 import { setLanguage } from "../hooks/words.ts"
 
 setLanguage("zh")
@@ -39,4 +39,13 @@ test("the chairman's answer goes to the session that asked as the chairman's own
   expect(text).toContain("上，但先在 dev 跑一天")
   // on the asker's card it reads as the answer, not as the office's wrapping
   expect(promptOf(`The crab-office plugin sent a message: ${text}`)).not.toContain("[")
+})
+
+test("the crab of a session with something on the chairman's list asks: a ? on its seat, and only its", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "api-server", undefined, T0)
+  for (const s of [a, b]) s.updatedAt = T0 + 10
+  const company = companyOf([a, b], "a", T0 + 10, { memos: [], claims: [], asking: ["b"] })
+  const seats = company.rooms.flatMap((r) => r.teams.flat())
+  expect(seats.filter((s) => s.asking === true).map((s) => s.id)).toEqual(["b"])
 })

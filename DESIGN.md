@@ -333,8 +333,10 @@ What only the chairman can decide (an approval, a choice between plans, a
 meeting's conclusion left to the chairman) any session puts on the chairman's
 list with `office_board ask`; kept until then in the asker's own context, a
 compaction lost the detail and no other session saw what was stuck on the
-chairman. The list is at the very bottom of the pane, who is waiting (its job
-title, else its place) and on what, each with a field to answer it and a ✓
+chairman. The list sits between the rooms and the board (the drawing is cut
+into bands at the board's first row, `boardTopOf`), and the crab of each
+session waiting on it has a ? by its head, in the ✉'s place, which it outranks.
+It shows who is waiting (its job title, else its place) and on what, each with a field to answer it and a ✓
 that takes it off unanswered; `read` carries it too. An answer typed there goes
 to the session that asked as an instruction from a card does, the chairman's
 own words submitted in its prompt once it is free, and the item is settled with

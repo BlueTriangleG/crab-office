@@ -44,7 +44,7 @@ import {
 } from "./office.ts"
 import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
 import type { BoardLine } from "./pixels.ts"
-import { LEADER_COLOR, SEAT_COLS, heightOf, office as draw, partOf, slicesOf, titleOf } from "./pixels.ts"
+import { LEADER_COLOR, SEAT_COLS, boardTopOf, heightOf, office as draw, partOf, slicesOf, titleOf } from "./pixels.ts"
 import type { Speaker } from "./pixels.ts"
 import {
   NO_ORG,
@@ -82,7 +82,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.6"
+const BUILD = "2026-11-05.7"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -1517,7 +1517,15 @@ export const register: Register = (on, options) => {
         snaps,
         me?.sessionId ?? "",
         now,
-        { memos: office.memos, claims: office.claims, org: office.org, jobs: office.jobs, titles: office.titles, meetings: office.meetings },
+        {
+          memos: office.memos,
+          claims: office.claims,
+          org: office.org,
+          jobs: office.jobs,
+          titles: office.titles,
+          meetings: office.meetings,
+          asking: office.pending.map((d) => d.by),
+        },
         office.boardOlder,
       )
       // Paged past the oldest line kept, the count comes back to where it shows.
@@ -1526,17 +1534,29 @@ export const register: Register = (on, options) => {
       const note = company.board?.find((line) => line.key === office.note)
       const chosen =
         office.selected !== null ? findCrab(snaps, office.selected) : undefined
-      return (
-        <Box flexDirection="column">
-          {slicesOf(draw(company, e.props.bodyColumns, 0, office.selected).cells).map((rows, i) => (
+      // The rooms, then what waits on the chairman, then the board: the drawing
+      // is cut into bands at the board's first row.
+      const cols = e.props.bodyColumns
+      const drawn = draw(company, cols, 0, office.selected)
+      const boardTop = Math.min(boardTopOf(company, cols), drawn.rows)
+      const bands = (from: number, to: number, name: string) =>
+        slicesOf(drawn.cells.slice(from, to)).map(([a, b], i) => {
+          const rows: [number, number] = [a + from, b + from]
+          return (
             <Client
-              key={`crab-office-${i}`}
+              key={`crab-office-${name}${i}`}
               module="./crabs.tsx"
-              props={{ part: partOf(company, e.props.bodyColumns, rows), selected: office.selected, rows }}
-              width={e.props.bodyColumns}
+              props={{ part: partOf(company, cols, rows), selected: office.selected, rows }}
+              width={cols}
               height={rows[1] - rows[0]}
             />
-          ))}
+          )
+        })
+      return (
+        <Box flexDirection="column">
+          {bands(0, boardTop, "")}
+          {chairmanCard({ Box, Text, Button, Input }, rowsOf(office.pending, snaps, office.titles))}
+          {bands(boardTop, drawn.rows, "board-")}
           <Box flexDirection="column" borderStyle="round" borderColor="#5d7a66" paddingX={1}>
             <Input
               key={`office-say-${office.said}`}
@@ -1569,7 +1589,6 @@ export const register: Register = (on, options) => {
                   }
                 : undefined,
             )}
-          {chairmanCard({ Box, Text, Button, Input }, rowsOf(office.pending, snaps, office.titles))}
         </Box>
       )
     },
