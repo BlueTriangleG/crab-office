@@ -1,6 +1,6 @@
 import { expect, test } from "claude-code/testing"
 
-import { answerOf, pendingOf, rowsOf, settleRefusal } from "../hooks/decisions.ts"
+import { answerOf, isAway, pendingOf, rowsOf, settleRefusal } from "../hooks/decisions.ts"
 import type { Decision } from "../hooks/decisions.ts"
 import { companyOf, createSnapshot, orderPromptOf, promptOf, whoOf } from "../hooks/office.ts"
 import { setLanguage } from "../hooks/words.ts"
@@ -48,4 +48,14 @@ test("the crab of a session with something on the chairman's list asks: a ? on i
   const company = companyOf([a, b], "a", T0 + 10, { memos: [], claims: [], asking: ["b"] })
   const seats = company.rooms.flatMap((r) => r.teams.flat())
   expect(seats.filter((s) => s.asking === true).map((s) => s.id)).toEqual(["b"])
+})
+
+test("an answer to a session that is not at work waits for it, and the receipt must say so", async () => {
+  const b = createSnapshot("b", "web-app", undefined, T0)
+  b.updatedAt = T0
+  expect(isAway(b, T0 + 5_000)).toBe(false)
+  // gone quiet, closed, or not in the company at all
+  expect(isAway(b, T0 + 60_000)).toBe(true)
+  expect(isAway({ ...b, ended: true }, T0 + 5_000)).toBe(true)
+  expect(isAway(undefined, T0)).toBe(true)
 })

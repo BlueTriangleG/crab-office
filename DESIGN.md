@@ -376,7 +376,8 @@ It shows who is waiting (its job title, else its place) and on what, each with a
 that takes it off unanswered; `read` carries it too. An answer typed there goes
 to the session that asked as an instruction from a card does, the chairman's
 own words submitted in its prompt once it is free, and the item is settled with
-it. It is not one session's message to another: a session rightly does not take
+it. To a session not at work the answer waits, as any instruction does for a
+day, and the receipt says so: one that said "sent" either way read as delivered. It is not one session's message to another: a session rightly does not take
 such a message as the chairman's approval, and an answer is often exactly
 that. Answered elsewhere, the session that asked, or the CEO, takes it off with
 `office_board settle`. `decisions/<id>.json` is the

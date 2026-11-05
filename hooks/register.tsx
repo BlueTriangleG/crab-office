@@ -66,7 +66,7 @@ import {
 import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
 import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
-import { answerOf, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
+import { answerOf, isAway, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
 import { cardText, linesText, officeText } from "./text.ts"
 import { LINE_STATUSES, askOfLine, lineRefusal, lineRowsOf, linesOf } from "./lines.ts"
 import type { Line, LineRow, LineStatus } from "./lines.ts"
@@ -85,7 +85,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.13"
+const BUILD = "2026-11-05.14"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -949,7 +949,9 @@ async function answerItem($: EngineInterface, d: Decision, text: string): Promis
   await order($, d.by, answerOf(d, text))
   await settle($, d, text)
   const asker = everyone().find((s) => s.sessionId === d.by)
-  return w().answeredToast(asker === undefined ? d.by : (office.titles[d.by] ?? whoOf(asker)))
+  // One that left the company is named by its title, never by its raw session id.
+  const who = office.titles[d.by] ?? (asker === undefined ? w().theAsker : whoOf(asker))
+  return isAway(asker, Date.now()) ? w().answeredAway(who) : w().answeredToast(who)
 }
 
 type BoardInput = {

@@ -1,4 +1,4 @@
-import { clip, whoOf } from "./office.ts"
+import { clip, isGoneOf, whoOf } from "./office.ts"
 import type { Snapshot } from "./office.ts"
 import { w } from "./words.ts"
 
@@ -37,4 +37,11 @@ export function rowsOf(pending: Decision[], snaps: Snapshot[], titles: Record<st
 // does not take as the chairman's approval.
 export function answerOf(d: Decision, answer: string): string {
   return w().chairmanAnswer(d.id, clip(d.text, 120), answer)
+}
+
+// Whether the session that asked is at work to take the answer now, or the
+// answer waits in its instructions until it comes back, as any instruction does
+// for a day. A receipt that said "sent" either way read as delivered.
+export function isAway(asker: Snapshot | undefined, now: number): boolean {
+  return asker === undefined || isGoneOf(asker, now)
 }
