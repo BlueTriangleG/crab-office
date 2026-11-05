@@ -67,6 +67,7 @@ import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
 import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
 import { answerOf, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
+import { cardText, officeText } from "./text.ts"
 import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
 import type { Meeting, MeetingFile } from "./meetings.ts"
@@ -82,7 +83,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.7"
+const BUILD = "2026-11-05.8"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -849,12 +850,69 @@ async function addressed($: EngineInterface, verb: "tell" | "btw" | "card", args
     // as an instruction for another session, and it was left undone.
     return s.sessionId === me.sessionId ? w().toldSelf : w().toldDone(who)
   }
-  // A session's manager is its crab of the session's own id.
+  // A session's manager is its crab of the session's own id; selected, the pane
+  // shows its card too, where one is open.
   office.selected = s.sessionId
-  if (verb === "btw") void ask($, s.sessionId, parsed.text)
-  const failed = await openPane($)
-  if (failed !== undefined) return failed
-  return verb === "btw" ? w().askedDone(who) : w().cardShown(who)
+  $.ui.invalidate("ui.render")
+  if (verb === "btw") {
+    void ask($, s.sessionId, parsed.text)
+    return w().askedDone(who, parsed.name)
+  }
+  // As text, for a terminal where the pane will not open or a click will not land.
+  const chats = office.chats.get(s.sessionId) ?? []
+  const obeyed = s.obeyed ?? []
+  return cardText(
+    detailOf(s.leader, s, Date.now(), everyone(), office.org, office.jobs),
+    s.talk ?? [],
+    chats.filter((c) => c.kind === "order").map((c) => ({ text: c.question, isDelivered: obeyed.includes(c.id) })),
+    chats.filter((c) => c.kind === "btw").map((c) => ({ question: c.question, ...(c.answer === undefined ? {} : { answer: c.answer }) })),
+  )
+}
+
+function everyone(): Snapshot[] {
+  return office.me === undefined ? office.others : [office.me, ...office.others]
+}
+
+// The company as the pane draws it now.
+function companyNow(older = 0) {
+  return companyOf(
+    everyone(),
+    office.me?.sessionId ?? "",
+    Date.now(),
+    {
+      memos: office.memos,
+      claims: office.claims,
+      org: office.org,
+      jobs: office.jobs,
+      titles: office.titles,
+      meetings: office.meetings,
+      asking: office.pending.map((d) => d.by),
+    },
+    older,
+  )
+}
+
+// What a field and a ✓ on the chairman's list do, by command:
+// "/office answer #id the answer", "/office settle #id".
+async function byCommand($: EngineInterface, verb: "answer" | "settle", args: string): Promise<string> {
+  const parsed = parseAddressed(args)
+  const d = office.pending.find((x) => x.id === parsed?.name.replace(/^#/, ""))
+  if (parsed === undefined || d === undefined) return w().noItem
+  if (verb === "settle") {
+    await settle($, d, w().settledByChairman)
+    return w().settledDone(d.id)
+  }
+  if (parsed.text === "") return w().needWords
+  return answerItem($, d, parsed.text)
+}
+
+// The chairman's answer to an item on the list: to the session that asked, as
+// the chairman's own instruction, and the item settled with it.
+async function answerItem($: EngineInterface, d: Decision, text: string): Promise<string> {
+  await order($, d.by, answerOf(d, text))
+  await settle($, d, text)
+  const asker = everyone().find((s) => s.sessionId === d.by)
+  return w().answeredToast(asker === undefined ? d.by : (office.titles[d.by] ?? whoOf(asker)))
 }
 
 type BoardInput = {
@@ -1407,6 +1465,9 @@ export const register: Register = (on, options) => {
       }
     }
     if (arg.startsWith("say")) return { text: await say($, args.slice(3)) }
+    if (arg === "text") return { text: officeText(companyNow(), rowsOf(office.pending, everyone(), office.titles)) }
+    if (arg.startsWith("answer ") || arg.startsWith("settle ") || arg === "answer" || arg === "settle")
+      return { text: await byCommand($, arg.startsWith("answer") ? "answer" : "settle", args.slice(6)) }
     for (const verb of ["tell", "btw", "card"] as const)
       if (arg === verb || arg.startsWith(`${verb} `)) return { text: await addressed($, verb, args.slice(verb.length)) }
     const appointing = parseAppoint(args)
@@ -1450,10 +1511,7 @@ export const register: Register = (on, options) => {
   on("ui.input", { element: /^office-answer-/ }, async ($, e, next) => {
     const d = office.pending.find((x) => `office-answer-${x.id}` === e.element)
     if (e.kind !== "submit" || d === undefined || e.value.trim() === "") return next(e)
-    await order($, d.by, answerOf(d, e.value.trim()))
-    await settle($, d, e.value.trim())
-    const asker = [...(office.me ? [office.me] : []), ...office.others].find((s) => s.sessionId === d.by)
-    $.ui.toast(w().answeredToast(asker === undefined ? d.by : (office.titles[d.by] ?? whoOf(asker))))
+    $.ui.toast(await answerItem($, d, e.value.trim()))
     return next(e)
   })
 
@@ -1513,21 +1571,7 @@ export const register: Register = (on, options) => {
       const now = Date.now()
       const me = office.me
       const snaps = me !== undefined ? [me, ...office.others] : office.others
-      const company = companyOf(
-        snaps,
-        me?.sessionId ?? "",
-        now,
-        {
-          memos: office.memos,
-          claims: office.claims,
-          org: office.org,
-          jobs: office.jobs,
-          titles: office.titles,
-          meetings: office.meetings,
-          asking: office.pending.map((d) => d.by),
-        },
-        office.boardOlder,
-      )
+      const company = companyNow(office.boardOlder)
       // Paged past the oldest line kept, the count comes back to where it shows.
       if (company.boardView !== undefined)
         office.boardOlder = company.boardView.total - company.boardView.last

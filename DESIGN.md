@@ -312,6 +312,19 @@ CEO at most once in 30 min, as one prompt when it is free; what to do is the
 CEO's to decide. The decisions behind all of this are in
 `docs/specs/2026-11-04-manager-design.md` (the dev copy only).
 
+## Text mode
+
+Where the pane will not open, or a click will not land, the office answers by
+command, as text: `/office text` (each room and session, by title, with its ?,
+! or ✉, what waits on the chairman with each item's id, and the board's last
+ten lines), `/office card @who` (the card: its rows, talk, each instruction
+delivered or waiting, each btw with its answer), `/office answer #id …` and
+`/office settle #id` (a field and a ✓ on the chairman's list). The text is
+built from the company the drawing is built from (`text.ts`), so the two never
+say different things. A task is cut at 60 characters and a board line at 140,
+as the pane cuts them at its width. A command's text also reaches the
+session's own model, so a long `/office text` costs that session context.
+
 ## Observe mode
 
 A session in observe mode is shown in the office and sent nothing: it takes no

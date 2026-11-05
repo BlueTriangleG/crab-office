@@ -68,9 +68,11 @@ The office speaks English by default. To switch to Chinese, set the plugin's `la
 | `/office` | Open the office |
 | `/office say message` | Pin a memo to the board for whoever is free first |
 | `/office say @team message` | For one worktree team; `@<project>` for a department, `@everyone` for all. Typing `@` offers the names |
+| `/office text` | The office as text: every session with its marks, what waits on you with ids, the board's latest lines |
+| `/office answer #id answer` | Answer an item waiting on you; `/office settle #id` takes one off unanswered |
 | `/office tell @who instruction` | What a card's **➤ Tell it** does: it runs once that session is free. `@who` is a job title, SendMessage name or team |
 | `/office btw @who question` | Ask a session on the side; the answer shows on its card |
-| `/office card @who` | Open the office on a session's card |
+| `/office card @who` | A session's card as text: task, recent talk, each instruction delivered or waiting, btw answers |
 | `/office ceo @who` | Make a session CEO; `/office ceo off` to have none |
 | `/office head @who` | Make a session its repository's head; `/office head off` to go back to the longest-serving |
 | `/office band` | Show or hide the strip of crabs above the prompt |
