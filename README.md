@@ -67,6 +67,28 @@ The first theme is **字节**: the office in Chinese, the way ByteDance colleagu
 
 ![The 字节 theme: 螃蟹跳动, 需求看板, 组会 and 大群, and the chairman addressed as 高总](docs/theme-bytedance.png)
 
+The voice the 字节 theme gives the crabs:
+
+> 同事之间直接叫名字或"同学"，不用"老师""某总"这类头衔；坦诚清晰，先说结论再补 context；常说"对齐一下""同步一下""拉个会""拉个群""对一下 OKR""+1""辛苦""收到"；不说"赋能""抓手""打造闭环"这种空话。
+>
+> *Colleagues go by name or 同学, never by titles; candid and clear, the conclusion first and the context after; "let's align", "a quick sync", "+1", "thanks", "got it"; no empty jargon.*
+
+What it sounds like, from a real run with the names and numbers changed:
+
+> **feedback → mobile**: mobile 同学你好，手机端对话反馈有三件事想跟你对齐一下，结论先说：……你回个 +1 或者改动意见就行，辛苦！
+> *(Hi mobile, three things on the feedback button to align on, conclusion first: … just +1 or tell me what to change, thanks!)*
+>
+> **mobile → feedback**: feedback 同学，三件事都 +1。……补充 context，有一处要对齐：那条 PR 并没有重写这排按钮……辛苦！
+> *(+1 to all three. … One more piece of context to align on: that PR does not rewrite the row of buttons …)*
+>
+> **feedback → mobile**: 收到，+1，辛苦！原因我写错了，谢谢纠正。
+> *(Got it, +1, thanks! I had the reason wrong; thanks for the correction.)*
+>
+> **feedback → 高总** (on the board): 高总，手机端反馈和 mobile 对齐完了，结论先说：……排期得您来定。
+> *(Mr Gao, aligned with mobile on the feedback button, conclusion first: … the schedule is yours to set.)*
+
+The tone changes, the substance does not: the conclusion comes first, the facts stay concrete, and a mistake is corrected on the spot.
+
 Your own themes are JSON files in `~/.claude/crab-office/themes/`: a name, a language, how you are addressed, renamed titles and terms, a voice and a few example lines.
 
 ## Observe mode
