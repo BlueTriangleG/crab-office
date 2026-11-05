@@ -1,6 +1,6 @@
 import { expect, test } from "claude-code/testing"
 
-import { companyOf, createSnapshot, messageSent, targetOf } from "../hooks/office.ts"
+import { companyOf, createSnapshot, messageSent, promptOf, targetOf } from "../hooks/office.ts"
 import { BUILT_IN, parseThemeArgs, themeNamed, themeNote, themeOff } from "../hooks/themes.ts"
 import { setLanguage, setTheme, w } from "../hooks/words.ts"
 
@@ -43,4 +43,28 @@ test("the note a session is given names the chairman, the voice, its examples, a
   for (const part of ["字节", "高总", "互相叫同学", "高总，同步一下进展：", "代码", "PR"]) expect(note).toContain(part)
   expect(note).not.toContain("{chairman}")
   expect(themeOff()).toContain("默认")
+})
+
+test("a theme's terms rename the office's own words, but never the envelopes the office reads back", async () => {
+  setTheme({ terms: { 会议: "组会", 会议室: "会议室", 共享白板: "大群", 董事长: "高总" } })
+  expect(w().board).toBe("大群")
+  expect(w().meetingTask("api")).toBe("组会 api")
+  // the longer term stands: a 会议室 is not a 组会室
+  expect(w().meetingRoom("api", "字段")).toBe("会议室 · api：字段")
+  // words with nothing to rename are as they were
+  expect(w().titles.chief).toBe("部长")
+  // a meeting's envelope keeps its words, so its card still reads as a short task
+  const invite = w().meetingInvite("api", "字段", "web-app", ["api-server"])
+  expect(invite).toContain("会议 api")
+  expect(promptOf(`The crab-office plugin sent a message: ${invite}`)).toBe(w().meetingTask("api"))
+  setTheme(undefined)
+  expect(w().board).toBe("共享白板")
+})
+
+test("the built-in 字节 theme speaks Chinese, calls colleagues 同学 and renames meetings and the board", async () => {
+  const t = BUILT_IN.find((x) => x.name === "字节")
+  expect(t?.language).toBe("zh")
+  expect(t?.titles?.lead).toBe("同学")
+  expect(t?.terms?.["会议"]).toBe("组会")
+  expect(t?.voice).toContain("同学")
 })

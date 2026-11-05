@@ -87,7 +87,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.15"
+const BUILD = "2026-11-05.16"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -129,6 +129,8 @@ const office = {
   themes: [] as Theme[],
   themeKey: `${DEFAULT_THEME}|`,
   themeChairman: "",
+  // The language the person set, which a theme's own stands over while it is on.
+  language: undefined as string | undefined,
   watchedAt: 0,
   isDirty: true,
   lastWrite: 0,
@@ -843,7 +845,10 @@ function applyTheme($: EngineInterface) {
   if (key === office.themeKey) return
   office.themeKey = key
   office.themeChairman = chairman
-  setTheme(theme === undefined ? undefined : { ...(chairman ? { chairman } : {}), ...(theme.titles ? { titles: theme.titles } : {}) })
+  setLanguage(theme?.language ?? office.language)
+  // The chairman's own name through every word that names the chairman, too.
+  const terms = { ...theme?.terms, ...(chairman ? { 董事长: chairman } : {}) }
+  setTheme(theme === undefined ? undefined : { ...(chairman ? { chairman } : {}), ...(theme.titles ? { titles: theme.titles } : {}), terms })
   $.ui.invalidate("ui.render")
 }
 
@@ -1262,7 +1267,8 @@ async function claim(
 }
 
 export const register: Register = (on, options) => {
-  setLanguage(typeof options.language === "string" ? options.language : undefined)
+  office.language = typeof options.language === "string" ? options.language : undefined
+  setLanguage(office.language)
   on("session.start", async ($, e, next) => {
     const r = await next(e)
     const [sessionId, root, model, configDir, home, kind] = await Promise.all([

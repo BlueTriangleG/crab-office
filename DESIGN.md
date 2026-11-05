@@ -332,9 +332,18 @@ A theme changes how the office names the chairman and its ranks, and the voice
 the crabs talk in, to each other and to the chairman, and nothing else: what a
 report says stays plain, and nothing a session makes (code, commits, PRs, docs,
 product copy) takes it. The office as it is is the default theme. One built-in
-theme ships (字节, a ByteDance colleague's voice); a person's own are JSON files
-in `themes/` (name, chairman, titles, voice, examples with `{chairman}`), and
-one of the same name wins over the built-in. `/office theme <name> [how to
+theme ships (字节, a ByteDance colleague's voice, from what ByteDance has said
+of itself: colleagues go by name or 同学 and never 老师 or 某总, under Context,
+not Control; candid and clear, the conclusion first; no empty 赋能 or 打造闭环;
+the chairman alone keeps a boss's title, as the person chose). A theme may
+rename terms through the office's own words (开会 → 拉个组会, 共享白板 → 大群,
+派活 → 派需求, and the chairman's name for 董事长), in one pass, the longest
+first so a longer word can keep itself (会议室 over 会议), but never inside what
+the office writes and reads back (envelopes, the memo handover), or its cards
+would no longer know its own prompts; and it may set the office's language
+while it is on, where its terms are in one (字节's are Chinese). A person's own
+themes are JSON files in `themes/` (name, language, chairman, titles, terms,
+voice, examples with `{chairman}`); one of the same name wins over the built-in. `/office theme <name> [how to
 address you]` chooses one office-wide (`theme.json`); every session takes it on
 its next tick. The names go over the office's words (`setTheme`), so the
 drawing, the board and every reply follow; a board line to the chairman shows

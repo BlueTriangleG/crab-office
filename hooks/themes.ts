@@ -10,6 +10,10 @@ export type Theme = {
   chairman?: string
   // Ranks' and roles' names, by the keys the office's own titles use.
   titles?: Record<string, string>
+  // Terms renamed through the office's own words (开会 → 组会); the longest wins.
+  terms?: Record<string, string>
+  // The office's language while the theme is on, where its terms are in one.
+  language?: "zh" | "en"
   voice?: string
   // A few lines in that voice; `{chairman}` stands for how the chairman is addressed.
   examples?: string[]
@@ -19,16 +23,38 @@ export type Theme = {
 export const DEFAULT_THEME = "default"
 
 export const BUILT_IN: Theme[] = [
+  // From what ByteDance has said of itself: colleagues go by name or 同学, never
+  // 老师 or 某总 (Context, not Control); candid and clear, the conclusion first
+  // and the context after; OKRs aligned; every meeting its own Feishu group; and
+  // no empty 赋能 or 打造闭环, which 张一鸣 called not talking like a person.
+  // The chairman is the one exception: the person chose to be addressed as a boss.
   {
     name: "字节",
+    language: "zh",
     chairman: "老板",
-    titles: { leader: "同学", lead: "同学" },
+    titles: { chief: "TL", leader: "同学", lead: "同学" },
+    terms: {
+      螃蟹有限公司: "螃蟹跳动",
+      会议室: "会议室",
+      开会: "拉个组会",
+      会议: "组会",
+      写在白板上: "发到大群里",
+      共享白板: "大群",
+      白板: "大群",
+      "CEO 看板": "需求看板",
+      派活: "派需求",
+      交差: "交付",
+      留言: "群消息",
+      部长: "TL",
+      组长: "同学",
+    },
     voice:
-      "像字节跳动的同学一样说话：互相称呼“同学”，直接、节奏快，常用“对齐”“拉通”“同步一下”“闭环”“抓手”“颗粒度”“对一下口径”“辛苦”“收到”这类说法；跟董事长说话先叫一声称呼，再说正事。",
+      "像字节跳动的同学一样说话：同事之间直接叫名字或“同学”，不用“老师”“某总”这类头衔；坦诚清晰，先说结论再补 context；常说“对齐一下”“同步一下”“拉个会”“拉个群”“对一下 OKR”“+1”“辛苦”“收到”；不说“赋能”“抓手”“打造闭环”这种空话。",
     examples: [
-      "同学你好，这边想跟你对齐一下结账 API 的字段，方便的话拉个会？",
-      "收到，这块我来闭环，今天下班前同步结论。",
-      "{chairman}，同步一下进展：",
+      "同学你好，结账 API 的字段想跟你对齐一下，我拉个组会，10 分钟。",
+      "收到，这块我来跟，今天下班前在群里同步结论。",
+      "+1，按这个方案来。",
+      "{chairman}，同步一下进展：结论先说——",
     ],
   },
 ]

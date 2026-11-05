@@ -794,17 +794,66 @@ const ZH: Words = {
   },
 }
 
+type ThemeWords = { chairman?: string; titles?: Record<string, string>; terms?: Record<string, string> }
+
 let base: Words = EN
-let theme: { chairman?: string; titles?: Record<string, string> } = {}
+let theme: ThemeWords = {}
 let words: Words = EN
 
-// The language's words with the theme's names over them, made once per change:
-// w() is called on every draw.
+// What the office writes and later reads back, by which it knows its own
+// prompts on a card (promptOf) and its own memos: a term renamed inside one
+// would leave it unread.
+const KEPT = new Set([
+  "lang",
+  "everyone",
+  "hq",
+  "orderHead",
+  "handover",
+  "ceoHandoverHead",
+  "nudgeHead",
+  "jobEnvelope",
+  "reportEnvelope",
+  "rejectEnvelope",
+  "withdrawEnvelope",
+  "amendEnvelope",
+  "meetingInvite",
+  "meetingEnvelope",
+  "meetingClosedEnvelope",
+  "chairmanAnswer",
+])
+
+// Every term in one pass, the longest first, so a term may keep a longer word
+// it is part of as it is (会议室 over 会议).
+function swapper(terms: Record<string, string>): (text: string) => string {
+  const keys = Object.keys(terms).sort((a, b) => b.length - a.length)
+  if (keys.length === 0) return (text) => text
+  const pattern = new RegExp(keys.map((k) => k.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"), "g")
+  return (text) => text.replace(pattern, (m) => terms[m] ?? m)
+}
+
+function termed(value: unknown, swap: (text: string) => string, key = ""): unknown {
+  if (KEPT.has(key)) return value
+  if (typeof value === "string") return swap(value)
+  if (typeof value === "function")
+    return (...args: unknown[]) => {
+      const out: unknown = value(...args)
+      return typeof out === "string" ? swap(out) : out
+    }
+  if (Array.isArray(value)) return value.map((v) => termed(v, swap))
+  if (value !== null && typeof value === "object")
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, termed(v, swap, k)]))
+  return value
+}
+
+// The language's words with the theme's over them, made once per change: w() is
+// called on every draw.
 function themed() {
+  const terms = theme.terms ?? {}
+  const renamed = Object.keys(terms).length === 0 ? base : (termed(base, swapper(terms)) as Words)
   words =
-    theme.chairman === undefined && theme.titles === undefined
+    theme.chairman === undefined && theme.titles === undefined && renamed === base
       ? base
-      : { ...base, chairman: theme.chairman ?? base.chairman, titles: { ...base.titles, ...theme.titles } as Words["titles"] }
+      : { ...renamed, chairman: theme.chairman ?? renamed.chairman, titles: { ...renamed.titles, ...theme.titles } as Words["titles"] }
 }
 
 export function setLanguage(lang: string | undefined) {
@@ -812,8 +861,9 @@ export function setLanguage(lang: string | undefined) {
   themed()
 }
 
-// A theme's names: how the chairman is addressed, and ranks' and roles' names.
-export function setTheme(t: { chairman?: string; titles?: Record<string, string> } | undefined) {
+// A theme's names: how the chairman is addressed, ranks' and roles' names, and
+// terms renamed through the office's own words.
+export function setTheme(t: ThemeWords | undefined) {
   theme = t ?? {}
   themed()
 }
