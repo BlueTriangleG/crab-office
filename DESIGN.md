@@ -61,13 +61,19 @@ knew which session would be 部长.
   memo handed over reads as `Memo: <the memo>`, not the handover and its
   roster. A board line clicked shows whole on a card of its own.
 - **Instructions**: a manager's card has a field to tell its session what to
-  do (`➤ 交代` / `➤ Tell it`). To the viewer's own session it is a prompt at
-  once, as if typed there; to another it goes as `orders/<id>.json`, which that
-  session takes up on its next tick and submits as a prompt of its own. A
+  do (`➤ 交代` / `➤ Tell it`, or `/office tell @who`). It goes as
+  `orders/<id>.json`, which the session takes up on its next tick and submits
+  as a prompt of its own, the viewer's own session too: a prompt submitted from
+  a command hook never started a turn (awaited, the command never answered,
+  since a submit waits for the session to be idle; not awaited, it was
+  dropped), while one from the tick does. The receipt for the viewer's own
+  session says it is for this session: its model reads the receipt, and a
+  SendMessage name it did not know as its own read as another session's work. A
   prompt submitted while a turn runs waits for the turn to end, so an
   instruction never interrupts work. Each session keeps the ids it has taken
-  up (`obeyed`), so none runs twice, and the card marks each one delivered or
-  still waiting. Only the person, and the CEO the person appointed, set a
+  up (`obeyed`), so none runs twice, and the card marks each one delivered
+  once taken up, or still waiting (never by a timeout, which marked one
+  delivered that was not). Only the person, and the CEO the person appointed, set a
   session to work: no other model has a way to, so sessions cannot set one
   another to work.
 - **btw**: under a clicked crab, a field to ask it something. The answer never

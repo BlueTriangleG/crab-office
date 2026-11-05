@@ -82,7 +82,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.5"
+const BUILD = "2026-11-05.6"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -346,22 +346,19 @@ async function ask($: EngineInterface, crabId: string, question: string) {
   await $.fs.write(`${office.base}/asks/${chat.id}.json`, JSON.stringify(sent))
 }
 
-// An instruction from a session's card: to this session, a prompt now, as if
-// typed here; to another, a file it takes up on its next tick.
+// An instruction from a session's card, `/office tell` or an answer on the
+// chairman's list: a file the session takes up on its next tick, this session's
+// own too. A prompt submitted from a command hook never started a turn: awaited,
+// the command never answered (the submit waits for the session to be idle);
+// not awaited, it was dropped. One from the tick runs once the session is free.
 async function order($: EngineInterface, sessionId: string, text: string) {
   const me = office.me
   if (me === undefined || text.trim() === "") return
   const now = Date.now()
-  const isRemote = sessionId !== me.sessionId
-  const chat: Chat = { id: idOf(now), at: now, question: text.trim(), isRemote, kind: "order" }
-  if (!isRemote) chat.answer = ""
+  const chat: Chat = { id: idOf(now), at: now, question: text.trim(), isRemote: sessionId !== me.sessionId, kind: "order" }
   office.chats.set(sessionId, [...(office.chats.get(sessionId) ?? []), chat].slice(-CHAT_KEPT))
   office.asked += 1
   $.ui.invalidate("ui.render")
-  // Not awaited: a submit resolves once the session is idle, and a command
-  // hook awaiting it kept the session from ever being (/office tell to itself
-  // answered "no command.run hook answered it" and no turn ran).
-  if (!isRemote) return void $.prompt.submit({ text: chat.question })
   const sent: Order = { id: chat.id, at: now, to: sessionId, text: chat.question }
   await $.fs.write(`${office.base}/orders/${chat.id}.json`, JSON.stringify(sent))
 }
@@ -407,7 +404,9 @@ async function btw($: EngineInterface, now: number) {
   }
   for (const [crabId, chats] of office.chats)
     for (const chat of chats) {
-      if (!chat.isRemote || chat.answer !== undefined) continue
+      // An instruction is delivered once its session takes it up (`obeyed`); the
+      // btw wait running out marked one "delivered" that never was.
+      if (!chat.isRemote || chat.kind !== "btw" || chat.answer !== undefined) continue
       const text = await $.fs.read(`${office.base}/replies/${chat.id}.json`).catch(() => undefined)
       if (text !== undefined) heard($, crabId, chat.id, (JSON.parse(text) as Reply).text)
       else if (now - chat.at > ASK_WAIT_MS) heard($, crabId, chat.id, w().noReply)
@@ -846,7 +845,9 @@ async function addressed($: EngineInterface, verb: "tell" | "btw" | "card", args
   if (verb === "tell") {
     if (s.observe === true) return w().observing(who)
     await order($, s.sessionId, parsed.text)
-    return w().toldDone(who)
+    // Its own model reads this receipt: a name it does not know as its own read
+    // as an instruction for another session, and it was left undone.
+    return s.sessionId === me.sessionId ? w().toldSelf : w().toldDone(who)
   }
   // A session's manager is its crab of the session's own id.
   office.selected = s.sessionId
