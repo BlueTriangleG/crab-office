@@ -68,6 +68,19 @@ const EN = {
   notStarted: "not started",
   labels: { task: "Task", given: "Given", tools: "Tools", back: "Back", job: "Job", mode: "Mode" },
   observeMode: "observe: only shown here, sent nothing",
+  themeNote: (name: string, chairman: string, voice: string, examples: string[]) =>
+    [
+      `[crab-office · theme "${name}"] The chairman has given the office a theme. From now on:`,
+      `- Address the chairman (the user) as "${chairman}".`,
+      ...(voice ? [`- When you talk in the office (SendMessage to colleagues, meetings, reports) and to ${chairman}, use this voice: ${voice}`] : []),
+      ...(examples.length > 0 ? [`- For example: ${examples.join(" / ")}`] : []),
+      "- Only the voice and the names change: what a report says stays plain (done / in progress / needs you, one line each), and code, commit messages, PRs, docs and product copy never take this voice.",
+    ].join("\n"),
+  themeOff: "[crab-office · theme] The chairman has switched the office back to its default theme: address the chairman and talk as you did before any theme.",
+  themeList: (names: string[], current: string) => `Themes: ${names.join(", ")}. Now: ${current}. /office theme <name> [how to address you], or /office theme default.`,
+  themeSet: (name: string, chairman: string) => `Theme: ${name}; you are addressed as ${chairman}. Every session takes it within a few seconds.`,
+  themeDefault: "Back to the default theme.",
+  noTheme: (name: string) => `No theme called ${name}.`,
   textRoom: (title: string) => `[${title}]`,
   linesHead: (n: number) => (n === 0 ? "CEO's tracker: nothing yet (the CEO keeps it with office_board track)" : `CEO's tracker (${n})`),
   lineStatus: { stuck: "stuck", waiting: "waiting on you", risk: "at risk", ok: "on track", done: "done" } as Record<string, string>,
@@ -471,6 +484,19 @@ const ZH: Words = {
   notStarted: "还没开始",
   labels: { task: "任务", given: "收到", tools: "工具", back: "交回", job: "派活", mode: "模式" },
   observeMode: "观察：只在这里显示，什么也不发给它",
+  themeNote: (name, chairman, voice, examples) =>
+    [
+      `[螃蟹办公室 · 主题「${name}」] 董事长给办公室换了主题。从现在起：`,
+      `- 称呼董事长（用户）为「${chairman}」。`,
+      ...(voice ? [`- 在办公室里说话（用 SendMessage 找同事、开会、交差）以及跟${chairman}说话时，用这种语气：${voice}`] : []),
+      ...(examples.length > 0 ? [`- 例句：${examples.join(" / ")}`] : []),
+      "- 只改语气和称呼：汇报的内容照常平实（做完了 / 在做 / 要定的，一行一条）；代码、提交说明、PR、文档和产品文案一律不用这种语气。",
+    ].join("\n"),
+  themeOff: "[螃蟹办公室 · 主题] 董事长把办公室主题换回了默认：称呼和语气恢复成换主题之前的样子。",
+  themeList: (names, current) => `主题：${names.join("、")}。现在用的是：${current}。/office theme <名字> [怎么称呼你]，或 /office theme default。`,
+  themeSet: (name, chairman) => `主题换成了「${name}」，大家会称呼你「${chairman}」。各会话几秒内跟上。`,
+  themeDefault: "已换回默认主题。",
+  noTheme: (name) => `没有叫「${name}」的主题。`,
   textRoom: (title) => `【${title}】`,
   linesHead: (n) => (n === 0 ? "CEO 看板：暂无（CEO 用 office_board track 记）" : `CEO 看板（${n}）`),
   lineStatus: { stuck: "卡住", waiting: "等董事长", risk: "有风险", ok: "正常", done: "完成" },
@@ -768,14 +794,37 @@ const ZH: Words = {
   },
 }
 
+let base: Words = EN
+let theme: { chairman?: string; titles?: Record<string, string> } = {}
 let words: Words = EN
 
+// The language's words with the theme's names over them, made once per change:
+// w() is called on every draw.
+function themed() {
+  words =
+    theme.chairman === undefined && theme.titles === undefined
+      ? base
+      : { ...base, chairman: theme.chairman ?? base.chairman, titles: { ...base.titles, ...theme.titles } as Words["titles"] }
+}
+
 export function setLanguage(lang: string | undefined) {
-  words = lang === "zh" ? ZH : EN
+  base = lang === "zh" ? ZH : EN
+  themed()
+}
+
+// A theme's names: how the chairman is addressed, and ranks' and roles' names.
+export function setTheme(t: { chairman?: string; titles?: Record<string, string> } | undefined) {
+  theme = t ?? {}
+  themed()
 }
 
 export function w(): Words {
   return words
+}
+
+// The chairman, by any name it has gone by: either language's, or the theme's.
+export function isChairmanName(name: string): boolean {
+  return CHAIRMAN_NAMES.has(name) || name === words.chairman
 }
 
 // Names that stand for the chairman, or for a checkout's own team, whichever

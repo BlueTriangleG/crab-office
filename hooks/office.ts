@@ -3,7 +3,7 @@
 // here, so the tests drive it directly.
 
 import { HQ, LEADER_COLOR, MANAGER_HATS, titleOf } from "./pixels.ts"
-import { CHAIRMAN_NAMES, HQ_NAMES, w } from "./words.ts"
+import { HQ_NAMES, isChairmanName, w } from "./words.ts"
 import type { BoardLine, Company, Room, SeatData, Speaker } from "./pixels.ts"
 import type { Org } from "./org.ts"
 import type { Job } from "./jobs.ts"
@@ -103,6 +103,8 @@ export type Snapshot = {
   observe?: true
   // As CEO: when each `<job>:<rule>` was last put to it by the watchdog.
   nudged?: Record<string, number>
+  // The theme this session's model was last told of ("<name>|<chairman>").
+  themeSeen?: string
   // Its last few exchanges, for its card: what was said to it, what it said.
   talk?: Talk[]
 }
@@ -954,7 +956,7 @@ export function isFor(to: Target, s: Snapshot): boolean {
 // or a department. The chairman, or no name, is nobody's inbox but the board.
 export function targetOf(to: string): Target | undefined {
   const name = to.trim().replace(/^@/, "")
-  if (name === "" || CHAIRMAN_NAMES.has(name)) return undefined
+  if (name === "" || isChairmanName(name)) return undefined
   return parseSay(`@${name} .`, "", 0)?.to
 }
 
@@ -1155,7 +1157,7 @@ function shownNote(
         name: titles[other.sessionId] ?? `${whoOf(other)} ${managerTitleOf(other, ranks)}`,
         color: colorOf(other.leader),
       }
-    return CHAIRMAN_NAMES.has(sp.name) ? { ...sp, name: w().chairman } : sp
+    return isChairmanName(sp.name) ? { ...sp, name: w().chairman } : sp
   }
   return { ...n, from: shown(n.from), to: shown(n.to) }
 }

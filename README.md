@@ -18,6 +18,7 @@ Every Claude Code session running on your machine, and every subagent it hires, 
 - **Colleagues**: sessions talk one to one with Claude Code's own SendMessage, and the board shows it with a ✉ by both crabs. Every session is told to go straight to the colleague who knows, and may have one review its work before handing it back. Give a session a one-word **job title** and a SendMessage to that title, or to `CEO`, reaches it, whatever name it goes by after a restart.
 - **Meetings**: when three or more sessions must agree, any of them calls a meeting. Its members leave their desks for a meeting room, a SendMessage to the meeting's name reaches everyone at the table, and whoever called it closes it with the conclusion. A meeting quiet for 15 minutes ends by itself, and after 30 messages it passes on no more.
 - **Waiting on you**: what only you can decide (an approval, a choice between plans), any session puts on your list, just above the board: who is waiting, and on what, and that crab has a **?** by its head. Answer each right there, and the answer goes to the session that asked as your own words; ✓ takes one off unanswered. It stays there, through compactions, until it is settled.
+- **Themes**: switch how the office talks. A theme renames you and the ranks and gives the crabs a voice with each other and with you (one built in: 字节, a ByteDance colleague's way of talking, calling you 老板 or whatever you choose); what a report says stays plain, and code, commits, PRs and docs never take it. The office as it is is the default; your own themes are JSON files in `~/.claude/crab-office/themes/`.
 - **Text mode**: where the pane will not open or a click will not land, `/office text` prints the whole office, `/office card @who` a session's card, and `/office answer #id` answers what waits on you.
 - **Observe mode**: install it everywhere and let it only watch: [observe mode](#observe-mode) shows sessions and sends them nothing, and every `-p` run or SDK session observes by itself.
 - **The board tool**: every session gets an `office_board` tool to read the board, write to a whole department, everyone or you without interrupting anyone, call and close meetings, and, under a CEO, run the work.
@@ -80,6 +81,7 @@ The office speaks English by default. To switch to Chinese, set the plugin's `la
 | `/office card @who` | A session's card as text: task, recent talk, each instruction delivered or waiting, btw answers |
 | `/office ceo @who` | Make a session CEO; `/office ceo off` to have none |
 | `/office head @who` | Make a session its repository's head; `/office head off` to go back to the longest-serving |
+| `/office theme 字节 高总` | Switch the office's theme, and how you are addressed; `/office theme` lists them, `/office theme default` goes back |
 | `/office band` | Show or hide the strip of crabs above the prompt |
 | `/office close` | Close the office |
 

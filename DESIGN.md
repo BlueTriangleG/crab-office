@@ -326,6 +326,28 @@ say different things. A task is cut at 60 characters and a board line at 140,
 as the pane cuts them at its width. A command's text also reaches the
 session's own model, so a long `/office text` costs that session context.
 
+## Themes
+
+A theme changes how the office names the chairman and its ranks, and the voice
+the crabs talk in, to each other and to the chairman, and nothing else: what a
+report says stays plain, and nothing a session makes (code, commits, PRs, docs,
+product copy) takes it. The office as it is is the default theme. One built-in
+theme ships (字节, a ByteDance colleague's voice); a person's own are JSON files
+in `themes/` (name, chairman, titles, voice, examples with `{chairman}`), and
+one of the same name wins over the built-in. `/office theme <name> [how to
+address you]` chooses one office-wide (`theme.json`); every session takes it on
+its next tick. The names go over the office's words (`setTheme`), so the
+drawing, the board and every reply follow; a board line to the chairman shows
+the name the chairman goes by now, and a post to that name reaches the
+chairman. The voice reaches each session's model as one note appended to its
+own conversation (`$.session.append`), once it is free: the system prompt never
+reaches the sessions (a plugin ahead of this one leaves the section out; no
+session's prompt snapshot held it), and a note in the conversation also governs
+how the session addresses the chairman in its own window. It is told again
+after a compaction, and when the theme changes; switched back to the default,
+a session that had a theme is told so, and one that never had one is told
+nothing. Observers are told nothing. Later, a theme may draw the crabs too.
+
 ## Observe mode
 
 A session in observe mode is shown in the office and sent nothing: it takes no

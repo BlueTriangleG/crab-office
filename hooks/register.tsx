@@ -73,7 +73,9 @@ import type { Line, LineRow, LineStatus } from "./lines.ts"
 import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
 import type { Meeting, MeetingFile } from "./meetings.ts"
-import { setLanguage, w } from "./words.ts"
+import { setLanguage, setTheme, w } from "./words.ts"
+import { BUILT_IN, DEFAULT_THEME, parseThemeArgs, themeNamed, themeNote, themeOff } from "./themes.ts"
+import type { Theme, ThemeChoice } from "./themes.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
 // session's snapshot file, which is how the other sessions see it; the
@@ -85,7 +87,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.14"
+const BUILD = "2026-11-05.15"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -121,6 +123,12 @@ const office = {
   pending: [] as Decision[],
   // The CEO's tracker (`lines/<writer>.json`).
   lines: [] as Line[],
+  // The office's theme as chosen (`theme.json`), the person's own themes
+  // (`themes/*.json`), and the theme in force: its key and how the chairman is called.
+  themeChoice: undefined as ThemeChoice | undefined,
+  themes: [] as Theme[],
+  themeKey: `${DEFAULT_THEME}|`,
+  themeChairman: "",
   watchedAt: 0,
   isDirty: true,
   lastWrite: 0,
@@ -577,8 +585,12 @@ async function tick($: EngineInterface) {
   office.meetingFiles = meetingFiles
   office.meetings = meetingsOf(meetingFiles, [me, ...office.others], now)
   await btw($, now)
+  office.themeChoice = await $.fs.read(`${office.base}/theme.json`).then((s) => JSON.parse(s) as ThemeChoice).catch(() => undefined)
+  office.themes = await readJsonDir<Theme>($, `${office.base}/themes`)
+  applyTheme($)
   // An observer is sent nothing: no memo, no instruction, no CEO's handover.
   if (me.observe === true) return
+  await tellTheme($, now)
   await adjourn($, now)
   await deliver($, now)
   await handOver($, now)
@@ -819,6 +831,52 @@ async function meet($: EngineInterface, input: BoardInput, me: Snapshot, now: nu
   messageSent(me, input.agentId, w().meetingTask(name), w().meetLine(text), now)
   changed($)
   return w().tool.meetOpened(name, sent.heard, sent.missed)
+}
+
+// The theme in force: its names over the office's words, so the drawing and
+// every reply name the chairman and the ranks its way.
+function applyTheme($: EngineInterface) {
+  const choice = office.themeChoice
+  const theme = choice === undefined || choice.name === DEFAULT_THEME ? undefined : themeNamed(choice.name, office.themes)
+  const chairman = theme === undefined ? "" : (choice?.chairman ?? theme.chairman ?? "")
+  const key = theme === undefined ? `${DEFAULT_THEME}|` : `${theme.name}|${chairman}`
+  if (key === office.themeKey) return
+  office.themeKey = key
+  office.themeChairman = chairman
+  setTheme(theme === undefined ? undefined : { ...(chairman ? { chairman } : {}), ...(theme.titles ? { titles: theme.titles } : {}) })
+  $.ui.invalidate("ui.render")
+}
+
+// This session's model is told of the theme once, in its own conversation (the
+// system prompt never reaches it: a plugin ahead of this one leaves the section
+// out), when it is free: at start, after a compaction, and when the theme
+// changes. A session that never had a theme is told nothing of the default.
+async function tellTheme($: EngineInterface, now: number) {
+  const me = office.me
+  if (me === undefined || me.themeSeen === office.themeKey || !isFree(me, now)) return
+  const isDefault = office.themeKey.startsWith(`${DEFAULT_THEME}|`)
+  const theme = isDefault ? undefined : themeNamed(office.themeKey.split("|")[0] ?? "", office.themes)
+  const text = theme !== undefined ? themeNote(theme, office.themeChairman || w().chairman) : me.themeSeen === undefined ? undefined : themeOff()
+  me.themeSeen = office.themeKey
+  changed($)
+  if (text !== undefined) await $.session.append({ message: { type: "user", content: [{ type: "text", text }] } }).catch(() => undefined)
+}
+
+// "/office theme": the themes there are; "/office theme <name> [how to address
+// you]"; "/office theme default".
+async function chooseTheme($: EngineInterface, args: string): Promise<string> {
+  const names = [DEFAULT_THEME, ...new Set([...BUILT_IN, ...office.themes].map((t) => t.name))]
+  const current = office.themeKey.split("|")[0] ?? DEFAULT_THEME
+  const parsed = parseThemeArgs(args)
+  if (parsed === undefined) return w().themeList(names, current)
+  const isDefault = parsed.name.toLowerCase() === DEFAULT_THEME
+  const theme = isDefault ? undefined : themeNamed(parsed.name, office.themes)
+  if (!isDefault && theme === undefined) return w().noTheme(parsed.name)
+  const choice: ThemeChoice = { name: theme?.name ?? DEFAULT_THEME, at: Date.now(), ...(parsed.chairman ? { chairman: parsed.chairman } : {}) }
+  await $.fs.write(`${office.base}/theme.json`, JSON.stringify(choice))
+  office.themeChoice = choice
+  applyTheme($)
+  return theme === undefined ? w().themeDefault : w().themeSet(theme.name, office.themeChairman || w().chairman)
 }
 
 // office_board ask and settle: any session puts what only the chairman can
@@ -1151,6 +1209,7 @@ async function restore($: EngineInterface, me: Snapshot) {
   me.obeyed = before.obeyed ?? []
   if (before.ceoSeen !== undefined) me.ceoSeen = before.ceoSeen
   if (before.nudged !== undefined) me.nudged = before.nudged
+  if (before.themeSeen !== undefined) me.themeSeen = before.themeSeen
 }
 
 // Only a memo for whoever is free is one session's: a named or everyone's memo
@@ -1274,6 +1333,12 @@ export const register: Register = (on, options) => {
       )
     })
     office.stop = () => timer.cancel()
+    return r
+  })
+
+  on("session.compact", async ($, e, next) => {
+    const r = await next(e)
+    if (office.me !== undefined && !office.themeKey.startsWith(`${DEFAULT_THEME}|`)) office.me.themeSeen = undefined
     return r
   })
 
@@ -1525,6 +1590,7 @@ export const register: Register = (on, options) => {
       office.isOpen = false
       return { text: w().closed }
     }
+    if (arg === "theme" || arg.startsWith("theme ")) return { text: await chooseTheme($, args.slice(5)) }
     if (arg === "band") {
       office.isBandHidden = !office.isBandHidden
       $.ui.invalidate("ui.render")
