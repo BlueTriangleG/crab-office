@@ -2,6 +2,7 @@ import { clip } from "./office.ts"
 import type { Detail, Talk } from "./office.ts"
 import { titleOf } from "./pixels.ts"
 import type { Company, SeatData } from "./pixels.ts"
+import type { LineRow } from "./lines.ts"
 import { w } from "./words.ts"
 
 // The office as text, for a terminal where the pane will not open or a click
@@ -22,7 +23,14 @@ function seatLine(seat: SeatData, indent: string, sign: string | null | undefine
   return `${indent}${mark} ${name}${sign ? ` [${sign}]` : ""}  ${status}${seat.task ? ` · ${clip(seat.task, TASK_MAX)}` : ""}`
 }
 
-export function officeText(company: Company, waiting: { id: string; who: string; text: string }[]): string {
+export function linesText(lines: LineRow[]): string[] {
+  return [
+    w().linesHead(lines.length),
+    ...lines.map((l) => `  ${l.name}  ${w().lineStatus[l.status]}  ${l.owner === undefined ? "" : `${l.owner} · `}${clip(l.text, TASK_MAX * 2)} · ${l.when}`),
+  ]
+}
+
+export function officeText(company: Company, waiting: { id: string; who: string; text: string }[], lines: LineRow[] = []): string {
   const rooms = company.rooms.flatMap((room) => [
     w().textRoom(room.title),
     ...room.teams.flatMap((team, i) => {
@@ -34,6 +42,7 @@ export function officeText(company: Company, waiting: { id: string; who: string;
   const board = (company.board ?? []).slice(-BOARD_LINES)
   return [
     ...(company.header ? [company.header, ""] : []),
+    ...(lines.length > 0 ? [...linesText(lines), ""] : []),
     ...rooms,
     "",
     w().chairmanList(waiting.length),

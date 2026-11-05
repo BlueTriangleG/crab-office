@@ -1,6 +1,6 @@
 import { expect, test } from "claude-code/testing"
 
-import { SEAT_COLS, SEAT_ROWS, boardTopOf, drawPart, heightOf, lidOf, office, partOf, restingOf, runsOf, slicesOf } from "../hooks/pixels.ts"
+import { SEAT_COLS, SEAT_ROWS, boardTopOf, roomBottomOf, drawPart, heightOf, lidOf, office, partOf, restingOf, runsOf, slicesOf } from "../hooks/pixels.ts"
 import type { Company, SeatData } from "../hooks/pixels.ts"
 
 import { setLanguage } from "../hooks/words.ts"
@@ -467,4 +467,20 @@ test("the board starts on its own row, so the pane can put what waits on the cha
   const top = boardTopOf(company, 34)
   expect(drawn.cells[top]!.map((c) => c.ch).join("")).toContain("共享白板")
   expect(drawn.cells[top - 1]!.map((c) => c.ch).join("")).not.toContain("共享白板")
+})
+
+test("a room ends on a row of its own, so the pane can put the CEO's tracker under the CEO's office", async () => {
+  const company: Company = {
+    rooms: [
+      { title: "CEO 办公室", footer: "", teams: [team(0)], top: true },
+      { title: "web-app 部", footer: "", teams: [team(1)] },
+    ],
+  }
+  const drawn = office(company, 60, 0)
+  const cut = roomBottomOf(company, 60, 0)
+  const text = (r: number) => drawn.cells[r]!.map((c) => c.ch).join("")
+  const rows = drawn.cells.map((_, r) => r)
+  expect(rows.filter((r) => r < cut).some((r) => text(r).includes("CEO 办公室"))).toBe(true)
+  expect(rows.filter((r) => r >= cut).some((r) => text(r).includes("web-app 部"))).toBe(true)
+  expect(rows.filter((r) => r >= cut).some((r) => text(r).includes("CEO 办公室"))).toBe(false)
 })

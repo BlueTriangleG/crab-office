@@ -37,3 +37,11 @@ test("a card as text: its rows, its talk, each instruction delivered or still wa
   expect(text).toContain(`再跑一遍测试  ${w().orderDelivered}`)
   expect(text).toContain(`改 README  ${w().orderQueued}`)
 })
+
+test("the CEO's tracker as text: each line with its status, owner and where it stands", async () => {
+  const company = companyOf([], "a", T0, { memos: [], claims: [] })
+  const text = officeText(company, [], [{ name: "phoenix-down", status: "stuck", owner: "infra", text: "查 ECS 事件", when: "14:31" }])
+  expect(text).toContain(w().linesHead(1))
+  expect(text).toMatch(/phoenix-down .*infra .*查 ECS 事件/)
+  expect(text).toContain(w().lineStatus.stuck)
+})

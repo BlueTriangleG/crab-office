@@ -546,7 +546,7 @@ export function elapsed(ms: number): string {
   return `${Math.floor(s / 3600)}h${String(Math.floor(s / 60) % 60).padStart(2, "0")}`
 }
 
-function clockOf(at: number): string {
+export function clockOf(at: number): string {
   const d = new Date(at)
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`
 }

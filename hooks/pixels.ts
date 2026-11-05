@@ -806,6 +806,13 @@ export function boardTopOf(company: Company, cols: number): number {
   return layoutOf(company, cols).bottom
 }
 
+// The row under a room, `index` in the company's rooms: the pane puts the CEO's
+// tracker under the CEO's office there.
+export function roomBottomOf(company: Company, cols: number, index: number): number {
+  const placed = layoutOf(company, cols).rooms[index]
+  return placed === undefined ? 0 : placed.y + placed.h
+}
+
 export function heightOf(company: Company, cols: number): number {
   return (
     layoutOf(company, cols).bottom + boardHeight(company)

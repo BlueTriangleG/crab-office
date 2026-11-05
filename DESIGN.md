@@ -340,6 +340,21 @@ office work. A warm background process the daemon keeps is no `-p` run, though
 no one is at its prompt yet, so it is not made an observer. The snapshot says
 `observe: true`, so every session leaves it alone.
 
+## The CEO's tracker
+
+The CEO keeps each line of work on a tracker (`office_board track`: a line's
+one-word name, its status, stuck, waiting (on the chairman), risk, ok or done,
+where it stands and the next step, and the session that owns it, which stands
+until another is named). The state lives in files, not in the CEO's context,
+which a compaction cuts to a summary. Each CEO writes its own file,
+`lines/<sessionId>.json`, a line's name in lower case to the line; the latest
+word on a line stands whichever CEO wrote it, so a new CEO takes the tracker
+over. It sits in the pane under the CEO's office, the most urgent line first,
+each status in its colour (at the top while the CEO is at a meeting), and in
+`/office text` and the CEO's `read`. A line done folds away after a day. Not
+built: jobs counted against a line, and nudging the CEO about a line left
+quiet.
+
 ## The chairman's list
 
 What only the chairman can decide (an approval, a choice between plans, a

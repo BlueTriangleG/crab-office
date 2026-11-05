@@ -44,7 +44,7 @@ import {
 } from "./office.ts"
 import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
 import type { BoardLine } from "./pixels.ts"
-import { LEADER_COLOR, SEAT_COLS, boardTopOf, heightOf, office as draw, partOf, slicesOf, titleOf } from "./pixels.ts"
+import { LEADER_COLOR, SEAT_COLS, boardTopOf, roomBottomOf, heightOf, office as draw, partOf, slicesOf, titleOf } from "./pixels.ts"
 import type { Speaker } from "./pixels.ts"
 import {
   NO_ORG,
@@ -67,7 +67,9 @@ import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
 import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
 import { answerOf, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
-import { cardText, officeText } from "./text.ts"
+import { cardText, linesText, officeText } from "./text.ts"
+import { LINE_STATUSES, lineRefusal, lineRowsOf, linesOf } from "./lines.ts"
+import type { Line, LineRow, LineStatus } from "./lines.ts"
 import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
 import type { Meeting, MeetingFile } from "./meetings.ts"
@@ -83,7 +85,7 @@ import { setLanguage, w } from "./words.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.8"
+const BUILD = "2026-11-05.9"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -117,6 +119,8 @@ const office = {
   meetings: [] as Meeting[],
   // What is waiting on the chairman (`decisions/`, `settled/`).
   pending: [] as Decision[],
+  // The CEO's tracker (`lines/<writer>.json`).
+  lines: [] as Line[],
   watchedAt: 0,
   isDirty: true,
   lastWrite: 0,
@@ -156,7 +160,39 @@ const GOLD = "#e8c468"
 const CHALK = "#5d7a66"
 
 // A board line shown whole, on a card the colour of the board.
-// What is waiting on the chairman, under everything else: who asked and what,
+const LINE_COLORS: Record<LineStatus, string> = { stuck: "#e5534b", waiting: "#f2c037", risk: "#d9a441", ok: "#57ab5a", done: "#768390" }
+
+// The CEO's tracker, under its office: each line, its status in its colour, its
+// owner and where it stands.
+function trackerCard(el: Pick<ClientElements, "Box" | "Text">, rows: LineRow[]) {
+  const { Box, Text } = el
+  if (rows.length === 0)
+    return (
+      <Text key="tracker-card" dimColor>
+        {w().linesHead(0)}
+      </Text>
+    )
+  return (
+    <Box key="tracker-card" flexDirection="column" borderStyle="round" borderColor={LEADER_COLOR} paddingX={1}>
+      <Text bold color={LEADER_COLOR}>
+        {w().linesHead(rows.length)}
+      </Text>
+      {rows.map((r) => (
+        <Box key={`line-${r.name}`} flexDirection="row" columnGap={1}>
+          <Text bold color={LINE_COLORS[r.status]}>
+            {`● ${w().lineStatus[r.status]}`}
+          </Text>
+          <Text bold>{r.name}</Text>
+          {r.owner !== undefined && <Text dimColor>{r.owner}</Text>}
+          <Text wrap="wrap">{r.text}</Text>
+          <Text dimColor>{r.when}</Text>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+// What is waiting on the chairman, between the rooms and the board: who asked and what,
 // each with a field to answer it there and a ✓ that takes it off unanswered.
 function chairmanCard(el: Pick<ClientElements, "Box" | "Text" | "Button" | "Input">, rows: { id: string; who: string; text: string }[]) {
   const { Box, Text, Button, Input } = el
@@ -522,7 +558,7 @@ async function tick($: EngineInterface) {
   office.org = org
   office.memos = await readJsonDir<Memo>($, `${office.base}/memos`)
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
-  const [given, reported, judged, duties, titles, meetingFiles, amends, asked, settled] = await Promise.all([
+  const [given, reported, judged, duties, titles, meetingFiles, amends, asked, settled, tracked] = await Promise.all([
     readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
     readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
     readJsonDir<Verdict>($, `${office.base}/verdicts`, JOB_KEEP_MS),
@@ -532,8 +568,10 @@ async function tick($: EngineInterface) {
     readJsonDir<Amend>($, `${office.base}/amends`, JOB_KEEP_MS),
     readJsonDir<Decision>($, `${office.base}/decisions`, JOB_KEEP_MS),
     readJsonDir<Settled>($, `${office.base}/settled`, JOB_KEEP_MS),
+    readJsonDir<Record<string, Line>>($, `${office.base}/lines`),
   ])
   office.pending = pendingOf(asked, settled)
+  office.lines = linesOf(tracked, now)
   office.jobs = jobsOf(given, reported, judged, amends)
   office.duties = dutiesOf(duties)
   office.titles = titlesOf(titles)
@@ -917,6 +955,8 @@ async function answerItem($: EngineInterface, d: Decision, text: string): Promis
 
 type BoardInput = {
   action?: string
+  line?: string
+  status?: string
   decision?: string
   meeting?: string
   memo?: string
@@ -927,7 +967,7 @@ type BoardInput = {
   agentId?: string
 }
 
-const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "amend", "withdraw", "appoint", "title"])
+const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title"])
 
 // The CEO's actions, a head's duties and a session's report: each judged by
 // refusalOf before anything is written, each delivery through the engine's own
@@ -944,7 +984,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
   let target: Snapshot | undefined
   // A job title is set on this session itself unless `to` names another.
   if (action === "title" && !input.to) target = me
-  else if (action === "assign" || action === "duty" || action === "appoint" || action === "title") {
+  else if (action === "assign" || action === "duty" || action === "appoint" || action === "title" || (action === "track" && input.to)) {
     if (!input.to) return w().tool.needTo
     const found = sessionNamed(input.to, snaps, peers, now, office.titles)
     if (found.many.length > 1) return w().ambiguous(found.many.map(nameOf))
@@ -970,6 +1010,22 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     return w().appointDone(labelOf(target, peers, office.titles), titleOf("chief"), false)
   }
   if (text === "" && action !== "accept" && action !== "withdraw") return w().tool.empty
+  if (action === "track") {
+    const name = input.line?.trim() ?? ""
+    const status = input.status?.trim().toLowerCase() ?? ""
+    const lineRefused = lineRefusal(name, status, text)
+    if (lineRefused !== undefined) return lineRefused
+    const key = name.toLowerCase()
+    // Its owner stands until another is named, so a word on how it goes needs no `to`.
+    const owner = target?.sessionId ?? office.lines.find((l) => l.name.toLowerCase() === key)?.owner
+    const line: Line = { name, status: status as LineStatus, text, at: now, by: me.sessionId, ...(owner === undefined ? {} : { owner }) }
+    const file = `${office.base}/lines/${me.sessionId}.json`
+    const mine = await $.fs.read(file).then((s) => JSON.parse(s) as Record<string, Line>).catch(() => ({}))
+    await $.fs.write(file, JSON.stringify({ ...mine, [key]: line }))
+    office.lines = linesOf([Object.fromEntries(office.lines.map((l) => [l.name.toLowerCase(), l])), { [key]: line }], now)
+    $.ui.invalidate("ui.render")
+    return w().tool.tracked(name)
+  }
   if (action === "title" && target !== undefined) {
     const titleRefused = titleRefusal(text, target.sessionId, office.titles, snaps, peers, now)
     if (titleRefused !== undefined) return titleRefused
@@ -1186,8 +1242,10 @@ export const register: Register = (on, options) => {
         properties: {
           action: {
             type: "string",
-            enum: ["read", "post", "claim", "meet", "close", "ask", "settle", "staff", "duty", "assign", "report", "accept", "reject", "amend", "withdraw", "appoint", "title"],
+            enum: ["read", "post", "claim", "meet", "close", "ask", "settle", "staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title"],
           },
+          line: { type: "string", description: w().tool.line },
+          status: { type: "string", enum: LINE_STATUSES, description: w().tool.status },
           meeting: { type: "string", description: w().tool.meeting },
           decision: { type: "string", description: w().tool.decision },
           memo: { type: "string", description: w().tool.memo },
@@ -1353,6 +1411,7 @@ export const register: Register = (on, options) => {
         result: [
           inbox.length > 0 ? w().tool.inbox(inbox) : w().tool.noInbox,
           w().tool.latest(boardOf(snaps, now, undefined, office.org)),
+          ...(rank === "ceo" ? [linesText(lineRowsOf(office.lines, snaps, office.titles)).join("\n")] : []),
           ...(office.pending.length === 0
             ? []
             : [[w().pendingHead, ...rowsOf(office.pending, snaps, office.titles).map((r) => w().pendingLine(r.id, r.who, r.text))].join("\n")]),
@@ -1465,7 +1524,14 @@ export const register: Register = (on, options) => {
       }
     }
     if (arg.startsWith("say")) return { text: await say($, args.slice(3)) }
-    if (arg === "text") return { text: officeText(companyNow(), rowsOf(office.pending, everyone(), office.titles)) }
+    if (arg === "text")
+      return {
+        text: officeText(
+          companyNow(),
+          rowsOf(office.pending, everyone(), office.titles),
+          office.org.ceo === undefined ? [] : lineRowsOf(office.lines, everyone(), office.titles),
+        ),
+      }
     if (arg.startsWith("answer ") || arg.startsWith("settle ") || arg === "answer" || arg === "settle")
       return { text: await byCommand($, arg.startsWith("answer") ? "answer" : "settle", args.slice(6)) }
     for (const verb of ["tell", "btw", "card"] as const)
@@ -1596,9 +1662,15 @@ export const register: Register = (on, options) => {
             />
           )
         })
+      // With a CEO, its tracker sits under its office (at the top, where the
+      // CEO's office is away at a meeting).
+      const ceoRoom = company.rooms.findIndex((r) => r.title === w().ceoRoom)
+      const ceoBottom = office.org.ceo === undefined ? 0 : Math.min(ceoRoom < 0 ? 0 : roomBottomOf(company, cols, ceoRoom), boardTop)
       return (
         <Box flexDirection="column">
-          {bands(0, boardTop, "")}
+          {bands(0, ceoBottom, "ceo-")}
+          {office.org.ceo !== undefined && trackerCard({ Box, Text }, lineRowsOf(office.lines, snaps, office.titles))}
+          {bands(ceoBottom, boardTop, "")}
           {chairmanCard({ Box, Text, Button, Input }, rowsOf(office.pending, snaps, office.titles))}
           {bands(boardTop, drawn.rows, "board-")}
           <Box flexDirection="column" borderStyle="round" borderColor="#5d7a66" paddingX={1}>

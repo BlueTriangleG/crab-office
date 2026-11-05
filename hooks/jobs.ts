@@ -56,11 +56,12 @@ export type BoardAction =
   | "appoint"
   | "title"
   | "amend"
+  | "track"
 
 const OPEN = new Set<JobStatus>(["assigned", "rejected", "reported"])
 // What only the CEO's own loop may do: a subagent of the CEO session shares its
 // session id, and may have been told it is the CEO.
-const CEO_ONLY = new Set<BoardAction>(["assign", "appoint", "duty", "accept", "reject", "withdraw", "amend"])
+const CEO_ONLY = new Set<BoardAction>(["assign", "appoint", "duty", "accept", "reject", "withdraw", "amend", "track"])
 
 // Who may do what, decided here and nowhere else: the CEO assigns, judges and
 // appoints heads; a head or the CEO writes duties, a head for its own repository
@@ -84,6 +85,8 @@ export function refusalOf(
       if (rank !== "ceo") return w().tool.notCeo
       if (job === undefined) return w().tool.noJob
       return job.status === "reported" ? undefined : w().tool.notReported
+    case "track":
+      return rank === "ceo" ? undefined : w().tool.notCeo
     case "amend":
       if (rank !== "ceo") return w().tool.notCeo
       if (job === undefined) return w().tool.noJob
