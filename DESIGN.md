@@ -335,7 +335,13 @@ product copy) takes it. The office as it is is the default theme. One built-in
 theme ships (字节, a ByteDance colleague's voice, from what ByteDance has said
 of itself: colleagues go by name or 同学 and never 老师 or 某总, under Context,
 not Control; candid and clear, the conclusion first; no empty 赋能 or 打造闭环;
-the chairman alone keeps a boss's title, as the person chose). A theme may
+the chairman alone keeps a boss's title, as the person chose: X总). A theme's
+name for the chairman may have a blank in it (`{name}总`): chosen without a
+name, the CEO (or, with none, the session it was chosen in) asks on the
+chairman's list how the chairman is to be addressed, and the answer, put any
+way (高, 高总, 叫我高总), fills the blank office-wide; until then the theme's
+stand-in (老板) holds. Choosing the theme again, or another, settles an older
+question. A theme may
 rename terms through the office's own words (开会 → 拉个组会, 共享白板 → 大群,
 派活 → 派需求, and the chairman's name for 董事长), in one pass, the longest
 first so a longer word can keep itself (会议室 over 会议), but never inside what

@@ -6,8 +6,12 @@ import { w } from "./words.ts"
 // product copy), is never themed. One day a theme may draw the crabs too.
 export type Theme = {
   name: string
-  // How everyone addresses the chairman; the choice can name another.
+  // How everyone addresses the chairman; the choice can name another. With
+  // `{name}` in it (X总), the CEO asks the chairman what the name is, and
+  // `chairmanUnnamed` stands until the chairman answers.
   chairman?: string
+  chairmanUnnamed?: string
+  nameQuestion?: string
   // Ranks' and roles' names, by the keys the office's own titles use.
   titles?: Record<string, string>
   // Terms renamed through the office's own words (开会 → 组会); the longest wins.
@@ -31,7 +35,9 @@ export const BUILT_IN: Theme[] = [
   {
     name: "字节",
     language: "zh",
-    chairman: "老板",
+    chairman: "{name}总",
+    chairmanUnnamed: "老板",
+    nameQuestion: "以后在办公室里怎么称呼您？「X总」的 X 填什么（比如：高）",
     titles: { chief: "TL", leader: "同学", lead: "同学" },
     terms: {
       螃蟹有限公司: "螃蟹跳动",
@@ -88,4 +94,26 @@ export function themeNote(theme: Theme, chairman: string): string {
 
 export function themeOff(): string {
   return w().themeOff
+}
+
+// Whether the chairman has yet to say how to be addressed: the theme's name has
+// a blank in it, and the choice fills none.
+export function needsName(theme: Theme, choice: ThemeChoice): boolean {
+  return choice.chairman === undefined && (theme.chairman ?? "").includes("{name}")
+}
+
+export function chairmanFor(theme: Theme, choice: ThemeChoice): string {
+  if (choice.chairman !== undefined) return choice.chairman
+  if (needsName(theme, choice)) return theme.chairmanUnnamed ?? ""
+  return theme.chairman ?? ""
+}
+
+// The name in the chairman's answer, as it was put: "高", "高总", "叫我高总".
+export function nameFrom(answer: string): string {
+  return answer
+    .trim()
+    .replace(/[。.!！]+$/, "")
+    .replace(/^(叫我|我是|就叫|称呼我)/, "")
+    .replace(/总$/, "")
+    .trim()
 }

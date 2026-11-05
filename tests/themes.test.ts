@@ -1,7 +1,7 @@
 import { expect, test } from "claude-code/testing"
 
 import { companyOf, createSnapshot, messageSent, promptOf, targetOf } from "../hooks/office.ts"
-import { BUILT_IN, parseThemeArgs, themeNamed, themeNote, themeOff } from "../hooks/themes.ts"
+import { BUILT_IN, chairmanFor, nameFrom, needsName, parseThemeArgs, themeNamed, themeNote, themeOff } from "../hooks/themes.ts"
 import { setLanguage, setTheme, w } from "../hooks/words.ts"
 
 setLanguage("zh")
@@ -67,4 +67,24 @@ test("the built-in 字节 theme speaks Chinese, calls colleagues 同学 and rena
   expect(t?.titles?.lead).toBe("同学")
   expect(t?.terms?.["会议"]).toBe("组会")
   expect(t?.voice).toContain("同学")
+})
+
+test("字节 calls the chairman X总, and until the chairman has said what X is, 老板", async () => {
+  const byte = BUILT_IN.find((x) => x.name === "字节")!
+  expect(byte.chairman).toBe("{name}总")
+  expect(byte.nameQuestion).toContain("总")
+  const chosen = { name: "字节", at: T0 }
+  expect(needsName(byte, chosen)).toBe(true)
+  expect(chairmanFor(byte, chosen)).toBe("老板")
+  // named, by the answer or by the command
+  expect(chairmanFor(byte, { ...chosen, chairman: "高总" })).toBe("高总")
+  expect(needsName(byte, { ...chosen, chairman: "高总" })).toBe(false)
+  // a theme with a plain name asks nothing
+  const plain = { name: "x", chairman: "老大" }
+  expect(needsName(plain, chosen)).toBe(false)
+  expect(chairmanFor(plain, chosen)).toBe("老大")
+})
+
+test("the answer to what X is, however it is put, is the name alone", async () => {
+  for (const said of ["高", "高总", " 叫我高总 ", "我是高总。"]) expect(nameFrom(said)).toBe("高")
 })

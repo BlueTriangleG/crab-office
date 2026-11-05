@@ -74,7 +74,7 @@ import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
 import type { Meeting, MeetingFile } from "./meetings.ts"
 import { setLanguage, setTheme, w } from "./words.ts"
-import { BUILT_IN, DEFAULT_THEME, parseThemeArgs, themeNamed, themeNote, themeOff } from "./themes.ts"
+import { BUILT_IN, DEFAULT_THEME, chairmanFor, nameFrom, needsName, parseThemeArgs, themeNamed, themeNote, themeOff } from "./themes.ts"
 import type { Theme, ThemeChoice } from "./themes.ts"
 
 // Every hook passes its event on unchanged. Three effects are the mod's own: this
@@ -87,7 +87,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.16"
+const BUILD = "2026-11-05.17"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -840,7 +840,7 @@ async function meet($: EngineInterface, input: BoardInput, me: Snapshot, now: nu
 function applyTheme($: EngineInterface) {
   const choice = office.themeChoice
   const theme = choice === undefined || choice.name === DEFAULT_THEME ? undefined : themeNamed(choice.name, office.themes)
-  const chairman = theme === undefined ? "" : (choice?.chairman ?? theme.chairman ?? "")
+  const chairman = theme === undefined || choice === undefined ? "" : chairmanFor(theme, choice)
   const key = theme === undefined ? `${DEFAULT_THEME}|` : `${theme.name}|${chairman}`
   if (key === office.themeKey) return
   office.themeKey = key
@@ -881,7 +881,31 @@ async function chooseTheme($: EngineInterface, args: string): Promise<string> {
   await $.fs.write(`${office.base}/theme.json`, JSON.stringify(choice))
   office.themeChoice = choice
   applyTheme($)
+  // An older question of how to address the chairman is moot now.
+  for (const d of office.pending.filter((x) => x.theme !== undefined)) await settle($, d, "")
+  if (theme !== undefined && needsName(theme, choice) && theme.nameQuestion !== undefined) {
+    // The CEO asks, where there is one; else the session the theme was chosen in.
+    const asked: Decision = { id: idOf(Date.now()), by: office.org.ceo ?? office.me?.sessionId ?? "", at: Date.now(), text: theme.nameQuestion, theme: theme.name }
+    await $.fs.write(`${office.base}/decisions/${asked.id}.json`, JSON.stringify(asked))
+    office.pending = [...office.pending, asked]
+  }
   return theme === undefined ? w().themeDefault : w().themeSet(theme.name, office.themeChairman || w().chairman)
+}
+
+// The chairman's answer to how to be addressed: the theme's name filled in,
+// office-wide, so every session is told the name in its next note.
+async function nameChairman($: EngineInterface, d: Decision, answer: string): Promise<string> {
+  const choice = office.themeChoice
+  const theme = choice === undefined ? undefined : themeNamed(choice.name, office.themes)
+  const name = nameFrom(answer)
+  await settle($, d, answer)
+  if (choice === undefined || theme === undefined || name === "") return w().themeDefault
+  const chairman = (theme.chairman ?? "{name}").replace("{name}", name)
+  const named: ThemeChoice = { ...choice, chairman, at: Date.now() }
+  await $.fs.write(`${office.base}/theme.json`, JSON.stringify(named))
+  office.themeChoice = named
+  applyTheme($)
+  return w().themeNamedYou(chairman)
 }
 
 // office_board ask and settle: any session puts what only the chairman can
@@ -1009,6 +1033,7 @@ async function byCommand($: EngineInterface, verb: "answer" | "settle", args: st
 // The chairman's answer to an item on the list: to the session that asked, as
 // the chairman's own instruction, and the item settled with it.
 async function answerItem($: EngineInterface, d: Decision, text: string): Promise<string> {
+  if (d.theme !== undefined) return nameChairman($, d, text)
   await order($, d.by, answerOf(d, text))
   await settle($, d, text)
   const asker = everyone().find((s) => s.sessionId === d.by)
