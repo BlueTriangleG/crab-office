@@ -167,6 +167,9 @@ const office = {
   // yet: it loads plugins like any session and drew as a second, phantom crab
   // beside the real one. It joins the office at its first turn.
   isSpare: false,
+  // What session.start knew that a later join needs (join).
+  cwd: "",
+  isObserving: false,
 }
 
 // A btw asked of a crab, or an instruction given to a session: `answer` is the
@@ -556,9 +559,40 @@ async function deliver($: EngineInterface, now: number) {
   await $.prompt.submit({ text })
 }
 
+// The session this process runs as joins the office: at session.start, and
+// again once a /resume or /clear has ended the one before, as the process goes
+// on under another id with no session.start of its own.
+async function join($: EngineInterface) {
+  const [sessionId, root, model] = await Promise.all([
+    $.session.id(),
+    $.session.root().catch(() => office.cwd),
+    $.session.model().catch(() => undefined),
+  ])
+  // A worktree's `.git` is a file naming its repository; a checkout's is a
+  // folder, which a read rejects.
+  const gitFile = await $.fs.read(`${root}/.git`).catch(() => undefined)
+  const place = placeOf(root, gitFile)
+  const me = createSnapshot(
+    sessionId,
+    place.project,
+    model,
+    Date.now(),
+    place.team,
+  )
+  me.build = BUILD
+  await restore($, me)
+  if (office.isObserving) me.observe = true
+  office.me = me
+  await refreshTalk($).catch(() => undefined)
+  office.isDirty = true
+}
+
 async function tick($: EngineInterface) {
+  // After a /resume or /clear the ended session keeps still until the process
+  // answers to the next id, which then joins in its place.
+  if (office.me?.ended === true && (await $.session.id()) !== office.me.sessionId) await join($)
   const me = office.me
-  if (me === undefined || office.isSpare) return
+  if (me === undefined || me.ended === true || office.isSpare) return
   const now = Date.now()
   if (pruned(me, now)) changed($)
   if (office.isDirty || now - office.lastWrite >= HEARTBEAT_MS) {
@@ -1324,10 +1358,7 @@ export const register: Register = (on, options) => {
   setLanguage(office.language)
   on("session.start", async ($, e, next) => {
     const r = await next(e)
-    const [sessionId, root, model, configDir, home, kind] = await Promise.all([
-      $.session.id(),
-      $.session.root().catch(() => e.cwd),
-      $.session.model().catch(() => undefined),
+    const [configDir, home, kind] = await Promise.all([
       $.env.get("CLAUDE_CONFIG_DIR"),
       $.env.get("HOME"),
       $.env.get("CLAUDE_CODE_SESSION_KIND"),
@@ -1336,25 +1367,12 @@ export const register: Register = (on, options) => {
     // A -p run or the SDK only observes, as observe mode does; a warm background
     // process is not one of those, though no person is at its prompt yet.
     const isObserving = options.mode === "observe" || (!e.isInteractive && kind !== "bg")
+    office.isObserving = isObserving
+    office.cwd = e.cwd
     office.base = `${configDir || `${home}/.claude`}/crab-office`
     office.sessions = `${configDir || `${home}/.claude`}/sessions`
-    // A worktree's `.git` is a file naming its repository; a checkout's is a
-    // folder, which a read rejects.
-    const gitFile = await $.fs.read(`${root}/.git`).catch(() => undefined)
-    const place = placeOf(root, gitFile)
-    office.me = createSnapshot(
-      sessionId,
-      place.project,
-      model,
-      Date.now(),
-      place.team,
-    )
-    office.me.build = BUILD
     office.shipped = await readThemes($, `${$.plugin.root}/themes`)
-    await restore($, office.me)
-    if (isObserving) office.me.observe = true
-    await refreshTalk($).catch(() => undefined)
-    office.isDirty = true
+    await join($)
     await $.command.register({
       name: COMMAND,
       description: w().commandDescription,
@@ -1403,7 +1421,9 @@ export const register: Register = (on, options) => {
   })
 
   on("session.end", async ($, e, next) => {
-    office.stop?.()
+    // A /resume or /clear ends the session, not the process: the tick goes on
+    // and joins as the session that takes its place.
+    if (e.reason !== "resume" && e.reason !== "clear") office.stop?.()
     const me = office.me
     if (me !== undefined) {
       me.ended = true
