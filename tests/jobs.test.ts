@@ -80,6 +80,12 @@ test("the watchdog: idle 10 min, waiting for approval 5 min, gone, working 60 mi
   expect(rules([open("j", "p")], [asks], T0 + 10 + WATCH.approvalMs - 1)).toEqual([])
   // 3: the session has gone
   expect(rules([open("j", "x")], [], T0 + 1)).toEqual(["j:3"])
+  // a live session whose heartbeat stalled for a minute has not gone home;
+  // one silent as long as the office takes to drop it, or ended, has
+  const quiet = worker("q", "idle", T0 + 5, T0)
+  expect(rules([open("j", "q")], [quiet], T0 + 60_000)).toEqual([])
+  expect(rules([open("j", "q")], [quiet], T0 + WATCH.goneMs + 1)).toEqual(["j:3"])
+  expect(rules([open("j", "q")], [{ ...quiet, ended: true }], T0 + 1)).toEqual(["j:3"])
   // 4: working a long time with no report
   const busy = (now: number) => [worker("w", "editing", T0 + 5, now)]
   expect(rules([open("j", "w")], busy(T0 + WATCH.workingMs + 1), T0 + WATCH.workingMs + 1)).toEqual(["j:4"])

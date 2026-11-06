@@ -1,4 +1,4 @@
-import { isGoneOf } from "./office.ts"
+import { LEAVE_MS } from "./office.ts"
 import type { Snapshot } from "./office.ts"
 import type { Org, Rank } from "./org.ts"
 import { w } from "./words.ts"
@@ -128,6 +128,11 @@ export const WATCH = {
   workingMs: 60 * 60_000,
   verdictMs: 10 * 60_000,
   againMs: 30 * 60_000,
+  // Not the 30 s that draws a crab gone: a live session misses that many
+  // heartbeats while its process stalls, and one did, put to the CEO as gone
+  // home while its subagent worked. Gone is as long as the office takes to
+  // drop a session.
+  goneMs: LEAVE_MS,
 }
 
 // `nudged`: when each `<job>:<rule>` was last put to the CEO, so none comes
@@ -141,7 +146,7 @@ export function nudgesOf(jobs: Job[], snaps: Snapshot[], now: number, nudged: Re
     if (job.status === "reported") return now - job.since > WATCH.verdictMs ? nudge(5, job.since) : []
     if (job.status !== "assigned" && job.status !== "rejected") return []
     const worker = snaps.find((s) => s.sessionId === job.to)
-    if (worker === undefined || isGoneOf(worker, now)) return nudge(3, job.since)
+    if (worker === undefined || worker.ended === true || now - worker.updatedAt > WATCH.goneMs) return nudge(3, job.since)
     const { status, since } = worker.leader
     if (status === "approval") return now - since > WATCH.approvalMs ? nudge(2, since, true) : []
     return [
