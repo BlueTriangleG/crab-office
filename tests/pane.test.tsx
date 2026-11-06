@@ -30,3 +30,18 @@ test("the pane ends with what is waiting on the chairman, saying so when nothing
   expect((await ui.find({ type: "Text", text: /Waiting on you/ }))?.text).toBe("Waiting on you: nothing")
   await ui.unmount()
 })
+
+test("opening the pane again mounts its drawings afresh, so one unmounted for an overrun comes back", async ($, on) => {
+  on("session.start", (_, e) => ({ cwd: e.cwd }))
+  on("ui.open", () => ({ value: { isPlaced: true } }))
+  await $.session.start({ cwd: "/work/web-app", surface: "terminal", isInteractive: true })
+  const ui = await $.ui.mount({ ...PANE, surface: "terminal" })
+  const keys = async () => (await ui.findAll({ type: "Client" })).map((c) => c.key)
+  const before = await keys()
+  expect(before.length).toBeGreaterThan(0)
+  await $.command.run({ command: "office", args: "", origin: { kind: "composer" }, presentation: { isFullscreen: false, columns: 120 } })
+  const after = await keys()
+  expect(after).toHaveLength(before.length)
+  expect(after.filter((k) => before.includes(k))).toEqual([])
+  await ui.unmount()
+})

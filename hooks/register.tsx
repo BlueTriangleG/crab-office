@@ -87,7 +87,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-05.21"
+const BUILD = "2026-11-06.1"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -137,6 +137,11 @@ const office = {
   isDirty: true,
   lastWrite: 0,
   isOpen: false,
+  // In every drawing's key, and moved on each /office: an overrun of a
+  // drawing's one-second budget (a frame cut in half by the Mac's sleep)
+  // unmounts it for good under its key, so a band stayed blank until a fresh
+  // key brought a new instance.
+  mounts: 0,
   isBandHidden: false,
   selected: null as string | null,
   others: [] as Snapshot[],
@@ -971,6 +976,7 @@ async function openPane($: EngineInterface): Promise<string | undefined> {
     return w().paneFailed(String(err))
   }
   office.isOpen = true
+  office.mounts += 1
   office.others = await readOthers($, Date.now())
   $.ui.invalidate("ui.render")
   return undefined
@@ -1728,18 +1734,19 @@ export const register: Register = (on, options) => {
   })
 
   on("ui.message", ($, e, next) => {
-    if (!e.element.startsWith("crab-office") && e.element !== "crab-band") return next(e)
+    if (!e.element.startsWith("crab-office") && !e.element.startsWith("crab-band")) return next(e)
+    const element = e.element.replace(/@\d+$/, "")
     const data = e.data as { select?: unknown; drawn?: unknown; board?: unknown; note?: unknown; ms?: unknown } | null
     // A drawing's frame time, kept in the snapshot beside its first frame.
     if (typeof data?.ms === "number") {
-      if (office.me !== undefined) office.me.drawn = { ...office.me.drawn, [`${e.element}:ms`]: data.ms }
+      if (office.me !== undefined) office.me.drawn = { ...office.me.drawn, [`${element}:ms`]: data.ms }
       return next(e)
     }
     // A drawing's first frame reports itself, so the snapshot shows the
     // surface module really drew in this session.
     if (data?.drawn === true) {
       if (office.me !== undefined) {
-        office.me.drawn = { ...office.me.drawn, [e.element]: Date.now() }
+        office.me.drawn = { ...office.me.drawn, [element]: Date.now() }
         office.isDirty = true
       }
       return next(e)
@@ -1783,7 +1790,7 @@ export const register: Register = (on, options) => {
           const rows: [number, number] = [a + from, b + from]
           return (
             <Client
-              key={`crab-office-${name}${i}`}
+              key={`crab-office-${name}${i}@${office.mounts}`}
               module="./crabs.tsx"
               props={{ part: partOf(company, cols, rows), selected: office.selected, rows }}
               width={cols}
@@ -1856,7 +1863,7 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column">
         <Client
-          key="crab-band"
+          key={`crab-band@${office.mounts}`}
           module="./crabs.tsx"
           props={{ part: partOf(band, 0), selected: office.selected }}
           height={heightOf(band, 0)}
