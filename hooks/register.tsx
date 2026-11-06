@@ -87,7 +87,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-06.1"
+const BUILD = "2026-11-06.2"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -557,8 +557,9 @@ async function deliver($: EngineInterface, now: number) {
 }
 
 async function tick($: EngineInterface) {
+  if (office.me?.ended === true) await moved($, office.me)
   const me = office.me
-  if (me === undefined || office.isSpare) return
+  if (me === undefined || office.isSpare || me.ended === true) return
   const now = Date.now()
   if (pruned(me, now)) changed($)
   if (office.isDirty || now - office.lastWrite >= HEARTBEAT_MS) {
@@ -1255,6 +1256,21 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
 // read back from this session's own snapshot, so nothing is handed twice, and so
 // is when it started: seniority picks each department's 大部长 and hands out the
 // hats, and taken from the reload it crowned whichever session reloaded first.
+// A /clear or /resume ends the conversation, not the process, which goes on
+// under another session id with no session.start: the office takes up that
+// one, in the same place, with what it kept there before. Until then, every
+// title set here went to the conversation that had ended.
+async function moved($: EngineInterface, was: Snapshot) {
+  const sessionId = await $.session.id()
+  if (sessionId === was.sessionId) return
+  const me = createSnapshot(sessionId, was.project, was.leader.model, Date.now(), was.team)
+  me.build = BUILD
+  if (was.observe === true) me.observe = true
+  await restore($, me)
+  office.me = me
+  office.isDirty = true
+}
+
 async function restore($: EngineInterface, me: Snapshot) {
   const before = parseSnapshot(
     await $.fs.read(liveOf(me.sessionId)).catch(() => ""),
@@ -1403,7 +1419,7 @@ export const register: Register = (on, options) => {
   })
 
   on("session.end", async ($, e, next) => {
-    office.stop?.()
+    if (e.reason !== "clear" && e.reason !== "resume") office.stop?.()
     const me = office.me
     if (me !== undefined) {
       me.ended = true

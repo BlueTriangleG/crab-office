@@ -1,4 +1,4 @@
-import { expect, test } from "claude-code/testing"
+import { expect, mock, test } from "claude-code/testing"
 
 const PANE = {
   plugin: "crab-office",
@@ -44,4 +44,37 @@ test("opening the pane again mounts its drawings afresh, so one unmounted for an
   expect(after).toHaveLength(before.length)
   expect(after.filter((k) => before.includes(k))).toEqual([])
   await ui.unmount()
+})
+
+test("after a /resume or /clear the office follows the conversation the session now holds", async ($, on) => {
+  const files = new Map<string, string>()
+  let id = "a"
+  on("session.id", () => ({ value: id }))
+  on("fs.write", (_, e) => (files.set(e.path, e.text), { value: undefined }))
+  on("fs.read", (_, e) => {
+    const text = files.get(e.path)
+    if (text === undefined) throw new Error(`ENOENT: ${e.path}`)
+    return { value: text }
+  })
+  on("fs.list", (_, e) => ({
+    value: [...files.keys()]
+      .filter((p) => p.startsWith(`${e.path}/`) && !p.slice(e.path.length + 1).includes("/"))
+      .map((p) => ({ name: p.slice(e.path.length + 1), kind: "file" as const, size: 0, mtimeMs: Date.now(), isLink: false })),
+  }))
+  on("command.register", (_, e) => ({ value: { command: e.name } }))
+  on("tool.register", (_, e) => ({ value: { tool: e.name } }))
+  on("session.end", (_, e) => ({ sessionId: e.sessionId }))
+  mock.env(on, { HOME: "/home" })
+  const clock = mock.clock(on)
+  on("session.start", (_, e) => ({ cwd: e.cwd }))
+  await $.session.start({ cwd: "/work/web-app", surface: "terminal", isInteractive: true })
+  await clock.advance(1000)
+  const live = (s: string) => JSON.parse(files.get(`/home/.claude/crab-office/live/${s}.json`) ?? "null") as { sessionId: string; ended?: boolean } | null
+  expect(live("a")?.ended).toBeUndefined()
+  await $.session.end({ reason: "resume", sessionId: "a", resume: { id: "a" } })
+  id = "b"
+  await clock.advance(1000)
+  expect(live("a")?.ended).toBe(true)
+  expect(live("b")?.sessionId).toBe("b")
+  expect(live("b")?.ended).toBeUndefined()
 })
