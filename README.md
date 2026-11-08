@@ -4,7 +4,7 @@
 
 Every Claude Code session running on your machine, and every subagent it hires, drawn as a pixel-art office.
 
-![The pane: the CEO in an office of its own with its tracker under it, three sessions at a meeting (one with a ? for you), a head delegating to three crew, what waits on you just above the shared whiteboard, and the field to write on the board](docs/office.png)
+![The office running: a CEO in its own office, three sessions at a meeting, a head handing work down to its crew and getting it back, and a room cheering when its session finishes](docs/office.gif), a head delegating to three crew, what waits on you just above the shared whiteboard, and the field to write on the board](docs/office.png)
 
 - **Departments**: each repository gets a room, and each git worktree of it is a team inside that room.
 - **Org charts**: a session is a team. Its manager is the session itself and its crew are its subagents, hung from one line. Each repository has a **Head** in a silver top hat (its longest-serving session, unless one is appointed); every other manager wears a hat of their own.
@@ -23,6 +23,8 @@ Every Claude Code session running on your machine, and every subagent it hires, 
 - **Text mode**: where the pane will not open or a click will not land, `/office text` prints the whole office, `/office card @who` a session's card, and `/office answer #id` answers what waits on you.
 - **Observe mode**: install it everywhere and let it only watch: [observe mode](#observe-mode) shows sessions and sends them nothing, and every `-p` run or SDK session observes by itself.
 - **The board tool**: every session gets an `office_board` tool to read the board, write to a whole department, everyone or you without interrupting anyone, call and close meetings, and, under a CEO, run the work.
+
+![The pane: the CEO in an office of its own with its tracker under it, three sessions at a meeting (one with a ? for you)
 
 ![A head's card: its task, tools and recent conversation, an instruction delivered, fields to give another or ask a btw, and buttons to make it CEO or head](docs/card.png)
 
