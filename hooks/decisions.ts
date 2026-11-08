@@ -10,7 +10,10 @@ import { w } from "./words.ts"
 // asker's, `settled/<id>.<writer>.json` whoever settled it.
 // `line`: put there from the CEO's tracker, a line waiting on the chairman.
 // `theme`: the CEO asking, for that theme, how the chairman is to be addressed.
-export type Decision = { id: string; by: string; at: number; text: string; line?: string; theme?: string }
+// `here`: put there with office_board confirm, for the chairman to answer in
+// the asker's own session, as a gate passes only the chairman's own words
+// typed there; cleared once the chairman types in it.
+export type Decision = { id: string; by: string; at: number; text: string; line?: string; theme?: string; here?: true }
 export type Settled = { id: string; by: string; at: number; text: string }
 
 export function pendingOf(asked: Decision[], settled: Settled[]): Decision[] {
@@ -28,8 +31,13 @@ export function settleRefusal(d: Decision | undefined, me: string, isCeo: boolea
 export function rowsOf(pending: Decision[], snaps: Snapshot[], titles: Record<string, string>): { id: string; who: string; text: string }[] {
   return pending.map((d) => {
     const s = snaps.find((x) => x.sessionId === d.by)
-    return { id: d.id, who: titles[d.by] ?? (s === undefined ? d.by : whoOf(s)), text: d.text }
+    return { id: d.id, who: titles[d.by] ?? (s === undefined ? d.by : whoOf(s)), text: d.here === true ? w().inPerson(d.text) : d.text }
   })
+}
+
+// What this session waits on the chairman to confirm in it, in person.
+export function hereOf(pending: Decision[], me: string): Decision[] {
+  return pending.filter((d) => d.here === true && d.by === me)
 }
 
 // The chairman's answer, typed under an item on the list: it goes to the session

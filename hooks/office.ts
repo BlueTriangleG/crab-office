@@ -101,6 +101,8 @@ export type Snapshot = {
   // Observe mode: the office shows this session and sends it nothing, no memo,
   // instruction, job or meeting, and gives its model no tool and no prompt.
   observe?: true
+  // Runs in herdr, so a job given to it says to take a worktree of its own.
+  herdr?: true
   // As CEO: when each `<job>:<rule>` was last put to it by the watchdog.
   nudged?: Record<string, number>
   // The theme this session's model was last told of ("<name>|<chairman>").

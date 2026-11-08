@@ -41,6 +41,7 @@ import {
   chiefsOf,
   isFree,
   heldClaims,
+  clip,
 } from "./office.ts"
 import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
 import type { BoardLine } from "./pixels.ts"
@@ -66,7 +67,9 @@ import {
 import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
 import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
-import { answerOf, isAway, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
+import { answerOf, hereOf, isAway, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
+import { herdrPlaceOf, tabLabelOf, withWorktree } from "./herdr.ts"
+import type { HerdrPlace } from "./herdr.ts"
 import { cardText, linesText, officeText } from "./text.ts"
 import { LINE_STATUSES, askOfLine, lineRefusal, lineRowsOf, linesOf } from "./lines.ts"
 import type { Line, LineRow, LineStatus } from "./lines.ts"
@@ -87,7 +90,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-06.2"
+const BUILD = "2026-11-09.2"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -142,6 +145,12 @@ const office = {
   // unmounts it for good under its key, so a band stayed blank until a fresh
   // key brought a new instance.
   mounts: 0,
+  // In herdr: this session's tab, the label it had at start, and the label the
+  // office last gave it, so a label the person typed is left alone until the
+  // title or a wait changes.
+  herdr: undefined as HerdrPlace | undefined,
+  tabHad: "",
+  tabLabel: undefined as string | undefined,
   isBandHidden: false,
   selected: null as string | null,
   others: [] as Snapshot[],
@@ -605,6 +614,7 @@ async function tick($: EngineInterface) {
   await deliver($, now)
   await handOver($, now)
   await watch($, now)
+  await syncTab($)
   await obey($, now)
   if (office.isOpen) announce($, office.others, now)
   // The elapsed times on screen move every second.
@@ -941,15 +951,22 @@ async function nameChairman($: EngineInterface, d: Decision, answer: string): Pr
 // once answered.
 async function decide($: EngineInterface, input: BoardInput, me: Snapshot, now: number): Promise<string> {
   const text = input.text?.trim() ?? ""
-  if (input.action === "ask") {
+  if (input.action === "ask" || input.action === "confirm") {
     if (text === "") return w().tool.empty
-    const d: Decision = { id: idOf(now), by: me.sessionId, at: now, text }
+    const isHere = input.action === "confirm"
+    const d: Decision = { id: idOf(now), by: me.sessionId, at: now, text, ...(isHere ? { here: true as const } : {}) }
     await $.fs.write(`${office.base}/decisions/${d.id}.json`, JSON.stringify(d))
     office.pending = [...office.pending, d]
-    messageSent(me, input.agentId, w().chairman, w().askLine(text), now)
+    messageSent(me, input.agentId, w().chairman, isHere ? w().confirmLine(text) : w().askLine(text), now)
     changed($)
     $.ui.invalidate("ui.render")
-    return w().tool.asked(d.id)
+    if (!isHere) return w().tool.asked(d.id)
+    if (office.herdr !== undefined) {
+      const who = office.titles[me.sessionId] ?? whoOf(me)
+      await herdr($, ["notification", "show", w().herdrNotice(who), "--body", clip(text, 200), "--sound", "request"])
+      await syncTab($)
+    }
+    return w().tool.confirmAsked(d.id, office.herdr !== undefined)
   }
   const id = input.decision?.trim().replace(/^#/, "") ?? ""
   const d = office.pending.find((x) => x.id === id)
@@ -1180,7 +1197,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     }
     await $.fs.write(`${office.base}/jobs/${given.id}.json`, JSON.stringify(given))
     office.jobs = [...office.jobs, ...jobsOf([given], [], [])]
-    const envelope = w().jobEnvelope(given.id, given.task, given.standard, whoOf(me))
+    const envelope = withWorktree(w().jobEnvelope(given.id, given.task, given.standard, whoOf(me)), target.herdr === true)
     const sent = await $.session.send({ to: { sessionId: target.sessionId }, text: envelope })
     if (!sent.isDelivered) return w().tool.notDelivered(given.id, sent.reason)
     messageSent(me, input.agentId, nameOf(target), w().jobLine(given.id, given.task), now, target.sessionId)
@@ -1256,6 +1273,36 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
 // read back from this session's own snapshot, so nothing is handed twice, and so
 // is when it started: seniority picks each department's 大部长 and hands out the
 // hats, and taken from the reload it crowned whichever session reloaded first.
+// herdr by its CLI; one that fails or is missing leaves the office as it was.
+async function herdr($: EngineInterface, args: string[]) {
+  return $.process.run(["herdr", ...args], { timeoutMs: 5000 }).catch(() => undefined)
+}
+
+async function tabLabelNow($: EngineInterface, place: HerdrPlace): Promise<string | undefined> {
+  const r = await herdr($, ["tab", "get", place.tab])
+  try {
+    const label = (JSON.parse(r?.stdout ?? "") as { result?: { tab?: { label?: unknown } } }).result?.tab?.label
+    return typeof label === "string" && label !== "" ? label : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// The tab follows the job title, and shows a wait on the chairman in person;
+// renamed only when that changes, never over a label the person typed since.
+async function syncTab($: EngineInterface) {
+  const me = office.me
+  const place = office.herdr
+  if (me === undefined || place === undefined) return
+  const title = office.titles[me.sessionId]
+  const isWaiting = hereOf(office.pending, me.sessionId).length > 0
+  if (title === undefined && !isWaiting && office.tabLabel === undefined) return
+  const label = tabLabelOf(title, isWaiting, office.tabHad)
+  if (label === office.tabLabel) return
+  office.tabLabel = label
+  await herdr($, ["tab", "rename", place.tab, label])
+}
+
 // A /clear or /resume ends the conversation, not the process, which goes on
 // under another session id with no session.start: the office takes up that
 // one, in the same place, with what it kept there before. Until then, every
@@ -1266,6 +1313,7 @@ async function moved($: EngineInterface, was: Snapshot) {
   const me = createSnapshot(sessionId, was.project, was.leader.model, Date.now(), was.team)
   me.build = BUILD
   if (was.observe === true) me.observe = true
+  if (was.herdr === true) me.herdr = true
   await restore($, me)
   office.me = me
   office.isDirty = true
@@ -1340,13 +1388,15 @@ export const register: Register = (on, options) => {
   setLanguage(office.language)
   on("session.start", async ($, e, next) => {
     const r = await next(e)
-    const [sessionId, root, model, configDir, home, kind] = await Promise.all([
+    const [sessionId, root, model, configDir, home, kind, herdrEnv, herdrTab] = await Promise.all([
       $.session.id(),
       $.session.root().catch(() => e.cwd),
       $.session.model().catch(() => undefined),
       $.env.get("CLAUDE_CONFIG_DIR"),
       $.env.get("HOME"),
       $.env.get("CLAUDE_CODE_SESSION_KIND"),
+      $.env.get("HERDR_ENV"),
+      $.env.get("HERDR_TAB_ID"),
     ])
     office.isSpare = kind === "bg"
     // A -p run or the SDK only observes, as observe mode does; a warm background
@@ -1369,6 +1419,11 @@ export const register: Register = (on, options) => {
     office.shipped = await readThemes($, `${$.plugin.root}/themes`)
     await restore($, office.me)
     if (isObserving) office.me.observe = true
+    office.herdr = isObserving ? undefined : herdrPlaceOf({ HERDR_ENV: herdrEnv, HERDR_TAB_ID: herdrTab })
+    if (office.herdr !== undefined) {
+      office.me.herdr = true
+      office.tabHad = (await tabLabelNow($, office.herdr)) ?? place.project
+    }
     await refreshTalk($).catch(() => undefined)
     office.isDirty = true
     await $.command.register({
@@ -1386,7 +1441,7 @@ export const register: Register = (on, options) => {
         properties: {
           action: {
             type: "string",
-            enum: ["read", "post", "claim", "meet", "close", "ask", "settle", "staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title"],
+            enum: ["read", "post", "claim", "meet", "close", "ask", "confirm", "settle", "staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title"],
           },
           line: { type: "string", description: w().tool.line },
           status: { type: "string", enum: LINE_STATUSES, description: w().tool.status },
@@ -1445,6 +1500,20 @@ export const register: Register = (on, options) => {
     const peers = await readJsonDir<unknown>($, office.sessions)
     const text = roleSectionOf(rank, me, snaps, office.org, peers, now, office.titles)
     return { sections: [...r.sections, { id: "crab-office:rank", text, scope: "session" as const }] }
+  })
+
+  // The chairman typing in this session is the confirmation it asked for in
+  // person: off the list, and the tab back to its title. A slash command is
+  // not an answer.
+  on("prompt.submit", async ($, e, next) => {
+    const me = office.me
+    const isPerson = e.origin.kind === "composer" || e.origin.kind === "bridge"
+    if (me !== undefined && isPerson && e.command === undefined) {
+      const waiting = hereOf(office.pending, me.sessionId)
+      for (const d of waiting) await settle($, d, w().confirmedHere)
+      if (waiting.length > 0) await syncTab($)
+    }
+    return next(e)
   })
 
   on("turn.start", ($, e, next) => {
@@ -1591,7 +1660,7 @@ export const register: Register = (on, options) => {
       return { result: `${w().tool.written(heard)}${nudge}` }
     }
     if (input.action === "meet" || input.action === "close") return { result: `${await meet($, input, me, now)}${nudge}` }
-    if (input.action === "ask" || input.action === "settle") return { result: `${await decide($, input, me, now)}${nudge}` }
+    if (input.action === "ask" || input.action === "confirm" || input.action === "settle") return { result: `${await decide($, input, me, now)}${nudge}` }
     return { result: `${await manage($, input, me, now)}${nudge}` }
   })
 

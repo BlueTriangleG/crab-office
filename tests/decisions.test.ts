@@ -1,9 +1,9 @@
 import { expect, test } from "claude-code/testing"
 
-import { answerOf, isAway, pendingOf, rowsOf, settleRefusal } from "../hooks/decisions.ts"
+import { answerOf, hereOf, isAway, pendingOf, rowsOf, settleRefusal } from "../hooks/decisions.ts"
 import type { Decision } from "../hooks/decisions.ts"
 import { companyOf, createSnapshot, orderPromptOf, promptOf, whoOf } from "../hooks/office.ts"
-import { setLanguage } from "../hooks/words.ts"
+import { setLanguage, w } from "../hooks/words.ts"
 
 setLanguage("zh")
 
@@ -58,4 +58,13 @@ test("an answer to a session that is not at work waits for it, and the receipt m
   expect(isAway(b, T0 + 60_000)).toBe(true)
   expect(isAway({ ...b, ended: true }, T0 + 5_000)).toBe(true)
   expect(isAway(undefined, T0)).toBe(true)
+})
+
+test("an item the chairman must confirm in the session itself says so on the list, and is that session's alone to clear", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const here: Decision = { ...asked("d1", "a", T0, "gh pr ready #12"), here: true }
+  const rows = rowsOf([here, asked("d2", "a", T0, "方案 D 上不上")], [a], { a: "feedback" })
+  expect(rows.map((r) => r.text)).toEqual([w().inPerson("gh pr ready #12"), "方案 D 上不上"])
+  expect(rows[0]?.text).toContain("gh pr ready #12")
+  expect(hereOf([here, asked("d2", "a", T0, "y"), { ...here, id: "d3", by: "b" }], "a").map((d) => d.id)).toEqual(["d1"])
 })
