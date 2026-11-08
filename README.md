@@ -19,6 +19,7 @@ Every Claude Code session running on your machine, and every subagent it hires, 
 - **Meetings**: when three or more sessions must agree, any of them calls a meeting. Its members leave their desks for a meeting room, a SendMessage to the meeting's name reaches everyone at the table, and whoever called it closes it with the conclusion. A meeting quiet for 15 minutes ends by itself, and after 30 messages it passes on no more.
 - **Waiting on you**: what only you can decide (an approval, a choice between plans), any session puts on your list, just above the board: who is waiting, and on what, and that crab has a **?** by its head. Answer each right there, and the answer goes to the session that asked as your own words; ✓ takes one off unanswered. It stays there, through compactions, until it is settled.
 - **Themes**: switch how the office talks. A theme renames you, the ranks and the office's own terms, and gives the crabs a voice with each other and with you (one built in: 字节, a ByteDance colleague's way of talking, in Chinese: colleagues are 同学, meetings are 组会, the board is 大群, and you are X总: the CEO asks you what X is); what a report says stays plain, and code, commits, PRs and docs never take it. The office as it is is the default; each theme is a folder ([`themes/`](themes/)), and your own go in `~/.claude/crab-office/themes/`.
+- **herdr**: when the sessions run in [herdr](https://herdr.dev), each tab is named after its session's job title, a session that needs you in person marks its tab with ⏳ and notifies you, and the bundled `herdr-sessions` skill lets the CEO list every session, put idle ones to rest and bring them back as the same conversation ([below](#herdr)).
 - **Text mode**: where the pane will not open or a click will not land, `/office text` prints the whole office, `/office card @who` a session's card, and `/office answer #id` answers what waits on you.
 - **Observe mode**: install it everywhere and let it only watch: [observe mode](#observe-mode) shows sessions and sends them nothing, and every `-p` run or SDK session observes by itself.
 - **The board tool**: every session gets an `office_board` tool to read the board, write to a whole department, everyone or you without interrupting anyone, call and close meetings, and, under a CEO, run the work.
@@ -68,6 +69,17 @@ Each theme is a folder in [`themes/`](themes/), with a README of its own:
 - [**字节**](themes/bytedance/README.md): the office in Chinese, the way ByteDance colleagues talk; you are X总, and the CEO asks you what X is.
 
 Your own themes go in `~/.claude/crab-office/themes/<name>/` ([what a theme folder holds](themes/README.md)). Being folders, themes can later bring the crabs' looks and moves too.
+
+## herdr
+
+When the sessions run in [herdr](https://herdr.dev) (`HERDR_ENV=1`), the office works with it:
+
+- Each session's tab is named after its job title, and renamed when the title changes.
+- A session that needs you in person (a permission prompt, an action only your own words allow) calls `office_board confirm`. The item goes on your list, its tab shows `⏳ <title> · needs you`, and herdr notifies you with its request sound. Type anything in that session and it clears.
+- A job given to a session in herdr tells it to work in a worktree of its own (`herdr worktree create`) and to remove it after reporting.
+- The plugin's `herdr-sessions` skill lets the CEO manage the sessions from herdr: list every session with its job title and session id, put an idle one to rest (a handoff, a roster in `~/.claude/crab-office/resting/`, its tab closed), and bring it back later as the same conversation, in a new workspace if herdr closed the old one.
+
+herdr lets only its own Claude integration set a Claude tab's status, so the tab label is the signal. Tested with herdr 0.9.5. Outside herdr none of this runs.
 
 ## Observe mode
 
