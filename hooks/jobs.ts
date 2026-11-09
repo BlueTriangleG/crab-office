@@ -104,6 +104,8 @@ export function refusalOf(
       if (rank === "head") return target.project === ctx.myProject ? undefined : w().tool.otherRepo
       return w().tool.titleOwnOnly
     case "duty":
+      // Its own, as a title is; another's, as a head or the CEO.
+      if (target?.sessionId === me) return undefined
       if (rank === "staff") return w().tool.notManager
       return rank === "head" && target !== undefined && target.project !== ctx.myProject ? w().tool.otherRepo : undefined
     case "report":

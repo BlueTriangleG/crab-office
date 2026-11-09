@@ -45,8 +45,12 @@ export type Crab = {
 // the session it was typed in. `open` waits for whoever is free first.
 export type Target = { kind: "all" } | { kind: "open" } | { kind: "team"; name: string }
 export type Memo = { id: string; at: number; text: string; to: Target }
-// `doneAt`: the claiming session finished a turn after taking it.
-export type Claim = { memoId: string; at: number; sessionId: string; who: string; doneAt?: number }
+// `doneAt`: the claiming session finished a turn after taking it. `passedAt`:
+// it passed the memo on after all, so the claim no longer holds it.
+export type Claim = { memoId: string; at: number; sessionId: string; who: string; doneAt?: number; passedAt?: number }
+// A session passing on an open memo it was handed; `to`, the colleague whose
+// title or duty it said fits it better, handed it next.
+export type Pass = { memoId: string; at: number; sessionId: string; to?: string }
 
 // A claim holds while its session is in the company, and for good once that
 // session finished a turn after taking the memo; one whose session went away
@@ -54,7 +58,7 @@ export type Claim = { memoId: string; at: number; sessionId: string; who: string
 // kept the memo on a dead session's desk.
 export function heldClaims(claims: Claim[], snaps: Snapshot[], now: number): Claim[] {
   const here = new Set(snaps.filter((s) => s.ended !== true && now - s.updatedAt < LEAVE_MS).map((s) => s.sessionId))
-  return claims.filter((c) => c.doneAt !== undefined || here.has(c.sessionId))
+  return claims.filter((c) => c.passedAt === undefined && (c.doneAt !== undefined || here.has(c.sessionId)))
 }
 
 // A btw: a question to one crab, answered beside its work and never as a turn
@@ -95,6 +99,8 @@ export type Snapshot = {
   obeyed?: string[]
   // The CEO appointment (its `at`) this session was already handed over for.
   ceoSeen?: number
+  // Asked to give itself a job title and a duty, which it is asked once.
+  askedName?: true
   // Which build of the mod wrote this snapshot, so a sync can be seen reaching
   // every session (the skills folder is watched and reloads on its own).
   build?: string
@@ -311,6 +317,7 @@ const OWN: [RegExp, (m: RegExpExecArray) => string][] = [
   [/^\[(?:螃蟹办公室 · 董事长任命你为 CEO|crab-office · the chairman has made you CEO)\]/, () => w().ceoTask],
   [/^\[(?:螃蟹办公室 · 会议|crab-office · meeting) ([^\s，,\]]+)/, (m) => w().meetingTask(m[1] ?? "")],
   [/^\[(?:螃蟹办公室 · 督促|crab-office · the watchdog)\]/, () => w().nudgeTask],
+  [/^\[(?:螃蟹办公室 · 起名字|crab-office · name yourself)\]/, () => w().nameTask],
   [
     /^\[(?:螃蟹办公室 · CEO（[^）]*）派活 #(\w+)|crab-office · job #(\w+) from the CEO[^\]]*)\]\s*([^\n]*)/,
     (m) => `#${m[1] ?? m[2] ?? ""} ${m[3] ?? ""}`,
@@ -1057,7 +1064,16 @@ function isHolding(s: Snapshot, memo: Memo, now: number): boolean {
 // `isReturned`: its taker went away mid-work, so it is back for anyone free, a
 // session opened since too; held to those there when it was posted, a memo
 // whose only taker died had nobody left to take it.
-export function takerOf(memo: Memo, snaps: Snapshot[], now: number, isReturned = false): string | undefined {
+// A colleague a pass named comes first, and the memo waits for it while it
+// works: the session that passed knew whose work it is, and the next by id was
+// as likely as not another that would pass it again.
+export function takerOf(memo: Memo, snaps: Snapshot[], now: number, isReturned = false, passes: Pass[] = []): string | undefined {
+  const named = passes.filter((p) => p.memoId === memo.id && p.to !== undefined).sort((a, b) => b.at - a.at)
+  for (const p of named) {
+    const s = snaps.find((x) => x.sessionId === p.to)
+    if (s === undefined || isGoneOf(s, now) || s.observe === true || (s.handled ?? []).includes(memo.id)) continue
+    return isFree(s, now) ? s.sessionId : undefined
+  }
   return snaps
     .filter((s) => isFree(s, now) && s.observe !== true && (isReturned || wasThere(memo, s)) && !(s.handled ?? []).includes(memo.id))
     .map((s) => s.sessionId)
@@ -1068,7 +1084,7 @@ export function takerOf(memo: Memo, snaps: Snapshot[], now: number, isReturned =
 // before, and either named in it, or everyone's, or first in line for it.
 // Open work goes to whoever is free, a CEO as anyone: sessions settle work among
 // themselves, and the CEO's part is the last check, not the hand-out.
-export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], all: Claim[], now: number): Memo | undefined {
+export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], all: Claim[], now: number, passes: Pass[] = []): Memo | undefined {
   if (!isFree(me, now)) return undefined
   const claims = heldClaims(all, snaps, now)
   const handled = new Set(me.handled ?? [])
@@ -1082,7 +1098,7 @@ export function memoFor(me: Snapshot, snaps: Snapshot[], memos: Memo[], all: Cla
         return (
           !claims.some((c) => c.memoId === m.id) &&
           !snaps.some((s) => isHolding(s, m, now)) &&
-          takerOf(m, snaps, now, all.some((c) => c.memoId === m.id)) === me.sessionId
+          takerOf(m, snaps, now, all.some((c) => c.memoId === m.id), passes) === me.sessionId
         )
       return isFor(m.to, me) && wasThere(m, me)
     })
@@ -1190,9 +1206,19 @@ export function rosterOf(
     })
 }
 
-// What a session is handed: the memo, who it is, its colleagues, and how to
-// take it on or pass, through the office_board tool.
-export function handoverOf(memo: Memo, me: Snapshot, snaps: Snapshot[], now: number, org: Org = NONE): string {
+// What a session is handed: the memo, who it is, its colleagues with their job
+// titles and duties, and how to take it on or pass, through the office_board
+// tool. Without titles and duties every colleague read as one more 同学, and a
+// session could not tell whose work a memo was.
+export function handoverOf(
+  memo: Memo,
+  me: Snapshot,
+  snaps: Snapshot[],
+  now: number,
+  org: Org = NONE,
+  titles: Record<string, string> = {},
+  duties: Record<string, string> = {},
+): string {
   const kind = memo.to.kind === "team" ? "team" : memo.to.kind === "all" ? "all" : "open"
   const how = w().handover[kind]
   return [
@@ -1200,7 +1226,7 @@ export function handoverOf(memo: Memo, me: Snapshot, snaps: Snapshot[], now: num
     memo.text,
     "",
     w().handover.youAre(managerTitleOf(me, ranksOf(snaps, now, org)), whoOf(me)),
-    ...rosterOf(snaps, me, now, org),
+    ...rosterOf(snaps, me, now, org, (s) => w().staffMore(undefined, duties[s.sessionId], [], titles[s.sessionId])),
     "",
     how,
   ].join("\n")

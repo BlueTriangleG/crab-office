@@ -106,6 +106,9 @@ const EN = {
   ceoRoom: "CEO's office",
   ceoTask: "Taking over as CEO",
   nudgeTask: "The watchdog's nudge",
+  nameTask: "Naming itself",
+  nameYourself:
+    "[crab-office · name yourself] You have no job title yet. From the work you are doing in this session, give yourself one with office_board (action: title, text: one word, no spaces, such as voice, mobile or docs), and say what you are responsible for in one line with office_board (action: duty, text: that line). Colleagues and the chairman tell you apart by them, and the chairman's open memos go by them. Then stop and do nothing else.",
   judgeTask: (id: string, task: string) => `Judging #${id} ${task}`,
   sentBackTask: (id: string) => `#${id} sent back`,
   withdrawnTask: (id: string) => `#${id} withdrawn`,
@@ -268,7 +271,7 @@ const EN = {
       `You are the ${title} of ${who}. Your colleagues in the company now:`,
     team: "This one names you: claim it with the office_board tool (action: claim), then do it.",
     all: "This one is for everyone: first judge whether it bears on your project, folder and task. If it does, claim it with office_board (action: claim) and do it; if not, say why on office_board (action: post), then stop and do nothing else.",
-    open: "This is open work and you are free, so take a look: if you can take it, claim it with office_board (action: claim) and do it; if it is not for you, say why on office_board (action: post), then stop and do nothing else, and the next colleague will look at it. Once it is claimed no other session takes it; if your claim says someone already has, stop.",
+    open: "This is open work and you are free. Take it only if it is your line of work: your job title and duty, or what you have been doing in this session; a session with no work of its own yet may take anything. If it is yours, claim it with office_board (action: claim) and do it. If it is not, or a colleague's title or duty above fits it better, pass it with office_board (action: pass, memo: its id, text: why, to: that colleague's job title or SendMessage name, if one fits), then stop and do nothing else: the colleague you named is handed it next, or else the next colleague. Once it is claimed no other session takes it; if your claim says someone already has, stop.",
   },
   // btw
   btw: "[crab-office · a btw from the chairman: answer in a few sentences, like a colleague chatting: what you are doing, how it is going, where you are stuck. Do not call tools, and do not change the work in hand because of this]",
@@ -327,8 +330,8 @@ const EN = {
   // the office_board tool, which the model reads
   tool: {
     description:
-      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=amend adds to a job still being done (assignment, text); action=track keeps a line of work on the CEO's tracker (line, status, text, to: its owner); action=withdraw takes an open job back (assignment); action=duty writes what a session is responsible for (to, text); action=appoint makes a session its repository's head (to); action=title gives a session a one-word job title (to, text; left out, your own), and SendMessage to a job title or to CEO reaches whoever holds it. When three or more sessions must agree on something, any of them may call a meeting: action=meet (meeting: a one-word name, to: the colleagues, text: the topic and the result needed; again with the same name brings more in); speak to it with SendMessage to the meeting's name, and everyone in it hears; whoever called it closes it with action=close (meeting, text: the conclusion). action=ask puts something only the chairman can decide on the chairman's list (text); action=settle takes it off once answered (decision, text: the answer), by the session that asked or the CEO. action=confirm is for what the chairman must say in person, in this session, before you can go on (a permission prompt, an action only the chairman's own words allow): it goes on the chairman's list (text: what to confirm), and in herdr it marks this session's tab and notifies the chairman; it clears once the chairman types here.",
-    memo: "the id of the memo to claim",
+      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. action=pass hands back a memo you were given that is not your work (memo, text: why, to: the colleague whose job title or duty fits it, if one does), dropping your claim if you made one; the colleague named is handed it next. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=amend adds to a job still being done (assignment, text); action=track keeps a line of work on the CEO's tracker (line, status, text, to: its owner); action=withdraw takes an open job back (assignment); action=duty writes what a session is responsible for (to, text; left out, your own); action=appoint makes a session its repository's head (to); action=title gives a session a one-word job title (to, text; left out, your own), and SendMessage to a job title or to CEO reaches whoever holds it. When three or more sessions must agree on something, any of them may call a meeting: action=meet (meeting: a one-word name, to: the colleagues, text: the topic and the result needed; again with the same name brings more in); speak to it with SendMessage to the meeting's name, and everyone in it hears; whoever called it closes it with action=close (meeting, text: the conclusion). action=ask puts something only the chairman can decide on the chairman's list (text); action=settle takes it off once answered (decision, text: the answer), by the session that asked or the CEO. action=confirm is for what the chairman must say in person, in this session, before you can go on (a permission prompt, an action only the chairman's own words allow): it goes on the chairman's list (text: what to confirm), and in herdr it marks this session's tab and notifies the chairman; it clears once the chairman types here.",
+    memo: "the id of the memo to claim or pass",
     decision: "the id of an item on the chairman's list (settle)",
     meeting: "the meeting's one-word name (meet, close)",
     line: "a line of work's short title, as the chairman would say it (track)",
@@ -373,6 +376,9 @@ const EN = {
     claimedBy: (who: string) =>
       `Already claimed by ${who}; stop, don't do this`,
     claimNote: (text: string) => `On it: ${text}`,
+    passNote: (why: string, who: string | undefined) => `Not mine${who === undefined ? "" : `, for ${who}`}: ${why}`,
+    passed: "Passed: the next free colleague will look at it. Stop here and don't do it.",
+    passedTo: (who: string) => `Passed to ${who}: it is handed to them as soon as they are free. Stop here and don't do it.`,
     claimed:
       "Claimed: everyone on the board can see it's yours. Go ahead, and say so on the board when you're done.",
     inbox: (lines: string[]) =>
@@ -532,6 +538,9 @@ const ZH: Words = {
   ceoRoom: "CEO 办公室",
   ceoTask: "接任 CEO",
   nudgeTask: "督促",
+  nameTask: "起名字",
+  nameYourself:
+    "[螃蟹办公室 · 起名字] 你还没有职位。按你在这个会话里做的事，用 office_board 给自己起一个职位（action: title，text：一个词，不含空格，比如 语音、移动端、文档），再用一句话写你负责什么（action: duty，text：那句话）。同事和董事长靠它们认出你，董事长没写收件人的留言也按它们派。做完这两步就停下，别做别的。",
   judgeTask: (id, task) => `验收 #${id} ${task}`,
   sentBackTask: (id) => `#${id} 被退回`,
   withdrawnTask: (id) => `#${id} 撤回`,
@@ -670,7 +679,7 @@ const ZH: Words = {
     youAre: (title, who) => `你是 ${who} 的${title}。公司里现在的同事：`,
     team: "这是点名给你的：先用 office_board 工具认领（action: claim），然后开始做。",
     all: "这是发给全体的：先判断和你当前的项目、目录、任务有没有关系。有关就用 office_board 认领（action: claim）再做；无关就用 office_board 说一句为什么不接（action: post），然后停下，别做别的。",
-    open: "这是一件待领的活，你正空着，先来看看：能接就用 office_board 认领（action: claim）再做；不合适就用 office_board 说一句为什么不接（action: post），然后停下，别做别的，下一位同事会接着看。认领时，别的会话就不会再接这件事；如果认领时发现已经有人接了，就停下。",
+    open: "这是一件待领的活，你正空着。只有是你这摊的事才接：看你的职位和职责，或者你在这个会话里一直在做的事；还没做过任何事的新会话什么都可以接。是你的，就用 office_board 认领（action: claim）再做。不是你的，或者上面哪位同事的职位、职责更对口，就用 office_board 退回（action: pass，memo：它的 id，text：为什么，to：对口同事的职位或 SendMessage 名字，有的话），然后停下，别做别的：你点名的同事下一个接到，没点名就由下一位同事接着看。认领时，别的会话就不会再接这件事；如果认领时发现已经有人接了，就停下。",
   },
   btw: "[螃蟹办公室 · 董事长顺便问一句（btw）：用中文几句话回答，像同事聊天，说清在干什么、进展如何、卡在哪；不要调用工具，也别因此改变手上的活]",
   btwFor: (title, task, tools, back, question) =>
@@ -717,8 +726,8 @@ const ZH: Words = {
   sayHint: "@组名、@部门 或 @全体；不写 @ 就谁先空谁接",
   tool: {
     description:
-      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=amend 给还在做的活补充要求（assignment、text）；action=track 把一条工作线记到 CEO 看板上（line、status、text、to：负责的会话）；action=withdraw 撤回还没结束的活（assignment）；action=duty 写某个会话负责什么（to、text）；action=appoint 任命某个会话为它所在 repo 的部长（to）；action=title 给会话取一个一词的职位名（to、text；不写 to 就是你自己），用 SendMessage 发给职位名或 CEO 会送到当前担任的会话。三个或更多会话要商量定一件事时，任何会话都可以开会：action=meet（meeting：一个词的会议名，to：要拉的同事，text：议题和要商量出的结果；用同一个会议名再 meet 一次就是拉更多人）；在会上说话用 SendMessage 发给会议名，每个与会者都会收到；召集人用 action=close（meeting、text：结论）散会。action=ask 把只有董事长能定的事挂到董事长的清单上（text）；action=settle 在答复后划掉（decision、text：答复），由提出的会话或 CEO 来划。action=confirm 用于必须由董事长本人到你这个会话里说一句才能继续的事（被权限拦住、只认董事长亲口确认的操作）：会挂到董事长的清单上（text：要确认什么），在 herdr 里还会标出你的标签并弹通知；董事长在你的会话里输入后自动清掉。",
-    memo: "要认领的 memo id",
+      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。action=pass 退回交给你但不是你这摊的留言（memo；text：为什么；to：职位或职责对口的同事，有的话），你认领过的也一并放下；被点名的同事下一个接到。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=amend 给还在做的活补充要求（assignment、text）；action=track 把一条工作线记到 CEO 看板上（line、status、text、to：负责的会话）；action=withdraw 撤回还没结束的活（assignment）；action=duty 写某个会话负责什么（to、text；不写 to 就是你自己的）；action=appoint 任命某个会话为它所在 repo 的部长（to）；action=title 给会话取一个一词的职位名（to、text；不写 to 就是你自己），用 SendMessage 发给职位名或 CEO 会送到当前担任的会话。三个或更多会话要商量定一件事时，任何会话都可以开会：action=meet（meeting：一个词的会议名，to：要拉的同事，text：议题和要商量出的结果；用同一个会议名再 meet 一次就是拉更多人）；在会上说话用 SendMessage 发给会议名，每个与会者都会收到；召集人用 action=close（meeting、text：结论）散会。action=ask 把只有董事长能定的事挂到董事长的清单上（text）；action=settle 在答复后划掉（decision、text：答复），由提出的会话或 CEO 来划。action=confirm 用于必须由董事长本人到你这个会话里说一句才能继续的事（被权限拦住、只认董事长亲口确认的操作）：会挂到董事长的清单上（text：要确认什么），在 herdr 里还会标出你的标签并弹通知；董事长在你的会话里输入后自动清掉。",
+    memo: "要认领或退回的 memo id",
     decision: "董事长清单上一项的编号（settle）",
     meeting: "会议名，一个词（meet、close）",
     line: "工作线的标题，简短，用董事长会说的话（track）",
@@ -762,6 +771,9 @@ const ZH: Words = {
     claimedAlready: "你已经认领过了，继续做吧",
     claimedBy: (who) => `已经被 ${who} 认领了，停下，别做这件事`,
     claimNote: (text) => `我来接：${text}`,
+    passNote: (why, who) => `不是我这摊${who === undefined ? "" : `，转给 ${who}`}：${why}`,
+    passed: "已退回：下一位空着的同事会接着看。停下，别做这件事。",
+    passedTo: (who) => `已转给 ${who}：它一空下来就会接到。停下，别做这件事。`,
     claimed:
       "认领成功，白板上大家都看得到是你接的。开始做吧，做完在白板上说一声。",
     inbox: (lines) =>

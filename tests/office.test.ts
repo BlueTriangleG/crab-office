@@ -721,3 +721,47 @@ test("a memo whose only taker went away mid-work goes back to anyone free, even 
   // never taken, it still does not go to sessions opened since
   expect(memoFor(late, [late], [open], [], now)).toBeUndefined()
 })
+
+test("a memo passed on with a name goes to that colleague next, and waits while they work", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0)
+  const c = createSnapshot("c", "web-app", undefined, T0)
+  for (const s of [a, b, c]) s.updatedAt = T0 + 100
+  const snaps = [a, b, c]
+  const open = parseSay("通话断网多久挂断", "o", T0 + 50)!
+  const now = T0 + 100
+  a.handled = ["o"]
+  const passes = [{ memoId: "o", at: now, sessionId: "a", to: "c" }]
+  // b is next by id, but a named c
+  expect(memoFor(b, snaps, [open], [], now, passes)).toBeUndefined()
+  expect(memoFor(c, snaps, [open], [], now, passes)?.id).toBe("o")
+  // it waits for c while c works, rather than going to b
+  c.leader.status = "editing"
+  expect(memoFor(b, snaps, [open], [], now, passes)).toBeUndefined()
+  // once c has passed on it too, it is the next one's in turn
+  c.leader.status = "idle"
+  c.handled = ["o"]
+  expect(memoFor(b, snaps, [open], [], now, passes)?.id).toBe("o")
+})
+
+test("a claim its own session passed on no longer holds the memo", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0)
+  for (const s of [a, b]) s.updatedAt = T0 + 100
+  const open = parseSay("通话断网多久挂断", "o", T0 + 50)!
+  a.handled = ["o"]
+  const claimed = { memoId: "o", at: T0 + 60, sessionId: "a", who: "web-app 部 · 本部" }
+  expect(memoFor(b, [a, b], [open], [claimed], T0 + 100)).toBeUndefined()
+  expect(memoFor(b, [a, b], [open], [{ ...claimed, passedAt: T0 + 90 }], T0 + 100)?.id).toBe("o")
+})
+
+test("an open memo's handover shows each colleague's title and duty, and how to pass it to one", async () => {
+  const a = createSnapshot("a", "web-app", undefined, T0)
+  const b = createSnapshot("b", "web-app", undefined, T0)
+  for (const s of [a, b]) s.updatedAt = T0
+  const open = parseSay("通话断网多久挂断", "o", T0)!
+  const text = handoverOf(open, a, [a, b], T0, undefined, { b: "voice" }, { b: "通话功能" })
+  expect(text).toContain("职位：voice")
+  expect(text).toContain("职责：通话功能")
+  expect(text).toContain("action: pass")
+})

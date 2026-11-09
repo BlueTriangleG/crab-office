@@ -43,7 +43,7 @@ import {
   heldClaims,
   clip,
 } from "./office.ts"
-import type { Ask, Claim, Detail, Memo, Order, Reply, Snapshot, Talk } from "./office.ts"
+import type { Ask, Claim, Detail, Memo, Order, Pass, Reply, Snapshot, Talk } from "./office.ts"
 import type { BoardLine } from "./pixels.ts"
 import { LEADER_COLOR, SEAT_COLS, boardTopOf, roomBottomOf, heightOf, office as draw, partOf, slicesOf, titleOf } from "./pixels.ts"
 import type { Speaker } from "./pixels.ts"
@@ -54,6 +54,7 @@ import {
   addressOf,
   dutiesOf,
   labelOf,
+  needsTitle,
   titleRefusal,
   titlesOf,
   orgOf,
@@ -90,7 +91,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-09.2"
+const BUILD = "2026-11-10.4"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -156,6 +157,7 @@ const office = {
   others: [] as Snapshot[],
   memos: [] as Memo[],
   claims: [] as Claim[],
+  passes: [] as Pass[],
   stop: undefined as (() => void) | undefined,
   // Each other session's last finish already announced, so one finish toasts once.
   announced: new Map<string, number>(),
@@ -552,14 +554,29 @@ async function deliver($: EngineInterface, now: number) {
   const me = office.me
   if (me === undefined) return
   const snaps = [me, ...office.others]
-  const memo = memoFor(me, snaps, office.memos, office.claims, now)
+  const memo = memoFor(me, snaps, office.memos, office.claims, now, office.passes)
   if (memo === undefined) return
   // Whoever is typing in this session is at work in it, waiting or not.
   if ((await $.prompt.read()).text.trim() !== "") return
-  const text = handoverOf(memo, me, snaps, now, office.org)
+  const text = handoverOf(memo, me, snaps, now, office.org, office.titles, office.duties)
   me.handled = [...(me.handled ?? []), memo.id]
   // Busy in the same write that says it took the memo, so no other session
   // reads it as having passed before its turn starts.
+  turnStarted(me, undefined, text, now)
+  changed($)
+  await $.prompt.submit({ text })
+}
+
+// A session with no job title is asked once, free after a turn of its own, to
+// give itself one and a duty: open memos go by them, and a roster of eight
+// 同学 told nobody who did what, so a memo about calls went to the session
+// building this mod.
+async function nameSelf($: EngineInterface, now: number) {
+  const me = office.me
+  if (me === undefined || !isFree(me, now) || !needsTitle(me, office.titles, office.org)) return
+  if ((await $.prompt.read()).text.trim() !== "") return
+  const text = w().nameYourself
+  me.askedName = true
   turnStarted(me, undefined, text, now)
   changed($)
   await $.prompt.submit({ text })
@@ -584,6 +601,7 @@ async function tick($: EngineInterface) {
   office.org = org
   office.memos = await readJsonDir<Memo>($, `${office.base}/memos`)
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
+  office.passes = await readJsonDir<Pass>($, `${office.base}/passes`)
   const [given, reported, judged, duties, titles, meetingFiles, amends, asked, settled, tracked] = await Promise.all([
     readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
     readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
@@ -613,6 +631,7 @@ async function tick($: EngineInterface) {
   await adjourn($, now)
   await deliver($, now)
   await handOver($, now)
+  await nameSelf($, now)
   await watch($, now)
   await syncTab($)
   await obey($, now)
@@ -1117,8 +1136,8 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
   const id = input.assignment?.trim().replace(/^#/, "")
   const job = office.jobs.find((j) => j.id === id)
   let target: Snapshot | undefined
-  // A job title is set on this session itself unless `to` names another.
-  if (action === "title" && !input.to) target = me
+  // A job title or a duty is set on this session itself unless `to` names another.
+  if ((action === "title" || action === "duty") && !input.to) target = me
   else if (action === "assign" || action === "duty" || action === "appoint" || action === "title" || (action === "track" && input.to)) {
     if (!input.to) return w().tool.needTo
     const found = sessionNamed(input.to, snaps, peers, now, office.titles)
@@ -1332,6 +1351,11 @@ async function restore($: EngineInterface, me: Snapshot) {
   if (before.ceoSeen !== undefined) me.ceoSeen = before.ceoSeen
   if (before.nudged !== undefined) me.nudged = before.nudged
   if (before.themeSeen !== undefined) me.themeSeen = before.themeSeen
+  if (before.askedName === true) me.askedName = true
+  // What it was last given to do: a reload left every card without its task,
+  // and an untitled session looking as if it had never been given work.
+  if (before.leader.title) me.leader.title = before.leader.title
+  if (before.leader.prompt !== undefined) me.leader.prompt = before.leader.prompt
 }
 
 // Only a memo for whoever is free is one session's: a named or everyone's memo
@@ -1345,13 +1369,45 @@ function claimFileOf(memo: Memo, sessionId: string): string {
 async function claimsDone($: EngineInterface, now: number) {
   const me = office.me
   if (me === undefined) return
-  for (const c of office.claims.filter((x) => x.sessionId === me.sessionId && x.doneAt === undefined)) {
+  for (const c of office.claims.filter((x) => x.sessionId === me.sessionId && x.doneAt === undefined && x.passedAt === undefined)) {
     const memo = office.memos.find((m) => m.id === c.memoId)
     if (memo === undefined) continue
     const done = { ...c, doneAt: now }
     await $.fs.write(claimFileOf(memo, me.sessionId), JSON.stringify(done))
     office.claims = office.claims.map((x) => (x === c ? done : x))
   }
+}
+
+// Passing on a memo this session was handed and is not its work: why, and the
+// colleague it fits, if one does, who is handed it next. A claim it made first
+// is let go with it, so a session that took one by mistake can give it back.
+async function pass($: EngineInterface, input: BoardInput, me: Snapshot, now: number): Promise<string> {
+  const memo = office.memos.find((m) => m.id === input.memo?.trim())
+  if (memo === undefined) return w().tool.noMemo(input.memo ?? "")
+  const snaps = [me, ...office.others]
+  const peers = await readJsonDir<unknown>($, office.sessions)
+  let to: Snapshot | undefined
+  if (input.to?.trim()) {
+    const found = sessionNamed(input.to, snaps, peers, now, office.titles)
+    if (found.many.length > 1) return w().ambiguous(found.many.map((s) => peerOf(peers, s.sessionId)?.name ?? whoOf(s)))
+    if (found.one === undefined) return w().nobodyNamed(input.to)
+    if (found.one.sessionId === me.sessionId) return w().tool.notToSelf
+    to = found.one
+  }
+  const passed: Pass = { memoId: memo.id, at: now, sessionId: me.sessionId, ...(to === undefined ? {} : { to: to.sessionId }) }
+  await $.fs.write(`${office.base}/passes/${memo.id}.${me.sessionId}.json`, JSON.stringify(passed))
+  office.passes = [...office.passes, passed]
+  const mine = office.claims.find((c) => c.memoId === memo.id && c.sessionId === me.sessionId && c.passedAt === undefined)
+  if (mine !== undefined) {
+    const released = { ...mine, passedAt: now }
+    await $.fs.write(claimFileOf(memo, me.sessionId), JSON.stringify(released))
+    office.claims = office.claims.map((c) => (c === mine ? released : c))
+  }
+  me.handled = [...new Set([...(me.handled ?? []), memo.id])]
+  const who = to === undefined ? undefined : labelOf(to, peers, office.titles)
+  messageSent(me, input.agentId, w().chairman, w().tool.passNote(input.text?.trim() ?? "", who), now)
+  changed($)
+  return who === undefined ? w().tool.passed : w().tool.passedTo(who)
 }
 
 async function claim(
@@ -1441,7 +1497,7 @@ export const register: Register = (on, options) => {
         properties: {
           action: {
             type: "string",
-            enum: ["read", "post", "claim", "meet", "close", "ask", "confirm", "settle", "staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title"],
+            enum: ["read", "post", "claim", "pass", "meet", "close", "ask", "confirm", "settle", "staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title"],
           },
           line: { type: "string", description: w().tool.line },
           status: { type: "string", enum: LINE_STATUSES, description: w().tool.status },
@@ -1642,6 +1698,7 @@ export const register: Register = (on, options) => {
     const nudge = unread > 0 ? w().tool.unread(unread) : ""
     if (input.action === "claim")
       return { result: `${await claim($, input.memo ?? "", input.agentId)}${nudge}` }
+    if (input.action === "pass") return { result: `${await pass($, input, me, now)}${nudge}` }
     if (input.action === "post") {
       if (!input.text) return { result: w().tool.empty }
       const to = input.to?.trim() || w().chairman
@@ -1651,7 +1708,8 @@ export const register: Register = (on, options) => {
         const peer = peerOf(await readJsonDir<unknown>($, office.sessions), one.sessionId)
         return { result: `${w().tool.oneSession(to, peer?.name)}${nudge}` }
       }
-      const reach = target === undefined ? [] : recipientsOf(target, me, snaps, now).map(whoOf)
+      // By job title too: seven sessions of one department read alike, each its 本部.
+      const reach = target === undefined ? [] : recipientsOf(target, me, snaps, now).map((s) => labelOf(s, [], office.titles))
       if (target !== undefined && reach.length === 0)
         return { result: `${w().tool.nobody(to, names)}${nudge}` }
       messageSent(me, input.agentId, to, input.text, now)

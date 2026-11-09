@@ -8,6 +8,7 @@ import {
   ceoHandoverOf,
   dutiesOf,
   labelOf,
+  needsTitle,
   titleRefusal,
   titlesOf,
   orgOf,
@@ -316,4 +317,17 @@ test("a job title names its session for assign and shows wherever the session is
   const line = companyOf(snaps, "a", now, { memos: [], claims: [], org, titles }).board?.at(-1)
   expect(line?.to.name).toBe("voice")
   expect(roleSectionOf("staff", b, snaps, org, peers, now, titles)).toContain("title")
+})
+
+test("a session is asked once to name itself, once it has been given work, unless it has a title or is the CEO", async () => {
+  const s = createSnapshot("a", "web-app", undefined, T0)
+  expect(needsTitle(s, {}, NO_ORG)).toBe(false)
+  // given work, whether or not a finish was ever recorded (a background task's
+  // notification starts a turn that records none)
+  s.leader.title = "fix the login test"
+  expect(needsTitle(s, {}, NO_ORG)).toBe(true)
+  expect(needsTitle(s, { a: "voice" }, NO_ORG)).toBe(false)
+  expect(needsTitle(s, {}, { ...NO_ORG, ceo: "a" })).toBe(false)
+  s.askedName = true
+  expect(needsTitle(s, {}, NO_ORG)).toBe(false)
 })

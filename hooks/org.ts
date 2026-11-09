@@ -104,6 +104,15 @@ export function titleRefusal(
   return w().tool.titleTaken(taken[1], s === undefined ? taken[0] : labelOf(s, peers, titles))
 }
 
+// Whether a session is asked, once, to name itself: it has been given work, so
+// it knows what it is for (not a recorded finish: a background task's
+// notification starts a turn that records none, and the one session with no
+// title went unasked); it has no job title; and it is not the CEO, whose post
+// is its name.
+export function needsTitle(me: Snapshot, titles: Record<string, string>, org: Org): boolean {
+  return me.askedName !== true && Boolean(me.leader.title) && titles[me.sessionId] === undefined && org.ceo !== me.sessionId
+}
+
 // Where a SendMessage addressed to a job title, or to CEO, in any case, goes:
 // its session, whatever name that goes by now, as a title is kept by session
 // id. A real name, socket or id is the engine's and passes untouched; a title

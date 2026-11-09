@@ -29,7 +29,7 @@ test("a job's status follows its latest report or verdict, and a fourth reject g
   expect([accepted?.status, accepted?.since]).toEqual(["accepted", T0 + 5])
 })
 
-test("only the CEO assigns, judges and appoints; a head writes duties for its own repo; only the assignee reports", async () => {
+test("only the CEO assigns, judges and appoints; a head writes duties for its own repo, anyone its own; only the assignee reports", async () => {
   const a = createSnapshot("a", "web-app", undefined, T0)
   const b = createSnapshot("b", "web-app", undefined, T0, "docs")
   const c = createSnapshot("c", "api-server", undefined, T0)
@@ -40,7 +40,8 @@ test("only the CEO assigns, judges and appoints; a head writes duties for its ow
   expect(refusalOf("assign", "a", "ceo", { ...ctx, target: b })).toBeUndefined()
   expect(refusalOf("duty", "h", "head", { ...ctx, target: c })).toBeDefined()
   expect(refusalOf("duty", "h", "head", { ...ctx, target: b })).toBeUndefined()
-  expect(refusalOf("duty", "b", "staff", { ...ctx, target: b })).toBeDefined()
+  expect(refusalOf("duty", "b", "staff", { ...ctx, target: c })).toBeDefined()
+  expect(refusalOf("duty", "b", "staff", { ...ctx, target: b })).toBeUndefined()
   expect(refusalOf("report", "c", "staff", { ...ctx, job: as("assigned") })).toBeDefined()
   expect(refusalOf("report", "b", "staff", { ...ctx, job: as("assigned") })).toBeUndefined()
   expect(refusalOf("report", "b", "staff", { ...ctx, job: as("rejected") })).toBeUndefined()
