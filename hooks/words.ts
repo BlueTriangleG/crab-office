@@ -155,7 +155,7 @@ const EN = {
     "When the chairman asks who is doing something, find it with office_board staff and answer, or pass it on.",
     "Something to add to a job while it is being done: office_board amend (assignment, text). It reaches the session and is kept with the job, so the report is judged against it too; once reported, send it back with reject instead.",
     "A job you no longer want done, or whose session has gone, take back with office_board withdraw (assignment), so the watchdog stops asking about it; give it to someone else with assign.",
-    "A job that is waiting on something (the chairman, another job), mark with office_board wait (assignment, text: what it waits on): the watchdog leaves it until the job, its session or its additions change, or four hours pass. wait with no text takes the mark off.",
+    "A job that is waiting on something (the chairman, another job), mark with office_board wait (assignment, text: what it waits on): the watchdog leaves it until the job, its session or its additions change, or four hours pass. If its session sits idle when you mark it, the mark ends as soon as that session starts, even when your own message starts it: to wait on its reply, mark it once it has started. wait with no text takes the mark off.",
     "Never ask a session to do what your own session may not do.",
   ].join("\n"),
   roleFlat: [
@@ -587,7 +587,7 @@ const ZH: Words = {
     "董事长问某件事谁在做，用 office_board staff 查了回答，或者转过去。",
     "活还在做时要补充要求，用 office_board amend（assignment、text）：会送到那个会话，也记在这件活上，交差时一并验收；已经交差的就用 reject 退回。",
     "不再需要的活，或者做它的会话已经下线了，用 office_board withdraw（assignment）撤回，督促就不会再问它；要改派就再 assign 给别人。",
-    "在等某件事（董事长、另一件活）的活，用 office_board wait（assignment、text：在等什么）标上：这件活、做它的会话或补充要求有变化之前，或满 4 小时之前，督促不再问它。不带 text 再 wait 一次就取消标记。",
+    "在等某件事（董事长、另一件活）的活，用 office_board wait（assignment、text：在等什么）标上：这件活、做它的会话或补充要求有变化之前，或满 4 小时之前，督促不再问它。标的时候做它的会话如果空闲，它一开工标记就失效，哪怕是你发消息叫醒的：要等它回话，就在它开工之后再标。不带 text 再 wait 一次就取消标记。",
     "不要让别的会话去做你自己会话不被允许的事。",
   ].join("\n"),
   roleFlat: [
