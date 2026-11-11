@@ -765,3 +765,25 @@ test("an open memo's handover shows each colleague's title and duty, and how to 
   expect(text).toContain("职责：通话功能")
   expect(text).toContain("action: pass")
 })
+
+// A background task's notice starts a turn of its own; the card showed the
+// task's id and output file as what the session was doing.
+test("a background task's notice keeps the card's title and prompt", async () => {
+  const s = createSnapshot("s", "web-app", undefined, T0)
+  turnStarted(s, undefined, "time each arm against the API", T0)
+  turnFinished(s, undefined, { isAnswer: true, answer: "done" }, T0 + 1)
+  const notice = [
+    "<task-notification>",
+    "<task-id>b1</task-id>",
+    "<tool-use-id>toolu_01</tool-use-id>",
+    "<output-file>/tmp/tasks/b1.output</output-file>",
+    "<status>completed</status>",
+    '<summary>Background command "time each arm" completed (exit code 0)</summary>',
+    "</task-notification>",
+  ].join("\n")
+  turnStarted(s, undefined, notice, T0 + 2)
+  expect(s.leader.title).toBe("time each arm against the API")
+  expect(s.leader.prompt).toBe("time each arm against the API")
+  expect(s.leader.status).toBe("thinking")
+  expect(s.leader.finishedAt).toBeUndefined()
+})

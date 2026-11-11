@@ -28,5 +28,7 @@ test("a job given to a session in herdr says to do it in a worktree of its own; 
   expect(withWorktree("派活", false)).toBe("派活")
   const told = withWorktree("派活", true)
   expect(told.startsWith("派活\n\n")).toBe(true)
-  for (const part of ["herdr worktree create --branch", "--no-focus", "herdr worktree remove --workspace", "正在做的活不用搬"]) expect(told).toContain(part)
+  // From a pane in a worktree workspace, herdr refuses a create without the
+  // repository's main workspace, wherever the shell has cd'd to.
+  for (const part of ["herdr worktree create --workspace <主工作区 id> --branch", "is_linked_worktree", "--no-focus", "herdr worktree remove --workspace", "正在做的活不用搬"]) expect(told).toContain(part)
 })

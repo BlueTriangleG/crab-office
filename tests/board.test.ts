@@ -79,3 +79,48 @@ test("a session already asked is not asked again after a reload", async ($, on) 
   await clock.advance(1000)
   expect(submitted.filter((t) => t.includes("name yourself"))).toHaveLength(0)
 })
+
+// This session "a" as CEO, already handed over, with no memo of its own to take,
+// and two jobs given colleague "c" two hours ago: c, idle a minute, has not
+// reported, so the watchdog would ask after both.
+const asCeo = (files: Map<string, string>, now: number) => {
+  files.delete(`${OFFICE}/memos/o.json`)
+  files.delete(`${OFFICE}/claims/o.json`)
+  files.set(`${OFFICE}/org/a.json`, JSON.stringify([{ kind: "ceo", sessionId: "a", at: now - 1, by: "chairman" }]))
+  const a = createSnapshot("a", "web-app", undefined, now - 60_000)
+  a.ceoSeen = now - 1
+  a.themeSeen = "en|"
+  files.set(`${OFFICE}/live/a.json`, JSON.stringify(a))
+  const c = createSnapshot("c", "web-app", undefined, now - 60_000)
+  c.leader.since = now - 60_000
+  files.set(`${OFFICE}/live/c.json`, JSON.stringify(c))
+  for (const id of ["j1", "j2"])
+    files.set(`${OFFICE}/jobs/${id}.json`, JSON.stringify({ id, at: now - 2 * 3_600_000, by: "a", to: "c", task: `job ${id}` }))
+}
+
+test("the CEO marks a job waiting on something, kept with what the job and its session were, and takes the mark off", async ($, on) => {
+  const { files } = await office($, on, asCeo)
+  const c = JSON.parse(files.get(`${OFFICE}/live/c.json`) ?? "{}") as { leader: { since: number } }
+  const job = JSON.parse(files.get(`${OFFICE}/jobs/j1.json`) ?? "{}") as { at: number }
+  const r = await $.tool.call({ tool: BOARD, action: "wait", assignment: "j1", text: "the chairman" })
+  expect(JSON.stringify(r)).toContain("the chairman")
+  const mark = JSON.parse(files.get(`${OFFICE}/waits/j1.json`) ?? "null") as Record<string, unknown> | null
+  expect(mark).toMatchObject({ id: "j1", by: "a", text: "the chairman", jobSince: job.at, amends: 0, workerSince: c.leader.since })
+  await $.tool.call({ tool: BOARD, action: "wait", assignment: "j1" })
+  expect((JSON.parse(files.get(`${OFFICE}/waits/j1.json`) ?? "{}") as { text?: string }).text).toBe("")
+})
+
+test("the watchdog leaves a job marked waiting, and asks after one whose wait has ended, saying what it waited on", async ($, on) => {
+  const { submitted } = await office($, on, (files, now) => {
+    asCeo(files, now)
+    const at = now - 2 * 3_600_000
+    // j1's session has not moved since; j2's had started something since its mark
+    files.set(`${OFFICE}/waits/j1.json`, JSON.stringify({ id: "j1", at: now - 5 * 60_000, by: "a", text: "the chairman", jobSince: at, amends: 0, workerSince: now - 60_000 }))
+    files.set(`${OFFICE}/waits/j2.json`, JSON.stringify({ id: "j2", at: now - 5 * 60_000, by: "a", text: "a review", jobSince: at, amends: 0, workerSince: now - 90 * 60_000 }))
+  })
+  const nudges = submitted.filter((t) => t.includes("watchdog"))
+  expect(nudges).toHaveLength(1)
+  expect(nudges[0]).toContain("#j2")
+  expect(nudges[0]).toContain("a review")
+  expect(nudges[0]).not.toContain("#j1")
+})

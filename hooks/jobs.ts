@@ -14,6 +14,10 @@ export type Report = { id: string; n: number; at: number; from: string; text: st
 export type Amend = { id: string; n: number; at: number; by: string; text: string }
 // `isWithdrawn`: the CEO took the job back; it closes, judged neither way.
 export type Verdict = { id: string; n: number; at: number; by: string; ok: boolean; note: string; isWithdrawn?: boolean }
+// The CEO's word that a job waits on something (`waits/<id>.json`, the latest
+// standing; `text` empty takes it off), with what the job and its session were
+// then: `workerSince` when the session sat idle, so its starting ends the wait.
+export type Wait = { id: string; at: number; by: string; text: string; jobSince: number; amends: number; workerSince?: number }
 
 // assigned and rejected are the session's to move, reported the CEO's; accepted,
 // withdrawn and chairman are closed, the last left for the chairman to decide.
@@ -57,11 +61,12 @@ export type BoardAction =
   | "title"
   | "amend"
   | "track"
+  | "wait"
 
 const OPEN = new Set<JobStatus>(["assigned", "rejected", "reported"])
 // What only the CEO's own loop may do: a subagent of the CEO session shares its
 // session id, and may have been told it is the CEO.
-const CEO_ONLY = new Set<BoardAction>(["assign", "appoint", "duty", "accept", "reject", "withdraw", "amend", "track"])
+const CEO_ONLY = new Set<BoardAction>(["assign", "appoint", "duty", "accept", "reject", "withdraw", "amend", "track", "wait"])
 
 // Who may do what, decided here and nowhere else: the CEO assigns, judges and
 // appoints heads; a head or the CEO writes duties, a head for its own repository
@@ -93,6 +98,7 @@ export function refusalOf(
       if (job.status === "reported") return w().tool.amendReported
       return job.status === "assigned" || job.status === "rejected" ? undefined : w().tool.closed
     case "withdraw":
+    case "wait":
       if (rank !== "ceo") return w().tool.notCeo
       if (job === undefined) return w().tool.noJob
       return OPEN.has(job.status) ? undefined : w().tool.closed
@@ -121,7 +127,8 @@ export function refusalOf(
 // the CEO, which decides what to do (ask, hand it elsewhere, ask the head, tell
 // the chairman). Rule 2 tells the chairman too, since only the chairman can
 // approve a tool for another session.
-export type Nudge = { id: string; rule: 1 | 2 | 3 | 4 | 5; minutes: number; toChairman: boolean }
+// `waited`: what the CEO had marked the job waiting on, once that has ended.
+export type Nudge = { id: string; rule: 1 | 2 | 3 | 4 | 5; minutes: number; toChairman: boolean; waited?: string }
 
 export const WATCH = {
   everyMs: 30_000,
@@ -135,20 +142,53 @@ export const WATCH = {
   // home while its subagent worked. Gone is as long as the office takes to
   // drop a session.
   goneMs: LEAVE_MS,
+  // A mark that a job waits on something lapses, so it is asked about again.
+  waitMs: 4 * 60 * 60_000,
+  // The session's own heartbeat silent this long: the computer slept, and every
+  // colleague's stopped with it.
+  sleptMs: 60_000,
+}
+
+// When this session last woke: `lastBeat` is its own last heartbeat, 0 before
+// the first, which is a load and not a wake.
+export function wokeAtOf(lastBeat: number, now: number, wokeAt: number): number {
+  return lastBeat > 0 && now - lastBeat > WATCH.sleptMs ? now : wokeAt
+}
+
+function isWaiting(wait: Wait, job: Job, worker: Snapshot | undefined, now: number): boolean {
+  return (
+    now - wait.at < WATCH.waitMs &&
+    job.since === wait.jobSince &&
+    job.amends.length === wait.amends &&
+    (wait.workerSince === undefined || worker?.leader.since === wait.workerSince)
+  )
 }
 
 // `nudged`: when each `<job>:<rule>` was last put to the CEO, so none comes
-// twice in WATCH.againMs.
-export function nudgesOf(jobs: Job[], snaps: Snapshot[], now: number, nudged: Record<string, number>): Nudge[] {
+// twice in WATCH.againMs, unless a wait marked since has ended. `waits`: the
+// CEO's marks; `wokeAt`: when the computer last woke, for WATCH.goneMs after
+// which nobody is called gone.
+export function nudgesOf(
+  jobs: Job[],
+  snaps: Snapshot[],
+  now: number,
+  nudged: Record<string, number>,
+  { waits = [], wokeAt = Number.NEGATIVE_INFINITY }: { waits?: Wait[]; wokeAt?: number } = {},
+): Nudge[] {
   const minutes = (ms: number) => Math.floor(ms / 60_000)
+  const waitOf = (id: string) => waits.find((x) => x.id === id && x.text !== "")
   const all = jobs.flatMap((job): Nudge[] => {
-    const nudge = (rule: Nudge["rule"], since: number, toChairman = false): Nudge[] => [
-      { id: job.id, rule, minutes: minutes(now - since), toChairman },
-    ]
-    if (job.status === "reported") return now - job.since > WATCH.verdictMs ? nudge(5, job.since) : []
-    if (job.status !== "assigned" && job.status !== "rejected") return []
     const worker = snaps.find((s) => s.sessionId === job.to)
-    if (worker === undefined || worker.ended === true || now - worker.updatedAt > WATCH.goneMs) return nudge(3, job.since)
+    const wait = waitOf(job.id)
+    const waiting = wait !== undefined && isWaiting(wait, job, worker, now)
+    const nudge = (rule: Nudge["rule"], since: number, toChairman = false): Nudge[] => [
+      { id: job.id, rule, minutes: minutes(now - since), toChairman, ...(wait === undefined ? {} : { waited: wait.text }) },
+    ]
+    if (job.status === "reported") return !waiting && now - job.since > WATCH.verdictMs ? nudge(5, job.since) : []
+    if (job.status !== "assigned" && job.status !== "rejected") return []
+    if (worker === undefined || worker.ended === true || now - worker.updatedAt > WATCH.goneMs)
+      return now - wokeAt < WATCH.goneMs ? [] : nudge(3, job.since)
+    if (waiting) return []
     const { status, since } = worker.leader
     if (status === "approval") return now - since > WATCH.approvalMs ? nudge(2, since, true) : []
     return [
@@ -156,5 +196,8 @@ export function nudgesOf(jobs: Job[], snaps: Snapshot[], now: number, nudged: Re
       ...(now - job.since > WATCH.workingMs ? nudge(4, job.since) : []),
     ]
   })
-  return all.filter((n) => now - (nudged[`${n.id}:${n.rule}`] ?? Number.NEGATIVE_INFINITY) >= WATCH.againMs)
+  return all.filter((n) => {
+    const at = nudged[`${n.id}:${n.rule}`] ?? Number.NEGATIVE_INFINITY
+    return now - at >= WATCH.againMs || at < (waitOf(n.id)?.at ?? Number.NEGATIVE_INFINITY)
+  })
 }

@@ -155,6 +155,7 @@ const EN = {
     "When the chairman asks who is doing something, find it with office_board staff and answer, or pass it on.",
     "Something to add to a job while it is being done: office_board amend (assignment, text). It reaches the session and is kept with the job, so the report is judged against it too; once reported, send it back with reject instead.",
     "A job you no longer want done, or whose session has gone, take back with office_board withdraw (assignment), so the watchdog stops asking about it; give it to someone else with assign.",
+    "A job that is waiting on something (the chairman, another job), mark with office_board wait (assignment, text: what it waits on): the watchdog leaves it until the job, its session or its additions change, or four hours pass. wait with no text takes the mark off.",
     "Never ask a session to do what your own session may not do.",
   ].join("\n"),
   roleFlat: [
@@ -182,7 +183,7 @@ const EN = {
   herdrWaiting: (label: string) => `⏳ ${label} · needs you`,
   herdrNotice: (who: string) => `${who} needs you in its session`,
   herdrWorktree:
-    "You are in herdr: do this job in a workspace of its own. In the repository, run `herdr worktree create --branch <branch> --no-focus`: it makes a copy of the code (worktree.path in its result) and a workspace (workspace.workspace_id); make the changes in that copy. Once the job is reported, remove it with `herdr worktree remove --workspace <that id>`; the branch stays. A job already under way stays where it is.",
+    "You are in herdr: do this job in a workspace of its own. Run `herdr worktree create --workspace <main workspace id> --branch <branch> --no-focus`, where the main workspace is the repository's one in `herdr workspace list` whose worktree has is_linked_worktree false. Without --workspace, herdr starts from the workspace your pane is in, and refuses one that is itself a worktree (linked_worktree_source), whatever folder you are in. It makes a copy of the code (worktree.path in its result) and a workspace (workspace.workspace_id); make the changes in that copy. Once the job is reported, remove it with `herdr worktree remove --workspace <that id>`; the branch stays. A job already under way stays where it is.",
   settleLine: (text: string) => `decided: ${text}`,
   meetingRoom: (name: string, topic: string) => `Meeting · ${name}: ${topic}`,
   meetingTask: (name: string) => `meeting ${name}`,
@@ -219,7 +220,7 @@ const EN = {
   ceoHandoverHead: "[crab-office · the chairman has made you CEO]",
   ceoStaffHead: "The sessions at work now:",
   nudgeHead: "[crab-office · the watchdog] These jobs have stalled:",
-  nudgeLine: (rule: number, id: string, task: string, who: string, minutes: number) => {
+  nudgeLine: (rule: number, id: string, task: string, who: string, minutes: number, waited?: string) => {
     const what = [
       "",
       `given ${minutes} min ago and not started`,
@@ -228,9 +229,9 @@ const EN = {
       `${minutes} min and no report`,
       `reported ${minutes} min ago and not yet judged by you`,
     ][rule]
-    return `- #${id} ${task.slice(0, 60)} (${who}): ${what}`
+    return `- #${id} ${task.slice(0, 60)} (${who}): ${what}${waited === undefined ? "" : ` (you had marked it waiting on: ${waited})`}`
   },
-  nudgeTail: "Decide what to do: ask it, withdraw it and give it to another session, ask its head, or tell the chairman.",
+  nudgeTail: "Decide what to do: ask it, withdraw it and give it to another session, ask its head, or tell the chairman. One waiting on something, mark with office_board wait (assignment, text: what it waits on), and it is not asked about again until that changes.",
   approvalToast: (id: string, who: string, minutes: number) => `Job #${id}: ${who} has waited ${minutes} min for your approval`,
   ceoWaiting: "Reported and waiting for your verdict:",
   waitingLine: (id: string, task: string, who: string) => `- #${id} ${task} (from ${who})`,
@@ -330,14 +331,14 @@ const EN = {
   // the office_board tool, which the model reads
   tool: {
     description:
-      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. action=pass hands back a memo you were given that is not your work (memo, text: why, to: the colleague whose job title or duty fits it, if one does), dropping your claim if you made one; the colleague named is handed it next. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=amend adds to a job still being done (assignment, text); action=track keeps a line of work on the CEO's tracker (line, status, text, to: its owner); action=withdraw takes an open job back (assignment); action=duty writes what a session is responsible for (to, text; left out, your own); action=appoint makes a session its repository's head (to); action=title gives a session a one-word job title (to, text; left out, your own), and SendMessage to a job title or to CEO reaches whoever holds it. When three or more sessions must agree on something, any of them may call a meeting: action=meet (meeting: a one-word name, to: the colleagues, text: the topic and the result needed; again with the same name brings more in); speak to it with SendMessage to the meeting's name, and everyone in it hears; whoever called it closes it with action=close (meeting, text: the conclusion). action=ask puts something only the chairman can decide on the chairman's list (text); action=settle takes it off once answered (decision, text: the answer), by the session that asked or the CEO. action=confirm is for what the chairman must say in person, in this session, before you can go on (a permission prompt, an action only the chairman's own words allow): it goes on the chairman's list (text: what to confirm), and in herdr it marks this session's tab and notifies the chairman; it clears once the chairman types here.",
+      "The crab-office whiteboard. The other Claude Code sessions open on this machine are your colleagues, each working in its own project or worktree, and the board shows everyone what is said between them, SendMessage included. To ask or tell one session something, use SendMessage (ListAgents names them); it shows on this board too. Use this board to write to a whole department, to everyone, or to the chairman (the user), without interrupting anyone: action=post with `to` set to a department (project name) or \"everyone\", or with no `to` for the chairman, and they get it next time they read the board. action=read shows the board's latest lines and what was written to you: read it before you start and when you finish something. action=claim claims a memo from the chairman (its id is in the brackets at the memo's start), after which no other session takes it. action=pass hands back a memo you were given that is not your work (memo, text: why, to: the colleague whose job title or duty fits it, if one does), dropping your claim if you made one; the colleague named is handed it next. When the chairman has appointed a CEO, the office also runs its work through here, each session told in its instructions which of these it may use: action=staff lists who is at work, their SendMessage names, duties and open jobs; action=assign gives a session a job (to, text, standard); action=report hands a job back (assignment, text); action=accept and action=reject judge a reported job (assignment, text); action=amend adds to a job still being done (assignment, text); action=track keeps a line of work on the CEO's tracker (line, status, text, to: its owner); action=withdraw takes an open job back (assignment); action=wait marks an open job as waiting on something (assignment, text: what; left out, the mark comes off), and the watchdog leaves it until the job, its session or its additions change, or four hours pass; action=duty writes what a session is responsible for (to, text; left out, your own); action=appoint makes a session its repository's head (to); action=title gives a session a one-word job title (to, text; left out, your own), and SendMessage to a job title or to CEO reaches whoever holds it. When three or more sessions must agree on something, any of them may call a meeting: action=meet (meeting: a one-word name, to: the colleagues, text: the topic and the result needed; again with the same name brings more in); speak to it with SendMessage to the meeting's name, and everyone in it hears; whoever called it closes it with action=close (meeting, text: the conclusion). action=ask puts something only the chairman can decide on the chairman's list (text); action=settle takes it off once answered (decision, text: the answer), by the session that asked or the CEO. action=confirm is for what the chairman must say in person, in this session, before you can go on (a permission prompt, an action only the chairman's own words allow): it goes on the chairman's list (text: what to confirm), and in herdr it marks this session's tab and notifies the chairman; it clears once the chairman types here.",
     memo: "the id of the memo to claim or pass",
     decision: "the id of an item on the chairman's list (settle)",
     meeting: "the meeting's one-word name (meet, close)",
     line: "a line of work's short title, as the chairman would say it (track)",
     status: "where the line stands (track): stuck, risk or ok; waiting puts it on the chairman's board; done takes it off",
     text: "what to write: the post, the job (assign), the result (report), a note or reason (accept, reject), the duty, the topic (meet) or the conclusion (close)",
-    assignment: "the job's id (report, accept, reject, amend, withdraw)",
+    assignment: "the job's id (report, accept, reject, amend, withdraw, wait)",
     standard: "how the job will be judged (assign, optional)",
     to: 'who it is for: a department (project name) or "everyone" (post; left out, the chairman); a session by its SendMessage name or team (assign, duty, appoint); for meet, the colleagues, comma-separated',
     notReady: "The office isn't ready yet",
@@ -397,7 +398,7 @@ const EN = {
     written: (heard: string) => `Written on the board; ${heard}.`,
     oneSession: (to: string, name: string | undefined) =>
       `${to} is one session, so write to it with SendMessage${name ? ` (to: "${name}")` : ""}: it reaches that session now, says whether it did, and shows on this board too. Nothing was written.`,
-    actions: "action is read, post, claim, meet, close, ask or settle, and with a CEO appointed also staff, assign, report, accept, reject, amend, track, withdraw, duty or appoint, as your instructions allow. ListAgents lists the other sessions; SendMessage writes to one.",
+    actions: "action is read, post, claim, meet, close, ask or settle, and with a CEO appointed also staff, assign, report, accept, reject, amend, track, withdraw, wait, duty or appoint, as your instructions allow. ListAgents lists the other sessions; SendMessage writes to one.",
     needMeeting: "Name the meeting: meeting is one word.",
     badLineName: (max: number) => `A line's title is one short line, at most ${max} characters.`,
     badLineStatus: (all: string) => `status is one of: ${all}.`,
@@ -435,6 +436,8 @@ const EN = {
     notFromSubagent: "Only the CEO's own conversation can do that, not one of its subagents",
     closed: "That job is already closed",
     withdrawn: (id: string) => `Job #${id} withdrawn; its session was told to stop.`,
+    waited: (id: string, text: string) => `Job #${id} marked waiting on: ${text}. The watchdog leaves it until the job, its session or its additions change, or four hours pass.`,
+    unwaited: (id: string) => `Job #${id} is no longer marked waiting; the watchdog asks about it as before.`,
     overruled: (who: string) => `Recorded, but the chairman's own pick, ${who}, stands as head.`,
   },
 }
@@ -584,6 +587,7 @@ const ZH: Words = {
     "董事长问某件事谁在做，用 office_board staff 查了回答，或者转过去。",
     "活还在做时要补充要求，用 office_board amend（assignment、text）：会送到那个会话，也记在这件活上，交差时一并验收；已经交差的就用 reject 退回。",
     "不再需要的活，或者做它的会话已经下线了，用 office_board withdraw（assignment）撤回，督促就不会再问它；要改派就再 assign 给别人。",
+    "在等某件事（董事长、另一件活）的活，用 office_board wait（assignment、text：在等什么）标上：这件活、做它的会话或补充要求有变化之前，或满 4 小时之前，督促不再问它。不带 text 再 wait 一次就取消标记。",
     "不要让别的会话去做你自己会话不被允许的事。",
   ].join("\n"),
   roleFlat: [
@@ -610,7 +614,7 @@ const ZH: Words = {
   herdrWaiting: (label) => `⏳ ${label} · 等你确认`,
   herdrNotice: (who) => `${who} 等你到它的会话里确认`,
   herdrWorktree:
-    "你在 herdr 里：这件活单独开一个工作区做。在仓库目录里跑 `herdr worktree create --branch <分支名> --no-focus`，它会建一份代码副本（结果里的 worktree.path）和一个工作区（workspace.workspace_id），在副本里改。交差以后用 `herdr worktree remove --workspace <那个 id>` 收掉，分支会保留。手上正在做的活不用搬。",
+    "你在 herdr 里：这件活单独开一个工作区做。跑 `herdr worktree create --workspace <主工作区 id> --branch <分支名> --no-focus`；主工作区用 `herdr workspace list` 查，是这个仓库里 worktree 的 is_linked_worktree 为 false 的那个。不带 --workspace 时，herdr 拿你窗格所在的工作区当起点，那个工作区本身是 worktree 就会被拒（linked_worktree_source），cd 到哪个目录都没用。它会建一份代码副本（结果里的 worktree.path）和一个工作区（workspace.workspace_id），在副本里改。交差以后用 `herdr worktree remove --workspace <那个 id>` 收掉，分支会保留。手上正在做的活不用搬。",
   settleLine: (text) => `已拍板：${text}`,
   meetingRoom: (name, topic) => `会议室 · ${name}：${topic}`,
   meetingTask: (name) => `会议 ${name}`,
@@ -645,7 +649,7 @@ const ZH: Words = {
   ceoHandoverHead: "[螃蟹办公室 · 董事长任命你为 CEO]",
   ceoStaffHead: "现在在岗的会话：",
   nudgeHead: "[螃蟹办公室 · 督促] 这几件活卡住了：",
-  nudgeLine: (rule, id, task, who, minutes) => {
+  nudgeLine: (rule, id, task, who, minutes, waited) => {
     const what = [
       "",
       `派出 ${minutes} 分钟了，还没开始`,
@@ -654,9 +658,9 @@ const ZH: Words = {
       `${minutes} 分钟了还没交差`,
       `交差 ${minutes} 分钟了，你还没验收`,
     ][rule]
-    return `- #${id} ${task.slice(0, 60)}（${who}）：${what}`
+    return `- #${id} ${task.slice(0, 60)}（${who}）：${what}${waited === undefined ? "" : `（你标过在等：${waited}）`}`
   },
-  nudgeTail: "决定怎么处理：去问它、撤回（withdraw）后改派给别的会话、问它的部长，或者告诉董事长。",
+  nudgeTail: "决定怎么处理：去问它、撤回（withdraw）后改派给别的会话、问它的部长，或者告诉董事长。在等某件事的，用 office_board wait（assignment、text：在等什么）标上，状态变了之前不再问。",
   approvalToast: (id, who, minutes) => `#${id}：${who} 等你批准已经 ${minutes} 分钟`,
   ceoWaiting: "已经交差、等你验收的：",
   waitingLine: (id, task, who) => `- #${id} ${task}（${who} 交的）`,
@@ -726,14 +730,14 @@ const ZH: Words = {
   sayHint: "@组名、@部门 或 @全体；不写 @ 就谁先空谁接",
   tool: {
     description:
-      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。action=pass 退回交给你但不是你这摊的留言（memo；text：为什么；to：职位或职责对口的同事，有的话），你认领过的也一并放下；被点名的同事下一个接到。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=amend 给还在做的活补充要求（assignment、text）；action=track 把一条工作线记到 CEO 看板上（line、status、text、to：负责的会话）；action=withdraw 撤回还没结束的活（assignment）；action=duty 写某个会话负责什么（to、text；不写 to 就是你自己的）；action=appoint 任命某个会话为它所在 repo 的部长（to）；action=title 给会话取一个一词的职位名（to、text；不写 to 就是你自己），用 SendMessage 发给职位名或 CEO 会送到当前担任的会话。三个或更多会话要商量定一件事时，任何会话都可以开会：action=meet（meeting：一个词的会议名，to：要拉的同事，text：议题和要商量出的结果；用同一个会议名再 meet 一次就是拉更多人）；在会上说话用 SendMessage 发给会议名，每个与会者都会收到；召集人用 action=close（meeting、text：结论）散会。action=ask 把只有董事长能定的事挂到董事长的清单上（text）；action=settle 在答复后划掉（decision、text：答复），由提出的会话或 CEO 来划。action=confirm 用于必须由董事长本人到你这个会话里说一句才能继续的事（被权限拦住、只认董事长亲口确认的操作）：会挂到董事长的清单上（text：要确认什么），在 herdr 里还会标出你的标签并弹通知；董事长在你的会话里输入后自动清掉。",
+      "螃蟹办公室的共享白板。这台机器上同时开着的其他 Claude Code 会话是你的同事，各在自己的项目或 worktree 里干活；他们之间说的话（包括 SendMessage）都会显示在白板上。单独找一个会话问事、告诉它事，用 SendMessage（ListAgents 能看到名字），白板上也看得到。这块白板用来写给整个部门、全体或董事长（用户），不打断任何人：action=post，to 写部门名（项目名）或「全体」，不写 to 就是写给董事长，他们下次看白板时收到。action=read 看白板最近的话和写给你的消息：开工前、做完一件事时看一下。action=claim 认领董事长的留言（memo id 在留言开头的方括号里），认领后别的会话就不会再接。action=pass 退回交给你但不是你这摊的留言（memo；text：为什么；to：职位或职责对口的同事，有的话），你认领过的也一并放下；被点名的同事下一个接到。董事长任命了 CEO 之后，公司的活也走这里，每个会话能用哪些动作，它的说明里会写：action=staff 看谁在岗、SendMessage 名、职责和在办的活；action=assign 派活（to、text、standard）；action=report 交差（assignment、text）；action=accept、action=reject 验收已交差的活（assignment、text）；action=amend 给还在做的活补充要求（assignment、text）；action=track 把一条工作线记到 CEO 看板上（line、status、text、to：负责的会话）；action=withdraw 撤回还没结束的活（assignment）；action=wait 把还没结束的活标成在等某件事（assignment、text：在等什么；不写 text 就是取消），这件活、做它的会话或补充要求有变化之前，或满 4 小时之前，督促不再问它；action=duty 写某个会话负责什么（to、text；不写 to 就是你自己的）；action=appoint 任命某个会话为它所在 repo 的部长（to）；action=title 给会话取一个一词的职位名（to、text；不写 to 就是你自己），用 SendMessage 发给职位名或 CEO 会送到当前担任的会话。三个或更多会话要商量定一件事时，任何会话都可以开会：action=meet（meeting：一个词的会议名，to：要拉的同事，text：议题和要商量出的结果；用同一个会议名再 meet 一次就是拉更多人）；在会上说话用 SendMessage 发给会议名，每个与会者都会收到；召集人用 action=close（meeting、text：结论）散会。action=ask 把只有董事长能定的事挂到董事长的清单上（text）；action=settle 在答复后划掉（decision、text：答复），由提出的会话或 CEO 来划。action=confirm 用于必须由董事长本人到你这个会话里说一句才能继续的事（被权限拦住、只认董事长亲口确认的操作）：会挂到董事长的清单上（text：要确认什么），在 herdr 里还会标出你的标签并弹通知；董事长在你的会话里输入后自动清掉。",
     memo: "要认领或退回的 memo id",
     decision: "董事长清单上一项的编号（settle）",
     meeting: "会议名，一个词（meet、close）",
     line: "工作线的标题，简短，用董事长会说的话（track）",
     status: "这条线的状态（track）：stuck 卡住、risk 有风险、ok 正常；waiting 放到董事长的确认板上；done 从看板上拿掉",
     text: "要写的内容：白板上的话、派的活（assign）、结果（report）、验收意见或退回原因（accept、reject）、职责（duty）、议题（meet）、结论（close）",
-    assignment: "活的编号（report、accept、reject、amend、withdraw）",
+    assignment: "活的编号（report、accept、reject、amend、withdraw、wait）",
     standard: "这件活怎么验收（assign，可不写）",
     to: "写给谁：部门名（项目名）或「全体」（post；不写就是董事长）；或用 SendMessage 名、组名指定一个会话（assign、duty、appoint）；meet 时写要拉的同事，用逗号分开",
     notReady: "办公室还没准备好",
@@ -790,7 +794,7 @@ const ZH: Words = {
     written: (heard) => `已经写到白板上了，${heard}。`,
     oneSession: (to, name) =>
       `${to} 是一个会话，单独找它请用 SendMessage${name ? `（to: "${name}"）` : ""}：马上送到、会告诉你送没送到，白板上也看得到。这次没有写上白板。`,
-    actions: "action 有 read、post、claim、meet、close、ask、settle；任命了 CEO 之后还有 staff、assign、report、accept、reject、amend、track、withdraw、duty、appoint，能用哪些看你的说明。ListAgents 列出别的会话，SendMessage 单独写给一个。",
+    actions: "action 有 read、post、claim、meet、close、ask、settle；任命了 CEO 之后还有 staff、assign、report、accept、reject、amend、track、withdraw、wait、duty、appoint，能用哪些看你的说明。ListAgents 列出别的会话，SendMessage 单独写给一个。",
     needMeeting: "缺会议名：meeting 填一个词。",
     badLineName: (max) => `线的标题写一行，最多 ${max} 个字。`,
     badLineStatus: (all) => `status 只能是：${all}。`,
@@ -824,6 +828,8 @@ const ZH: Words = {
     notFromSubagent: "只有 CEO 自己的对话能这么做，它的子代理不行",
     closed: "这件活已经结束了",
     withdrawn: (id) => `#${id} 已撤回，已经告诉那个会话停下。`,
+    waited: (id, text) => `#${id} 已标为在等：${text}。这件活、做它的会话或补充要求有变化之前，或满 4 小时之前，督促不再问它。`,
+    unwaited: (id) => `#${id} 取消了在等的标记，督促照常问它。`,
     overruled: (who) => `已记下，但董事长自己任命的 ${who} 仍是部长。`,
   },
 }

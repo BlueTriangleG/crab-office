@@ -342,9 +342,13 @@ export function turnStarted(
   const crab = crabOf(s, agentId)
   if (crab === undefined) return
   if (agentId === undefined) {
-    const prompt = promptOf(text)
-    crab.title = clip(prompt, 80)
-    crab.prompt = prompt
+    // A background task's notice starts a turn of its own, and is not what the
+    // session was asked: a card showed the task's id and output file.
+    if (!text.trimStart().startsWith("<task-notification>")) {
+      const prompt = promptOf(text)
+      crab.title = clip(prompt, 80)
+      crab.prompt = prompt
+    }
     delete crab.finishedAt
   }
   moved(crab, "thinking", now)

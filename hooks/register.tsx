@@ -66,8 +66,8 @@ import {
   staffOf,
 } from "./org.ts"
 import type { Appointment, Duty, Org } from "./org.ts"
-import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "./jobs.ts"
-import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict } from "./jobs.ts"
+import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf, wokeAtOf } from "./jobs.ts"
+import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict, Wait } from "./jobs.ts"
 import { answerOf, hereOf, isAway, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
 import { herdrPlaceOf, tabLabelOf, withWorktree } from "./herdr.ts"
 import type { HerdrPlace } from "./herdr.ts"
@@ -91,7 +91,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-10.4"
+const BUILD = "2026-11-12.1"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -116,6 +116,8 @@ const office = {
   ceoWho: "",
   // The CEO's jobs as their files come to, and who is responsible for what.
   jobs: [] as Job[],
+  // The CEO's marks that a job waits on something (`waits/<id>.json`).
+  waits: [] as Wait[],
   duties: {} as Record<string, string>,
   // Each session's job title (`titles/<writer>.json`), the latest word standing.
   titles: {} as Record<string, string>,
@@ -140,6 +142,8 @@ const office = {
   watchedAt: 0,
   isDirty: true,
   lastWrite: 0,
+  // When the computer last woke, as this session's own heartbeat tells it.
+  wokeAt: Number.NEGATIVE_INFINITY,
   isOpen: false,
   // In every drawing's key, and moved on each /office: an overrun of a
   // drawing's one-second budget (a frame cut in half by the Mac's sleep)
@@ -588,6 +592,7 @@ async function tick($: EngineInterface) {
   if (me === undefined || office.isSpare || me.ended === true) return
   const now = Date.now()
   if (pruned(me, now)) changed($)
+  office.wokeAt = wokeAtOf(office.lastWrite, now, office.wokeAt)
   if (office.isDirty || now - office.lastWrite >= HEARTBEAT_MS) {
     me.updatedAt = now
     office.isDirty = false
@@ -602,6 +607,7 @@ async function tick($: EngineInterface) {
   office.memos = await readJsonDir<Memo>($, `${office.base}/memos`)
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
   office.passes = await readJsonDir<Pass>($, `${office.base}/passes`)
+  office.waits = await readJsonDir<Wait>($, `${office.base}/waits`, JOB_KEEP_MS)
   const [given, reported, judged, duties, titles, meetingFiles, amends, asked, settled, tracked] = await Promise.all([
     readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
     readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
@@ -666,7 +672,7 @@ async function watch($: EngineInterface, now: number) {
   if (me === undefined || office.org.ceo !== me.sessionId || now - office.watchedAt < WATCH.everyMs) return
   office.watchedAt = now
   const snaps = [me, ...office.others]
-  const nudges = nudgesOf(office.jobs, snaps, now, me.nudged ?? {})
+  const nudges = nudgesOf(office.jobs, snaps, now, me.nudged ?? {}, { waits: office.waits, wokeAt: office.wokeAt })
   if (nudges.length === 0) return
   const jobOf = (id: string) => office.jobs.find((j) => j.id === id)
   const whoIs = (id: string) => {
@@ -687,7 +693,7 @@ async function watch($: EngineInterface, now: number) {
   if (toasts.length > 0) stamp(toasts.map((n) => `${keyOf(n)}:toast`))
   if (!isFree(me, now) || (await $.prompt.read()).text.trim() !== "") return
   stamp(nudges.map(keyOf))
-  const lines = nudges.map((n) => w().nudgeLine(n.rule, n.id, jobOf(n.id)?.task ?? "", whoIs(n.id), n.minutes))
+  const lines = nudges.map((n) => w().nudgeLine(n.rule, n.id, jobOf(n.id)?.task ?? "", whoIs(n.id), n.minutes, n.waited))
   const text = [w().nudgeHead, ...lines, "", w().nudgeTail].join("\n")
   turnStarted(me, undefined, text, now)
   changed($)
@@ -1121,7 +1127,7 @@ type BoardInput = {
   agentId?: string
 }
 
-const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title"])
+const MANAGING = new Set<string>(["staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title", "wait"])
 
 // The CEO's actions, a head's duties and a session's report: each judged by
 // refusalOf before anything is written, each delivery through the engine's own
@@ -1163,7 +1169,7 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
     if (head !== undefined && head.sessionId !== target.sessionId) return w().tool.overruled(labelOf(head, peers, office.titles))
     return w().appointDone(labelOf(target, peers, office.titles), titleOf("chief"), false)
   }
-  if (text === "" && action !== "accept" && action !== "withdraw") return w().tool.empty
+  if (text === "" && action !== "accept" && action !== "withdraw" && action !== "wait") return w().tool.empty
   if (action === "track") {
     const name = (input.line ?? "").trim().replace(/\s+/g, " ")
     const status = input.status?.trim().toLowerCase() ?? ""
@@ -1225,6 +1231,14 @@ async function manage($: EngineInterface, input: BoardInput, me: Snapshot, now: 
   }
   // Narrows: refusalOf has answered every report, accept and reject without a job.
   if (job === undefined) return w().tool.noJob
+  if (action === "wait") {
+    const worker = snaps.find((s) => s.sessionId === job.to)
+    const isIdle = worker?.leader.status === "idle"
+    const mark: Wait = { id: job.id, at: now, by: me.sessionId, text, jobSince: job.since, amends: job.amends.length, ...(isIdle ? { workerSince: worker?.leader.since } : {}) }
+    await $.fs.write(`${office.base}/waits/${job.id}.json`, JSON.stringify(mark))
+    office.waits = [...office.waits.filter((x) => x.id !== job.id), mark]
+    return text === "" ? w().tool.unwaited(job.id) : w().tool.waited(job.id, text)
+  }
   if (action === "amend") {
     const added: Amend = { id: job.id, n: job.amends.length + 1, at: now, by: me.sessionId, text }
     await $.fs.write(`${office.base}/amends/${job.id}.${added.n}.json`, JSON.stringify(added))
@@ -1497,7 +1511,7 @@ export const register: Register = (on, options) => {
         properties: {
           action: {
             type: "string",
-            enum: ["read", "post", "claim", "pass", "meet", "close", "ask", "confirm", "settle", "staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title"],
+            enum: ["read", "post", "claim", "pass", "meet", "close", "ask", "confirm", "settle", "staff", "duty", "assign", "report", "accept", "reject", "amend", "track", "withdraw", "appoint", "title", "wait"],
           },
           line: { type: "string", description: w().tool.line },
           status: { type: "string", enum: LINE_STATUSES, description: w().tool.status },

@@ -1,8 +1,9 @@
 import { expect, test } from "claude-code/testing"
 
-import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf } from "../hooks/jobs.ts"
-import type { Amend, Assignment, Job, Report, Verdict } from "../hooks/jobs.ts"
+import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf, wokeAtOf } from "../hooks/jobs.ts"
+import type { Amend, Assignment, Job, Report, Verdict, Wait } from "../hooks/jobs.ts"
 import { createSnapshot, promptOf } from "../hooks/office.ts"
+import type { Snapshot } from "../hooks/office.ts"
 import { NO_ORG } from "../hooks/org.ts"
 import { setLanguage, w } from "../hooks/words.ts"
 
@@ -174,4 +175,90 @@ test("a session in observe mode is given no job and no post", async () => {
   const ctx = { myProject: "web-app", org: NO_ORG }
   expect(refusalOf("assign", "a", "ceo", { ...ctx, target: watcher })).toBeDefined()
   expect(refusalOf("appoint", "a", "ceo", { ...ctx, target: watcher })).toBeDefined()
+})
+
+// The CEO's answer to a nudge, kept with the job: it waits on something, and
+// the watchdog stops asking until there is something new to ask about.
+test("a job marked waiting is not nudged until it, its idle session or its additions change, its session goes, or four hours pass", async () => {
+  const worker = (status: string, since: number, updatedAt: number) => {
+    const s = createSnapshot("i", "web-app", undefined, T0, "i")
+    s.leader.status = status as typeof s.leader.status
+    s.leader.since = since
+    s.updatedAt = updatedAt
+    return s
+  }
+  const open: Job = { ...job("j", "i"), status: "assigned", since: T0, reports: [], verdicts: [], amends: [] }
+  const now = T0 + WATCH.workingMs + 1
+  const markedAt = T0 + 60_000
+  const mark: Wait = { id: "j", at: markedAt, by: "a", text: "the chairman", jobSince: T0, amends: 0, workerSince: T0 - 1 }
+  const idle = (at: number) => worker("idle", T0 - 1, at)
+  const rules = (jobs: Job[], snaps: Snapshot[], at: number, waits: Wait[] = [mark], nudged: Record<string, number> = {}) =>
+    nudgesOf(jobs, snaps, at, nudged, { waits }).map((n) => `${n.id}:${n.rule}`)
+  // unmarked, both rules fire; marked, neither
+  expect(rules([open], [idle(now)], now, [])).toEqual(["j:1", "j:4"])
+  expect(rules([open], [idle(now)], now)).toEqual([])
+  // its session, idle when marked, has started
+  expect(rules([open], [worker("editing", T0 + 30 * 60_000, now)], now)).toEqual(["j:4"])
+  // ... and stays started even once it is idle again
+  expect(rules([open], [worker("idle", T0 + 40 * 60_000, now)], now)).toEqual(["j:4"])
+  // reported
+  const reported: Job = { ...open, status: "reported", since: T0 + 40 * 60_000 }
+  expect(rules([reported], [idle(now)], now)).toEqual(["j:5"])
+  // more was added
+  const amended: Job = { ...open, amends: [{ id: "j", n: 1, at: T0 + 30 * 60_000, by: "a", text: "and the docs" }] }
+  expect(rules([amended], [idle(now)], now)).toEqual(["j:1", "j:4"])
+  // its session has gone
+  expect(rules([open], [], now)).toEqual(["j:3"])
+  // four hours on
+  const later = markedAt + WATCH.waitMs
+  expect(rules([open], [idle(later - 1)], later - 1)).toEqual([])
+  expect(rules([open], [idle(later)], later)).toEqual(["j:1", "j:4"])
+  // the CEO took the mark off
+  expect(rules([open], [idle(now)], now, [{ ...mark, text: "" }])).toEqual(["j:1", "j:4"])
+  // a session busy when marked: the mark holds while it works on
+  const busyMark: Wait = { id: "j", at: markedAt, by: "a", text: "a review", jobSince: T0, amends: 0 }
+  expect(rules([open], [worker("editing", T0 + 5, now)], now, [busyMark])).toEqual([])
+  // the nudge that comes says what it waited on
+  expect(nudgesOf([amended], [idle(now)], now, {}, { waits: [mark] })[0]?.waited).toBe("the chairman")
+  expect(nudgesOf([open], [idle(now)], now, {}, { waits: [] })[0]?.waited).toBeUndefined()
+  expect(w().nudgeLine(1, "j", "fix the login test", "web-app", 70, "the chairman")).toContain("the chairman")
+  // a nudge from before the mark does not hold back the first one after it
+  const after = (at: number) => rules([amended], [idle(now)], now, [{ ...mark, at: now - 5 * 60_000 }], { "j:1": at, "j:4": at })
+  expect(after(now - 10 * 60_000)).toEqual(["j:1", "j:4"])
+  expect(after(now - 2 * 60_000)).toEqual([])
+})
+
+// The Mac sleeps and every session's heartbeat stops with it; on waking, the
+// CEO's watch can run before a colleague has written again, and took it for gone.
+test("for five minutes after the computer wakes, a session not yet heard from again is not called gone", async () => {
+  const open: Job = { ...job("j", "q"), status: "assigned", since: T0, reports: [], verdicts: [], amends: [] }
+  const quiet = createSnapshot("q", "web-app", undefined, T0, "q")
+  quiet.leader.status = "editing"
+  quiet.leader.since = T0 + 5
+  quiet.updatedAt = T0 + 60_000
+  // the clock set 15 minutes on, as a sleep does
+  const now = T0 + 16 * 60_000
+  const rules = (snaps: Snapshot[], wokeAt: number) => nudgesOf([open], snaps, now, {}, { wokeAt }).map((n) => `${n.id}:${n.rule}`)
+  expect(rules([quiet], now - 1000)).toEqual([])
+  expect(rules([], now - 1000)).toEqual([])
+  expect(rules([quiet], now - WATCH.goneMs)).toEqual(["j:3"])
+  expect(nudgesOf([open], [quiet], now, {}).map((n) => n.rule)).toEqual([3])
+  // what counts as waking: the session's own heartbeat silent a minute or more
+  expect(wokeAtOf(T0, T0 + 5_000, -Infinity)).toBe(-Infinity)
+  expect(wokeAtOf(T0, T0 + WATCH.sleptMs + 1, -Infinity)).toBe(T0 + WATCH.sleptMs + 1)
+  expect(wokeAtOf(T0, T0 + 5_000, T0 - 1)).toBe(T0 - 1)
+  // a module just loaded has written nothing yet, and has not woken
+  expect(wokeAtOf(0, T0, -Infinity)).toBe(-Infinity)
+})
+
+test("only the CEO marks a job waiting, and only an open one", async () => {
+  const ctx = { myProject: "web-app", org: NO_ORG }
+  const as = (status: Job["status"]): Job => ({ ...job("j1", "b"), status, since: T0, reports: [], verdicts: [], amends: [] })
+  for (const status of ["assigned", "rejected", "reported"] as const)
+    expect(refusalOf("wait", "a", "ceo", { ...ctx, job: as(status) })).toBeUndefined()
+  for (const status of ["accepted", "chairman", "withdrawn"] as const)
+    expect(refusalOf("wait", "a", "ceo", { ...ctx, job: as(status) })).toBeDefined()
+  expect(refusalOf("wait", "a", "ceo", ctx)).toBeDefined()
+  expect(refusalOf("wait", "b", "staff", { ...ctx, job: as("assigned") })).toBeDefined()
+  expect(refusalOf("wait", "a", "ceo", { ...ctx, job: as("assigned"), isSubagent: true })).toBeDefined()
 })
