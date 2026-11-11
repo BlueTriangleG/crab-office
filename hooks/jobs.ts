@@ -160,7 +160,8 @@ function isWaiting(wait: Wait, job: Job, worker: Snapshot | undefined, now: numb
     now - wait.at < WATCH.waitMs &&
     job.since === wait.jobSince &&
     job.amends.length === wait.amends &&
-    (wait.workerSince === undefined || worker?.leader.since === wait.workerSince)
+    // A reported job waits on its verdict, not on its session.
+    (wait.workerSince === undefined || job.status === "reported" || worker?.leader.since === wait.workerSince)
   )
 }
 
@@ -187,6 +188,8 @@ export function nudgesOf(
     if (job.status === "reported") return !waiting && now - job.since > WATCH.verdictMs ? nudge(5, job.since) : []
     if (job.status !== "assigned" && job.status !== "rejected") return []
     if (worker === undefined || worker.ended === true || now - worker.updatedAt > WATCH.goneMs)
+      // goneMs on purpose: after a wake a session has the same time to be heard
+      // from again as at any other time, and follows it if it changes.
       return now - wokeAt < WATCH.goneMs ? [] : nudge(3, job.since)
     if (waiting) return []
     const { status, since } = worker.leader
@@ -198,6 +201,8 @@ export function nudgesOf(
   })
   return all.filter((n) => {
     const at = nudged[`${n.id}:${n.rule}`] ?? Number.NEGATIVE_INFINITY
-    return now - at >= WATCH.againMs || at < (waitOf(n.id)?.at ?? Number.NEGATIVE_INFINITY)
+    // A mark never held back the gone nudge, so it is no reason to send it again.
+    const markedAt = n.rule === 3 ? undefined : waitOf(n.id)?.at
+    return now - at >= WATCH.againMs || at < (markedAt ?? Number.NEGATIVE_INFINITY)
   })
 }

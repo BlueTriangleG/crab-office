@@ -226,6 +226,12 @@ test("a job marked waiting is not nudged until it, its idle session or its addit
   const after = (at: number) => rules([amended], [idle(now)], now, [{ ...mark, at: now - 5 * 60_000 }], { "j:1": at, "j:4": at })
   expect(after(now - 10 * 60_000)).toEqual(["j:1", "j:4"])
   expect(after(now - 2 * 60_000)).toEqual([])
+  // a reported job waits on its verdict, not on its session: that session
+  // starting other work leaves the mark standing
+  const verdictMark: Wait = { ...mark, jobSince: reported.since }
+  expect(rules([reported], [worker("editing", T0 + 50 * 60_000, now)], now, [verdictMark])).toEqual([])
+  // a mark does not hold back the gone nudge, so it does not send it twice
+  expect(rules([open], [], now, [{ ...mark, at: now - 30_000 }], { "j:3": now - 60_000 })).toEqual([])
 })
 
 // The Mac sleeps and every session's heartbeat stops with it; on waking, the
