@@ -108,6 +108,21 @@ test("a subagent walks from thinking through a tool to done, then leaves", async
   expect(s.agents).toEqual([])
 })
 
+// A background subagent with a monitor of its own is woken by each of its
+// events, and each wake is a spawn under the same id: one session showed a
+// dozen crabs, every one the same subagent, with a task notice for its task.
+test("a subagent woken again is the same crab, keeping what it was given", async () => {
+  const s = withAgent()
+  turnFinished(s, "a1", { isAnswer: true, answer: "done" }, T0 + 1)
+  const notes = (s.board ?? []).length
+  spawned(s, { agentId: "a1", type: "Explore", isFork: false, description: "map packages", prompt: "<task-notification> <task-id>t1</task-id>" }, T0 + 2)
+  expect(s.agents).toHaveLength(1)
+  expect(s.agents[0]?.status).toBe("thinking")
+  expect(s.agents[0]?.prompt).toBe("List every package")
+  expect(s.hired).toBe(1)
+  expect((s.board ?? []).length).toBe(notes)
+})
+
 test("the leader takes the prompt, raises a hand for approval, then waits and falls asleep", async () => {
   const s = withAgent()
   turnStarted(s, undefined, "fix the   persona test", T0)

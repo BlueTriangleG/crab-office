@@ -367,6 +367,10 @@ export function spawned(
   },
   now: number,
 ) {
+  // A wake (a message to it, an event of its own monitor) spawns it again
+  // under the same id: still the crab it was, given what it was given.
+  const woken = s.agents.find((c) => c.id === a.agentId)
+  if (woken !== undefined) return moved(woken, "thinking", now)
   const crab: Crab = {
     id: a.agentId,
     role: a.isFork ? "fork" : a.type || "general-purpose",
