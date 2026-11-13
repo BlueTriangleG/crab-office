@@ -53,6 +53,17 @@ test("a memo passed to a colleague by job title is handed to them next, and lets
   expect(claim?.passedAt).toBeDefined()
 })
 
+test("a word to the chairman is kept for the latest updates under the office", async ($, on) => {
+  const { files } = await office($, on)
+  await $.tool.call({ tool: BOARD, action: "post", text: "the login fix is merged" })
+  const kept = [...files.entries()].filter(([p]) => p.startsWith(`${OFFICE}/updates/`)).map(([, t]) => JSON.parse(t) as Record<string, unknown>)
+  expect(kept).toHaveLength(1)
+  expect(kept[0]).toMatchObject({ by: "a", text: "the login fix is merged" })
+  // one to colleagues is theirs, not the chairman's news
+  await $.tool.call({ tool: BOARD, action: "post", to: "web-app", text: "hello" })
+  expect([...files.keys()].filter((p) => p.startsWith(`${OFFICE}/updates/`))).toHaveLength(1)
+})
+
 test("a post's receipt names each colleague who will read it by job title", async ($, on) => {
   await office($, on)
   const r = await $.tool.call({ tool: BOARD, action: "post", to: "web-app", text: "hello" })

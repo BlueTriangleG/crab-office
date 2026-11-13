@@ -156,6 +156,7 @@ const EN = {
     "Something to add to a job while it is being done: office_board amend (assignment, text). It reaches the session and is kept with the job, so the report is judged against it too; once reported, send it back with reject instead.",
     "A job you no longer want done, or whose session has gone, take back with office_board withdraw (assignment), so the watchdog stops asking about it; give it to someone else with assign.",
     "A job that is waiting on something (the chairman, another job), mark with office_board wait (assignment, text: what it waits on): the watchdog leaves it until the job, its session or its additions change, or four hours pass. If its session sits idle when you mark it, the mark ends as soon as that session starts, even when your own message starts it: to wait on its reply, mark it once it has started. wait with no text takes the mark off.",
+    "Each report to the chairman (what is done, what is under way, what needs the chairman) also goes up with office_board post with no to: it stays under the office in the latest updates, where your replies here scroll away under what comes after them.",
     "Never ask a session to do what your own session may not do.",
   ].join("\n"),
   roleFlat: [
@@ -166,6 +167,7 @@ const EN = {
     "When the chairman must say it in person, in this session, before you can go on (a permission prompt, an action only the chairman's own words allow), use office_board confirm (text: what to confirm) and stop there: it goes on the chairman's list, in herdr it marks your tab and notifies the chairman, and it clears once the chairman types here.",
     "When three or more sessions must agree on something, call a meeting: office_board meet (meeting: a one-word name, to: the colleagues, text: the topic and the result you need). Speak to it with SendMessage to the meeting's name, and everyone in it hears. Settle the result together; once everyone agrees, whoever called it closes it with office_board close (meeting, text: the conclusion), which goes to everyone and onto the board. A meeting quiet for 15 minutes ends by itself.",
   ].join("\n"),
+  updatesHead: "Latest updates",
   chairmanList: (n: number) => (n === 0 ? "Waiting on you: nothing" : `Waiting on you (${n})`),
   chairmanAnswer: (id: string, question: string, answer: string) =>
     `My answer to what you put on my list (#${id}: ${question}): ${answer}\n\nIt is off the list; no need to settle it.`,
@@ -392,7 +394,7 @@ const EN = {
     empty: "There is nothing to write",
     nobody: (to: string, names: string) =>
       `No colleague called ${to} is at work, so nothing was written. You can write to: ${names}`,
-    heardByChairman: "the chairman sees it",
+    heardByChairman: "the chairman sees it, kept under the office in the latest updates",
     heardBy: (who: string[]) =>
       `${who.join(", ")} will get it next time they read the board, without being interrupted`,
     written: (heard: string) => `Written on the board; ${heard}.`,
@@ -588,6 +590,7 @@ const ZH: Words = {
     "活还在做时要补充要求，用 office_board amend（assignment、text）：会送到那个会话，也记在这件活上，交差时一并验收；已经交差的就用 reject 退回。",
     "不再需要的活，或者做它的会话已经下线了，用 office_board withdraw（assignment）撤回，督促就不会再问它；要改派就再 assign 给别人。",
     "在等某件事（董事长、另一件活）的活，用 office_board wait（assignment、text：在等什么）标上：这件活、做它的会话或补充要求有变化之前，或满 4 小时之前，督促不再问它。标的时候做它的会话如果空闲，它一开工标记就失效，哪怕是你发消息叫醒的：要等它回话，就在它开工之后再标。不带 text 再 wait 一次就取消标记。",
+    "每次向董事长汇报（做完了什么、在做什么、要他定什么），也用 office_board post（不写 to）发一份：它会留在办公室下面的「最新进展」里；你在这里的回复，会被后面的消息冲上去。",
     "不要让别的会话去做你自己会话不被允许的事。",
   ].join("\n"),
   roleFlat: [
@@ -598,6 +601,7 @@ const ZH: Words = {
     "必须由董事长本人到你这个会话里说一句才能继续时（被权限拦住、只认董事长亲口确认的操作），用 office_board confirm（text：要确认什么），然后停下等：会挂到董事长的清单上，在 herdr 里还会标出你的标签并弹通知，董事长在你的会话里输入后自动清掉。",
     "三个或更多会话要商量定一件事时就开会：office_board meet（meeting：一个词的会议名，to：要拉的同事，text：议题和要商量出的结果）。在会上说话用 SendMessage 发给会议名，每个与会者都会收到。结论大家一起定；都同意后由召集人用 office_board close（meeting、text：结论）散会，结论会送到每个人并贴上白板。会上 15 分钟没人说话会自动结束。",
   ].join("\n"),
+  updatesHead: "最新进展",
   chairmanList: (n) => (n === 0 ? "等你拍板：暂无" : `等你拍板（${n}）`),
   chairmanAnswer: (id, question, answer) => `你挂到我清单上的 #${id}（${question}），我的答复：${answer}\n\n这一项已经划掉，不用再 settle。`,
   answerPlaceholder: "在这里回复",
@@ -789,7 +793,7 @@ const ZH: Words = {
     empty: "要写的话是空的",
     nobody: (to, names) =>
       `现在没有叫 ${to} 的同事在岗，没写。能写给：${names}`,
-    heardByChairman: "董事长看得到",
+    heardByChairman: "董事长看得到，会留在办公室下面的「最新进展」里",
     heardBy: (who) => `${who.join("、")} 下次看白板时会收到，不会打断他们`,
     written: (heard) => `已经写到白板上了，${heard}。`,
     oneSession: (to, name) =>

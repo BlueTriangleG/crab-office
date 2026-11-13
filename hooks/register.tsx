@@ -68,6 +68,8 @@ import {
 import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf, wokeAtOf } from "./jobs.ts"
 import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict, Wait } from "./jobs.ts"
+import { updateRowsOf } from "./updates.ts"
+import type { Update, UpdateRow } from "./updates.ts"
 import { answerOf, hereOf, isAway, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
 import { herdrPlaceOf, tabLabelOf, withWorktree } from "./herdr.ts"
 import type { HerdrPlace } from "./herdr.ts"
@@ -118,6 +120,8 @@ const office = {
   jobs: [] as Job[],
   // The CEO's marks that a job waits on something (`waits/<id>.json`).
   waits: [] as Wait[],
+  // What was said to the chairman (`updates/<id>.json`), kept under the office.
+  updates: [] as Update[],
   duties: {} as Record<string, string>,
   // Each session's job title (`titles/<writer>.json`), the latest word standing.
   titles: {} as Record<string, string>,
@@ -217,6 +221,29 @@ function trackerCard(el: Pick<ClientElements, "Box" | "Text">, rows: LineRow[]) 
           </Text>
           <Text bold>{r.name}</Text>
           <Text wrap="wrap">{r.text}</Text>
+        </Box>
+      ))}
+    </Box>
+  )
+}
+
+// The latest said to the chairman, at the foot of the office: the newest whole,
+// the few before it a line each. Nothing said yet, nothing drawn.
+function updatesCard(el: Pick<ClientElements, "Box" | "Text">, rows: UpdateRow[]) {
+  const { Box, Text } = el
+  if (rows.length === 0) return undefined
+  return (
+    <Box key="updates-card" flexDirection="column" borderStyle="round" borderColor={LEADER_COLOR} paddingX={1}>
+      <Text bold color={LEADER_COLOR}>
+        {w().updatesHead}
+      </Text>
+      {rows.map((r, i) => (
+        <Box key={`update-${i}`} flexDirection="row" columnGap={1}>
+          <Text dimColor>{r.when}</Text>
+          {r.who !== undefined && <Text bold>{r.who}</Text>}
+          <Text wrap="wrap" dimColor={i > 0}>
+            {r.text}
+          </Text>
         </Box>
       ))}
     </Box>
@@ -608,6 +635,7 @@ async function tick($: EngineInterface) {
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
   office.passes = await readJsonDir<Pass>($, `${office.base}/passes`)
   office.waits = await readJsonDir<Wait>($, `${office.base}/waits`, JOB_KEEP_MS)
+  office.updates = await readJsonDir<Update>($, `${office.base}/updates`, JOB_KEEP_MS)
   const [given, reported, judged, duties, titles, meetingFiles, amends, asked, settled, tracked] = await Promise.all([
     readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
     readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
@@ -1727,6 +1755,11 @@ export const register: Register = (on, options) => {
       if (target !== undefined && reach.length === 0)
         return { result: `${w().tool.nobody(to, names)}${nudge}` }
       messageSent(me, input.agentId, to, input.text, now)
+      if (target === undefined) {
+        const update: Update = { id: idOf(now), at: now, by: me.sessionId, text: input.text }
+        await $.fs.write(`${office.base}/updates/${update.id}.json`, JSON.stringify(update))
+        office.updates = [...office.updates, update]
+      }
       changed($)
       const heard = target === undefined ? w().tool.heardByChairman : w().tool.heardBy(reach)
       return { result: `${w().tool.written(heard)}${nudge}` }
@@ -1822,6 +1855,7 @@ export const register: Register = (on, options) => {
           companyNow(),
           rowsOf(office.pending, everyone(), office.titles),
           office.org.ceo === undefined ? [] : lineRowsOf(office.lines, everyone(), office.titles),
+          updateRowsOf(office.updates, everyone(), office.titles),
         ),
       }
     if (arg.startsWith("answer ") || arg.startsWith("settle ") || arg === "answer" || arg === "settle")
@@ -1977,6 +2011,7 @@ export const register: Register = (on, options) => {
             {/* Whom a line can call, in one line: a tag for every team ran to three rows. */}
             <Text dimColor>{w().sayHint}</Text>
           </Box>
+          {updatesCard({ Box, Text }, updateRowsOf(office.updates, snaps, office.titles))}
           {note !== undefined && noteCard({ Box, Text }, note)}
           {chosen !== undefined &&
             crabCard(

@@ -3,6 +3,7 @@ import type { Detail, Talk } from "./office.ts"
 import { titleOf } from "./pixels.ts"
 import type { Company, SeatData } from "./pixels.ts"
 import type { LineRow } from "./lines.ts"
+import type { UpdateRow } from "./updates.ts"
 import { w } from "./words.ts"
 
 // The office as text, for a terminal where the pane will not open or a click
@@ -31,7 +32,7 @@ export function linesText(lines: LineRow[]): string[] {
   return [w().linesHead(lines.length), ...lines.map((l) => `  ${DOTS[l.status] ?? "●"} ${l.name}  ${l.text}`)]
 }
 
-export function officeText(company: Company, waiting: { id: string; who: string; text: string }[], lines: LineRow[] = []): string {
+export function officeText(company: Company, waiting: { id: string; who: string; text: string }[], lines: LineRow[] = [], updates: UpdateRow[] = []): string {
   const rooms = company.rooms.flatMap((room) => [
     w().textRoom(room.title),
     ...room.teams.flatMap((team, i) => {
@@ -51,6 +52,7 @@ export function officeText(company: Company, waiting: { id: string; who: string;
     "",
     w().board,
     ...board.map((line) => `  ${line.time} ${line.from.name} → ${line.to.name}：${clip(line.text, LINE_MAX)}`),
+    ...(updates.length > 0 ? ["", w().updatesHead, ...updates.map((u) => `  ${u.when} ${u.who ?? ""}：${u.text.replaceAll("\n", "\n    ")}`)] : []),
   ].join("\n")
 }
 
