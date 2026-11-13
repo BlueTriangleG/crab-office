@@ -2,26 +2,25 @@ import { expect, test } from "claude-code/testing"
 
 import { companyOf, createSnapshot } from "../hooks/office.ts"
 import { officeText } from "../hooks/text.ts"
-import { UPDATES_SHOWN, updateRowsOf } from "../hooks/updates.ts"
+import { updateRowOf } from "../hooks/updates.ts"
 import { setLanguage, w } from "../hooks/words.ts"
 
 setLanguage("zh")
 
 const T0 = 1_000_000
 
-// The CEO's word to the chairman scrolled away in its own conversation, under
-// every nudge and colleague's message that came after it.
-test("what was said to the chairman stays under the office: the newest whole, a line each before it, by who said it", async () => {
+// Each report is the whole picture, so the one kept is shown as it was written.
+test("the CEO's latest report shows whole, by who wrote it", async () => {
   const ceo = createSnapshot("a", "web-app", undefined, T0)
-  const said = Array.from({ length: UPDATES_SHOWN + 2 }, (_, i) => ({ id: `u${i}`, at: T0 + i * 60_000, by: "a", text: `update ${i}\n- second line` }))
-  const rows = updateRowsOf(said, [ceo], { a: "CEO" })
-  expect(rows).toHaveLength(UPDATES_SHOWN)
-  expect(rows[0]).toMatchObject({ who: "CEO", text: `update ${UPDATES_SHOWN + 1}\n- second line` })
-  expect(rows[1]?.text).toBe(`update ${UPDATES_SHOWN} - second line`)
-  expect(rows.map((r) => r.text).join()).not.toContain("update 0")
+  const row = updateRowOf({ id: "u", at: T0, by: "a", text: "done: the login fix\n- next: the reminders" }, [ceo], { a: "CEO" }, T0)
+  expect(row).toMatchObject({ who: "CEO", text: "done: the login fix\n- next: the reminders" })
+  expect(updateRowOf(undefined, [ceo], {}, T0)).toBeUndefined()
   // one from a session no longer here still shows, with nobody's id for a name
-  expect(updateRowsOf([{ id: "u", at: T0, by: "gone", text: "x" }], [], {})[0]?.who).toBeUndefined()
-  const text = officeText(companyOf([], "a", T0, { memos: [], claims: [] }), [], [], rows)
+  expect(updateRowOf({ id: "u", at: T0, by: "gone", text: "x" }, [], {}, T0)?.who).toBeUndefined()
+  // it stays until the next report, so one from another day says which
+  expect(row?.when).toMatch(/^\d\d:\d\d$/)
+  expect(updateRowOf({ id: "u", at: T0, by: "a", text: "x" }, [], {}, T0 + 3 * 86_400_000)?.when).toMatch(/^\d+-\d+ \d\d:\d\d$/)
+  const text = officeText(companyOf([], "a", T0, { memos: [], claims: [] }), [], [], row)
   expect(text).toContain(w().updatesHead)
-  expect(text).toContain(`update ${UPDATES_SHOWN + 1}`)
+  expect(text).toContain("done: the login fix")
 })

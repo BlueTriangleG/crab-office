@@ -53,17 +53,6 @@ test("a memo passed to a colleague by job title is handed to them next, and lets
   expect(claim?.passedAt).toBeDefined()
 })
 
-test("a word to the chairman is kept for the latest updates under the office", async ($, on) => {
-  const { files } = await office($, on)
-  await $.tool.call({ tool: BOARD, action: "post", text: "the login fix is merged" })
-  const kept = [...files.entries()].filter(([p]) => p.startsWith(`${OFFICE}/updates/`)).map(([, t]) => JSON.parse(t) as Record<string, unknown>)
-  expect(kept).toHaveLength(1)
-  expect(kept[0]).toMatchObject({ by: "a", text: "the login fix is merged" })
-  // one to colleagues is theirs, not the chairman's news
-  await $.tool.call({ tool: BOARD, action: "post", to: "web-app", text: "hello" })
-  expect([...files.keys()].filter((p) => p.startsWith(`${OFFICE}/updates/`))).toHaveLength(1)
-})
-
 test("a post's receipt names each colleague who will read it by job title", async ($, on) => {
   await office($, on)
   const r = await $.tool.call({ tool: BOARD, action: "post", to: "web-app", text: "hello" })
@@ -108,6 +97,46 @@ const asCeo = (files: Map<string, string>, now: number) => {
   for (const id of ["j1", "j2"])
     files.set(`${OFFICE}/jobs/${id}.json`, JSON.stringify({ id, at: now - 2 * 3_600_000, by: "a", to: "c", task: `job ${id}` }))
 }
+
+// The CEO's report is the whole picture each time, so it replaces the one
+// before: the section under the office is kept up, not piled up.
+test("the CEO's word to the chairman replaces the latest update under the office", async ($, on) => {
+  const { files } = await office($, on, asCeo)
+  const kept = () => JSON.parse(files.get(`${OFFICE}/update.json`) ?? "null") as Record<string, unknown> | null
+  await $.tool.call({ tool: BOARD, action: "post", text: "the login fix is under review" })
+  await $.tool.call({ tool: BOARD, action: "post", text: "the login fix is merged" })
+  expect(kept()).toMatchObject({ by: "a", text: "the login fix is merged" })
+  // one to colleagues is theirs, not the chairman's news
+  await $.tool.call({ tool: BOARD, action: "post", to: "web-app", text: "hello" })
+  expect(kept()?.text).toBe("the login fix is merged")
+})
+
+test("a session that is not CEO writes to the chairman on the board alone", async ($, on) => {
+  const { files } = await office($, on)
+  await $.tool.call({ tool: BOARD, action: "post", text: "hello chairman" })
+  expect(files.has(`${OFFICE}/update.json`)).toBe(false)
+})
+
+const PANE_PROPS = { title: "office", isFocused: true, bodyColumns: 160, placement: "dock" as const, scroll: { offset: 0, bodyRows: 200 }, view: {} }
+
+test("the latest update sits under the CEO's tracker, past a week, until the chairman clears it", async ($, on) => {
+  const { files, clock } = await office($, on, (files, now) => {
+    asCeo(files, now)
+    files.set(`${OFFICE}/update.json`, JSON.stringify({ id: "u", at: now - 30 * 86_400_000, by: "a", text: "all on track" }))
+  })
+  const ui = await $.ui.mount({ plugin: "crab-office", surface: "terminal", component: "Pane", requestId: "crab-office", props: PANE_PROPS })
+  // Box and Text keep no key once drawn, so each card is found by what it says.
+  const top = await ui.drawn()
+  const cards = ("children" in top && Array.isArray(top.children) ? top.children : []).map((c: unknown) => JSON.stringify(c))
+  expect(cards.findIndex((c) => c.includes("all on track"))).toBe(cards.findIndex((c) => c.includes("CEO's tracker")) + 1)
+  expect(await ui.find({ type: "Text", text: /all on track/ })).toBeDefined()
+  await ui.press({ key: "office-updates-clear" })
+  expect(JSON.parse(files.get(`${OFFICE}/update.json`) ?? "{}")).toBeNull()
+  await clock.advance(1000)
+  await ui.redraw(PANE_PROPS)
+  expect(await ui.find({ type: "Text", text: /all on track/ })).toBeUndefined()
+  await ui.unmount()
+})
 
 test("the CEO marks a job waiting on something, kept with what the job and its session were, and takes the mark off", async ($, on) => {
   const { files } = await office($, on, asCeo)

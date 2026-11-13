@@ -68,7 +68,7 @@ import {
 import type { Appointment, Duty, Org } from "./org.ts"
 import { REJECTS_MAX, WATCH, jobsOf, nudgesOf, refusalOf, wokeAtOf } from "./jobs.ts"
 import type { Amend, Assignment, BoardAction, Job, Nudge, Report, Verdict, Wait } from "./jobs.ts"
-import { updateRowsOf } from "./updates.ts"
+import { updateRowOf } from "./updates.ts"
 import type { Update, UpdateRow } from "./updates.ts"
 import { answerOf, hereOf, isAway, pendingOf, rowsOf, settleRefusal } from "./decisions.ts"
 import { herdrPlaceOf, tabLabelOf, withWorktree } from "./herdr.ts"
@@ -93,7 +93,7 @@ import type { Theme, ThemeChoice } from "./themes.ts"
 
 const PANE = "crab-office"
 // Bumped with each sync; every session's snapshot carries it.
-const BUILD = "2026-11-12.1"
+const BUILD = "2026-11-13.1"
 const COMMAND = "office"
 const BOARD_TOOL = "office_board"
 const TICK_MS = 1000
@@ -120,8 +120,8 @@ const office = {
   jobs: [] as Job[],
   // The CEO's marks that a job waits on something (`waits/<id>.json`).
   waits: [] as Wait[],
-  // What was said to the chairman (`updates/<id>.json`), kept under the office.
-  updates: [] as Update[],
+  // The CEO's latest report to the chairman (`update.json`; null once cleared).
+  update: undefined as Update | undefined,
   duties: {} as Record<string, string>,
   // Each session's job title (`titles/<writer>.json`), the latest word standing.
   titles: {} as Record<string, string>,
@@ -227,25 +227,22 @@ function trackerCard(el: Pick<ClientElements, "Box" | "Text">, rows: LineRow[]) 
   )
 }
 
-// The latest said to the chairman, at the foot of the office: the newest whole,
-// the few before it a line each. Nothing said yet, nothing drawn.
-function updatesCard(el: Pick<ClientElements, "Box" | "Text">, rows: UpdateRow[]) {
-  const { Box, Text } = el
-  if (rows.length === 0) return undefined
+// The CEO's latest report, under its tracker, whole, with a button that clears
+// it. Nothing reported, nothing drawn.
+function updateCard(el: Pick<ClientElements, "Box" | "Text" | "Button">, row: UpdateRow | undefined) {
+  const { Box, Text, Button } = el
+  if (row === undefined) return undefined
   return (
-    <Box key="updates-card" flexDirection="column" borderStyle="round" borderColor={LEADER_COLOR} paddingX={1}>
-      <Text bold color={LEADER_COLOR}>
-        {w().updatesHead}
-      </Text>
-      {rows.map((r, i) => (
-        <Box key={`update-${i}`} flexDirection="row" columnGap={1}>
-          <Text dimColor>{r.when}</Text>
-          {r.who !== undefined && <Text bold>{r.who}</Text>}
-          <Text wrap="wrap" dimColor={i > 0}>
-            {r.text}
-          </Text>
-        </Box>
-      ))}
+    <Box key="update-card" flexDirection="column" borderStyle="round" borderColor={LEADER_COLOR} paddingX={1}>
+      <Box flexDirection="row" columnGap={1}>
+        <Text bold color={LEADER_COLOR}>
+          {w().updatesHead}
+        </Text>
+        <Text dimColor>{row.when}</Text>
+        {row.who !== undefined && <Text bold>{row.who}</Text>}
+        <Button key="office-updates-clear" label={w().clearUpdate} onPress={() => undefined} />
+      </Box>
+      <Text wrap="wrap">{row.text}</Text>
     </Box>
   )
 }
@@ -635,7 +632,10 @@ async function tick($: EngineInterface) {
   office.claims = await readJsonDir<Claim>($, `${office.base}/claims`)
   office.passes = await readJsonDir<Pass>($, `${office.base}/passes`)
   office.waits = await readJsonDir<Wait>($, `${office.base}/waits`, JOB_KEEP_MS)
-  office.updates = await readJsonDir<Update>($, `${office.base}/updates`, JOB_KEEP_MS)
+  office.update = await $.fs
+    .read(`${office.base}/update.json`)
+    .then((s) => (JSON.parse(s) as Update | null) ?? undefined)
+    .catch(() => undefined)
   const [given, reported, judged, duties, titles, meetingFiles, amends, asked, settled, tracked] = await Promise.all([
     readJsonDir<Assignment>($, `${office.base}/jobs`, JOB_KEEP_MS),
     readJsonDir<Report>($, `${office.base}/reports`, JOB_KEEP_MS),
@@ -1755,13 +1755,13 @@ export const register: Register = (on, options) => {
       if (target !== undefined && reach.length === 0)
         return { result: `${w().tool.nobody(to, names)}${nudge}` }
       messageSent(me, input.agentId, to, input.text, now)
-      if (target === undefined) {
-        const update: Update = { id: idOf(now), at: now, by: me.sessionId, text: input.text }
-        await $.fs.write(`${office.base}/updates/${update.id}.json`, JSON.stringify(update))
-        office.updates = [...office.updates, update]
+      const isReport = target === undefined && office.org.ceo === me.sessionId
+      if (isReport) {
+        office.update = { id: idOf(now), at: now, by: me.sessionId, text: input.text }
+        await $.fs.write(`${office.base}/update.json`, JSON.stringify(office.update))
       }
       changed($)
-      const heard = target === undefined ? w().tool.heardByChairman : w().tool.heardBy(reach)
+      const heard = isReport ? w().tool.heardByChairmanKept : target === undefined ? w().tool.heardByChairman : w().tool.heardBy(reach)
       return { result: `${w().tool.written(heard)}${nudge}` }
     }
     if (input.action === "meet" || input.action === "close") return { result: `${await meet($, input, me, now)}${nudge}` }
@@ -1855,7 +1855,7 @@ export const register: Register = (on, options) => {
           companyNow(),
           rowsOf(office.pending, everyone(), office.titles),
           office.org.ceo === undefined ? [] : lineRowsOf(office.lines, everyone(), office.titles),
-          updateRowsOf(office.updates, everyone(), office.titles),
+          office.org.ceo === undefined ? undefined : updateRowOf(office.update, everyone(), office.titles, Date.now()),
         ),
       }
     if (arg.startsWith("answer ") || arg.startsWith("settle ") || arg === "answer" || arg === "settle")
@@ -1904,6 +1904,13 @@ export const register: Register = (on, options) => {
     const d = office.pending.find((x) => `office-answer-${x.id}` === e.element)
     if (e.kind !== "submit" || d === undefined || e.value.trim() === "") return next(e)
     $.ui.toast(await answerItem($, d, e.value.trim()))
+    return next(e)
+  })
+
+  on("ui.press", { element: "office-updates-clear" }, async ($, e, next) => {
+    office.update = undefined
+    await $.fs.write(`${office.base}/update.json`, "null")
+    $.ui.invalidate("ui.render")
     return next(e)
   })
 
@@ -1997,6 +2004,7 @@ export const register: Register = (on, options) => {
         <Box flexDirection="column">
           {bands(0, ceoBottom, "ceo-")}
           {office.org.ceo !== undefined && trackerCard({ Box, Text }, lineRowsOf(office.lines, snaps, office.titles))}
+          {office.org.ceo !== undefined && updateCard({ Box, Text, Button }, updateRowOf(office.update, snaps, office.titles, now))}
           {bands(ceoBottom, boardTop, "")}
           {chairmanCard({ Box, Text, Button, Input }, rowsOf(office.pending, snaps, office.titles))}
           {bands(boardTop, drawn.rows, "board-")}
@@ -2011,7 +2019,6 @@ export const register: Register = (on, options) => {
             {/* Whom a line can call, in one line: a tag for every team ran to three rows. */}
             <Text dimColor>{w().sayHint}</Text>
           </Box>
-          {updatesCard({ Box, Text }, updateRowsOf(office.updates, snaps, office.titles))}
           {note !== undefined && noteCard({ Box, Text }, note)}
           {chosen !== undefined &&
             crabCard(

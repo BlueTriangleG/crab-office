@@ -32,7 +32,7 @@ export function linesText(lines: LineRow[]): string[] {
   return [w().linesHead(lines.length), ...lines.map((l) => `  ${DOTS[l.status] ?? "●"} ${l.name}  ${l.text}`)]
 }
 
-export function officeText(company: Company, waiting: { id: string; who: string; text: string }[], lines: LineRow[] = [], updates: UpdateRow[] = []): string {
+export function officeText(company: Company, waiting: { id: string; who: string; text: string }[], lines: LineRow[] = [], update?: UpdateRow): string {
   const rooms = company.rooms.flatMap((room) => [
     w().textRoom(room.title),
     ...room.teams.flatMap((team, i) => {
@@ -45,6 +45,7 @@ export function officeText(company: Company, waiting: { id: string; who: string;
   return [
     ...(company.header ? [company.header, ""] : []),
     ...(lines.length > 0 ? [...linesText(lines), ""] : []),
+    ...(update === undefined ? [] : [`${w().updatesHead} ${update.when} ${update.who ?? ""}`, `  ${update.text.replaceAll("\n", "\n  ")}`, ""]),
     ...rooms,
     "",
     w().chairmanList(waiting.length),
@@ -52,7 +53,6 @@ export function officeText(company: Company, waiting: { id: string; who: string;
     "",
     w().board,
     ...board.map((line) => `  ${line.time} ${line.from.name} → ${line.to.name}：${clip(line.text, LINE_MAX)}`),
-    ...(updates.length > 0 ? ["", w().updatesHead, ...updates.map((u) => `  ${u.when} ${u.who ?? ""}：${u.text.replaceAll("\n", "\n    ")}`)] : []),
   ].join("\n")
 }
 
