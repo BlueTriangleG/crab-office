@@ -331,3 +331,28 @@ test("a session is asked once to name itself, once it has been given work, unles
   s.askedName = true
   expect(needsTitle(s, {}, NO_ORG)).toBe(false)
 })
+
+const envoy = (sessionId: string | null, at: number): Appointment => ({ kind: "ambassador", sessionId, at, by: "chairman" })
+
+// The ambassador answers the other office while the chairman is away; a session
+// resumed after a restart keeps its id, and should find itself still appointed.
+test("an ambassador stays appointed while its session is away", async () => {
+  expect(orgOf([envoy("x", T0)], [], T0 + 3_600_000).ambassador).toBe("x")
+})
+
+test("the latest ambassador record stands, and never the CEO", async () => {
+  const y = createSnapshot("y", "web-app", undefined, T0)
+  const records: Appointment[] = [envoy("x", T0), envoy("y", T0 + 1), { kind: "ceo", sessionId: "y", at: T0 + 2, by: "chairman" }]
+  expect(orgOf(records, [y], T0 + 3)).toMatchObject({ ceo: "y" })
+  expect(orgOf(records, [y], T0 + 3).ambassador).toBeUndefined()
+  expect(orgOf(records.slice(0, 2), [], T0 + 3).ambassador).toBe("y")
+})
+
+test("a revoked ambassador is gone", async () => {
+  expect(orgOf([envoy("x", T0), envoy(null, T0 + 1)], [], T0 + 2).ambassador).toBeUndefined()
+})
+
+test("the board's line on an ambassador's appointment names the post", async () => {
+  const x = createSnapshot("x", "web-app", undefined, T0)
+  expect(appointedNote(chairman(), x, "ambassador", false, T0).text).toContain("大使")
+})

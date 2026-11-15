@@ -10,7 +10,7 @@ import { HQ_NAMES, w } from "./words.ts"
 // sessions where the chairman clicked never write one file; every session works
 // the same answer out of all of them, the latest record standing.
 export type Appointment = {
-  kind: "ceo" | "head"
+  kind: "ceo" | "head" | "ambassador"
   // A head's repository, as the board names it (the department).
   project?: string
   // null revokes.
@@ -21,7 +21,7 @@ export type Appointment = {
 
 // `heads` holds appointed heads alone; a repository without one is headed by
 // its longest-serving session (chiefsOf).
-export type Org = { ceo?: string; heads: Record<string, string> }
+export type Org = { ceo?: string; ambassador?: string; heads: Record<string, string> }
 
 export const NO_ORG: Org = { heads: {} }
 
@@ -39,6 +39,11 @@ export function orgOf(records: Appointment[], snaps: Snapshot[], now: number): O
   const named = (r: Appointment | undefined) =>
     r?.sessionId !== null && r?.sessionId !== undefined && present.has(r.sessionId) ? r.sessionId : undefined
   const ceo = named(latest(records.filter((r) => r.kind === "ceo")))
+  // The ambassador does not lapse with its session: it answers the other office
+  // while the chairman is away, and a session resumed after a restart keeps its
+  // id. It can never be the CEO, who hands out the work an ambassador may not.
+  const envoy = latest(records.filter((r) => r.kind === "ambassador"))?.sessionId ?? undefined
+  const ambassador = envoy !== undefined && envoy !== ceo ? envoy : undefined
   const heads: Record<string, string> = {}
   const projects = new Set(records.flatMap((r) => (r.kind === "head" && r.project !== undefined ? [r.project] : [])))
   for (const project of projects) {
@@ -52,7 +57,7 @@ export function orgOf(records: Appointment[], snaps: Snapshot[], now: number): O
     const id = picks.map(named).find((x) => x !== undefined && x !== ceo)
     if (id !== undefined) heads[project] = id
   }
-  return { ...(ceo === undefined ? {} : { ceo }), heads }
+  return { ...(ceo === undefined ? {} : { ceo }), ...(ambassador === undefined ? {} : { ambassador }), heads }
 }
 
 // What a writer keeps of its own records: the latest of each kind, repository
@@ -187,13 +192,13 @@ export function sessionNamed(
 // An appointment or its revocation as a line on the writer's own board: the
 // session it is about is its other end, so the line names it and its crab has
 // the ✉, wherever the chairman clicked.
-export function appointedNote(by: Speaker, target: Snapshot, kind: "ceo" | "head", isRevoked: boolean, now: number): Note {
+export function appointedNote(by: Speaker, target: Snapshot, kind: Appointment["kind"], isRevoked: boolean, now: number): Note {
   return {
     at: now,
     kind: "message",
     from: by,
     to: { name: whoOf(target), color: LEADER_COLOR, id: target.sessionId },
-    text: w().appointedLine(titleOf(kind === "ceo" ? "ceo" : "chief"), isRevoked),
+    text: w().appointedLine(kind === "ambassador" ? w().ambassadorTitle : titleOf(kind === "ceo" ? "ceo" : "chief"), isRevoked),
   }
 }
 

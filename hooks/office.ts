@@ -99,6 +99,8 @@ export type Snapshot = {
   obeyed?: string[]
   // The CEO appointment (its `at`) this session was already handed over for.
   ceoSeen?: number
+  // The ambassador appointment this session was briefed on, as ceoSeen.
+  ambassadorSeen?: number
   // Asked to give itself a job title and a duty, which it is asked once.
   askedName?: true
   // Which build of the mod wrote this snapshot, so a sync can be seen reaching
