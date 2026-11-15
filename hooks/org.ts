@@ -154,10 +154,10 @@ export function rankOf(sessionId: string, org: Org, chiefs: Set<string>): Rank {
 
 // "/office ceo @<who>", "/office ceo off", "/office head @<who>", or
 // "/office head off [@<who or repository>]" (no name: this session's repository).
-export function parseAppoint(args: string): { kind: "ceo" | "head"; name: string | null; isOff: boolean } | undefined {
-  const m = /^(ceo|head)(?:\s+(off))?(?:\s+(.+))?$/i.exec(args.trim())
+export function parseAppoint(args: string): { kind: Appointment["kind"]; name: string | null; isOff: boolean } | undefined {
+  const m = /^(ceo|head|ambassador)(?:\s+(off))?(?:\s+(.+))?$/i.exec(args.trim())
   const kind = m?.[1]?.toLowerCase()
-  if (kind !== "ceo" && kind !== "head") return undefined
+  if (kind !== "ceo" && kind !== "head" && kind !== "ambassador") return undefined
   const isOff = m?.[2] !== undefined
   const name = m?.[3]?.trim().replace(/^@/, "") || null
   if (!isOff && name === null) return undefined

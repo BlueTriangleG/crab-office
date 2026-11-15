@@ -75,6 +75,7 @@ import { herdrPlaceOf, tabLabelOf, withWorktree } from "./herdr.ts"
 import type { HerdrPlace } from "./herdr.ts"
 import { cardText, linesText, officeText } from "./text.ts"
 import { LINE_STATUSES, askOfLine, lineRefusal, lineRowsOf, linesOf } from "./lines.ts"
+import { refusalOf as ambassadorRefusal } from "./embassy/guard.ts"
 import type { Line, LineRow, LineStatus } from "./lines.ts"
 import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
@@ -108,6 +109,8 @@ const PANE_COLUMNS = SEAT_COLS * 3 + 2
 const office = {
   me: undefined as Snapshot | undefined,
   base: "",
+  // $HOME, where the ambassador's guard finds the machine's credentials.
+  home: "",
   // The engine's register of this machine's sessions, one `<pid>.json` each.
   sessions: "",
   // Every session's appointments (`org/<sessionId>.json`), and who runs the
@@ -306,7 +309,7 @@ function crabCard(
   orders?: { key: string; obeyed: string[]; talk: Talk[] },
   // A session's own crab in the pane: whether it is CEO, or its repository's
   // appointed head, so each button offers the other way.
-  appointed?: { isCeo: boolean; isHead: boolean },
+  appointed?: { isCeo: boolean; isHead: boolean; isAmbassador: boolean },
 ) {
   const { Box, Text, Input, Button } = el
   const given = chats.filter((chat) => chat.kind === "order")
@@ -374,6 +377,13 @@ function crabCard(
             <Button
               key="office-appoint-head"
               label={appointed.isHead ? w().revokeHead : w().appointHead}
+              onPress={() => undefined}
+            />
+          )}
+          {!appointed.isCeo && (
+            <Button
+              key="office-appoint-ambassador"
+              label={appointed.isAmbassador ? w().revokeAmbassador : w().appointAmbassador}
               onPress={() => undefined}
             />
           )}
@@ -665,6 +675,7 @@ async function tick($: EngineInterface) {
   await adjourn($, now)
   await deliver($, now)
   await handOver($, now)
+  await briefAmbassador($, now)
   await nameSelf($, now)
   await watch($, now)
   await syncTab($)
@@ -686,6 +697,21 @@ async function handOver($: EngineInterface, now: number) {
   const peers = await readJsonDir<unknown>($, office.sessions)
   const text = ceoHandoverOf(me, snaps, office.org, office.jobs, office.duties, peers, now)
   me.ceoSeen = made.at
+  turnStarted(me, undefined, text, now)
+  changed($)
+  await $.prompt.submit({ text })
+}
+
+// The ambassador is told its post once per appointment, when free, as the CEO is
+// handed over: what it may say, what it may never do, and whom to ask.
+async function briefAmbassador($: EngineInterface, now: number) {
+  const me = office.me
+  if (me === undefined || office.org.ambassador !== me.sessionId || !isFree(me, now)) return
+  const made = office.records.filter((r) => r.kind === "ambassador").sort((a, b) => b.at - a.at)[0]
+  if (made === undefined || me.ambassadorSeen === made.at) return
+  if ((await $.prompt.read()).text.trim() !== "") return
+  const text = w().ambassadorBriefing
+  me.ambassadorSeen = made.at
   turnStarted(me, undefined, text, now)
   changed($)
   await $.prompt.submit({ text })
@@ -743,7 +769,7 @@ function lapsed($: EngineInterface, org: Org) {
 // session's own file, and a line on its board naming whom it is about.
 async function appoint(
   $: EngineInterface,
-  a: { kind: "ceo" | "head"; name: string | null; isOff: boolean },
+  a: { kind: Appointment["kind"]; name: string | null; isOff: boolean },
   chosen?: Snapshot,
 ): Promise<string> {
   const me = office.me
@@ -760,11 +786,13 @@ async function appoint(
     if (target === undefined) return w().nobodyNamed(a.name)
   }
   if (a.kind === "head" && !a.isOff && target !== undefined && target.sessionId === office.org.ceo) return w().ceoCantHead
+  if (a.kind === "ambassador" && !a.isOff && target !== undefined && target.sessionId === office.org.ceo) return w().ceoCantAmbassador
+  if (a.kind === "ceo" && !a.isOff && target !== undefined && target.sessionId === office.org.ambassador) return w().ambassadorCantCeo
   if (!a.isOff && target?.observe === true) return w().observing(whoOf(target))
   const project = target?.project ?? me.project
-  const holder = a.kind === "ceo" ? office.org.ceo : office.org.heads[project]
+  const holder = a.kind === "ceo" ? office.org.ceo : a.kind === "ambassador" ? office.org.ambassador : office.org.heads[project]
   const about = a.isOff ? snaps.find((s) => s.sessionId === holder) ?? target : target
-  if (about === undefined) return a.kind === "ceo" ? w().noCeo : w().nobodyNamed(project)
+  if (about === undefined) return a.kind === "ceo" ? w().noCeo : a.kind === "ambassador" ? w().noAmbassador : w().nobodyNamed(project)
   const record: Appointment = {
     kind: a.kind,
     ...(a.kind === "head" ? { project } : {}),
@@ -773,6 +801,7 @@ async function appoint(
     by: "chairman",
   }
   await recordAppointment($, record, chairman(), about)
+  if (a.kind === "ambassador") return w().ambassadorDone(labelOf(about, peers, office.titles), a.isOff)
   return w().appointDone(labelOf(about, peers, office.titles), titleOf(a.kind === "ceo" ? "ceo" : "chief"), a.isOff)
 }
 
@@ -1501,6 +1530,7 @@ export const register: Register = (on, options) => {
     // process is not one of those, though no person is at its prompt yet.
     const isObserving = options.mode === "observe" || (!e.isInteractive && kind !== "bg")
     office.base = `${configDir || `${home}/.claude`}/crab-office`
+    office.home = home ?? ""
     office.sessions = `${configDir || `${home}/.claude`}/sessions`
     // A worktree's `.git` is a file naming its repository; a checkout's is a
     // folder, which a read rejects.
@@ -1674,6 +1704,20 @@ export const register: Register = (on, options) => {
   // alike; answering with the real name to send again cost a failed call every
   // time. A title nobody at work holds is refused, never guessed; every other
   // address passes untouched.
+  // In the ambassador's session (its subagents' calls come through here too),
+  // only what reads and asks gets through. Registered before every other
+  // tool.call hook, so none of them answers a call this one would refuse. The
+  // matcher takes every tool: a second hook on the event needs one.
+  on("tool.call", { tool: /^/ }, async ($, e, next) => {
+    const me = office.me
+    if (me === undefined || office.org.ambassador !== me.sessionId) return next(e)
+    const input = e as unknown as Record<string, unknown>
+    const kind = ambassadorRefusal(e.tool, input, `${office.base}/embassy`, office.home)
+    if (kind === undefined) return next(e)
+    const what = kind === "board" ? String(input.action) : kind === "path" ? String(input.file_path ?? input.path) : e.tool
+    return { deny: w().tool.ambassadorOnly(kind, what) }
+  })
+
   on("tool.call", { tool: "SendMessage" }, async ($, e, next) => {
     const me = office.me
     const { to, message } = e as unknown as { to?: unknown; message?: unknown }
@@ -1686,12 +1730,14 @@ export const register: Register = (on, options) => {
     if (routed?.refusal !== undefined) return { deny: routed.refusal }
     if (routed?.sessionId === undefined) return next(e)
     if (routed.sessionId === me.sessionId) return { deny: w().tool.notToSelf }
-    const text = typeof message === "string" ? message : String(message ?? "")
+    const said = typeof message === "string" ? message : String(message ?? "")
+    // The colleague is told its answer leaves the office.
+    const text = office.org.ambassador === me.sessionId ? w().fromOutside(said) : said
     const sent = await $.session.send({ to: { sessionId: routed.sessionId }, text })
     const target = office.others.find((s) => s.sessionId === routed.sessionId)
     const who = target === undefined ? to : labelOf(target, peers, office.titles)
     if (!sent.isDelivered) return { deny: w().tool.titleNotDelivered(who, sent.reason) }
-    messageSent(me, e.agentId, to, text, Date.now(), routed.sessionId)
+    messageSent(me, e.agentId, to, said, Date.now(), routed.sessionId)
     changed($)
     return { result: { success: true, message: w().tool.titleSent(who) } }
   })
@@ -1893,9 +1939,9 @@ export const register: Register = (on, options) => {
     const me = office.me
     const found = office.selected === null ? undefined : findCrab([...(me ? [me] : []), ...office.others], office.selected)
     if (found === undefined || found.crab.role !== "leader") return next(e)
-    const kind = e.element === "office-appoint-ceo" ? "ceo" : "head"
+    const kind = e.element === "office-appoint-ceo" ? "ceo" : e.element === "office-appoint-ambassador" ? "ambassador" : "head"
     const id = found.snap.sessionId
-    const isOff = kind === "ceo" ? office.org.ceo === id : office.org.heads[found.snap.project] === id
+    const isOff = kind === "ceo" ? office.org.ceo === id : kind === "ambassador" ? office.org.ambassador === id : office.org.heads[found.snap.project] === id
     $.ui.toast(await appoint($, { kind, name: null, isOff }, found.snap))
     return next(e)
   })
@@ -2037,6 +2083,7 @@ export const register: Register = (on, options) => {
                 ? {
                     isCeo: office.org.ceo === chosen.snap.sessionId,
                     isHead: office.org.heads[chosen.snap.project] === chosen.snap.sessionId,
+                    isAmbassador: office.org.ambassador === chosen.snap.sessionId,
                   }
                 : undefined,
             )}
