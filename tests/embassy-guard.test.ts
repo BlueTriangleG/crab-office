@@ -13,9 +13,15 @@ test("the ambassador reads and asks, and changes nothing", () => {
 })
 
 test("the ambassador cannot hand out work or run the office", () => {
-  for (const action of ["assign", "accept", "reject", "amend", "track", "withdraw", "appoint", "duty", "meet"])
+  for (const action of ["assign", "accept", "reject", "amend", "track", "withdraw", "appoint", "meet"])
     expect(refusalOf(BOARD, { action }, E, H)).toBe("board")
-  for (const action of ["read", "post", "ask", "settle", "confirm", "title"]) expect(refusalOf(BOARD, { action }, E, H)).toBeUndefined()
+  // who is at work, and whom to ask, is what it needs to find an answer
+  for (const action of ["read", "post", "ask", "settle", "confirm", "staff"]) expect(refusalOf(BOARD, { action }, E, H)).toBeUndefined()
+  // its own title and duty, as every session is asked to write; never another's
+  for (const action of ["title", "duty"]) {
+    expect(refusalOf(BOARD, { action, text: "envoy" }, E, H)).toBeUndefined()
+    expect(refusalOf(BOARD, { action, text: "envoy", to: "voice" }, E, H)).toBe("board")
+  }
 })
 
 test("the ambassador reads no keys: its own, or the machine's credentials", () => {

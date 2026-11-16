@@ -16,8 +16,11 @@ export const AMBASSADOR_TOOLS: ReadonlySet<string> = new Set([
   "mcp__crab-office__office_board",
 ])
 
-// Asking and answering; never handing out work or running the office.
-export const AMBASSADOR_BOARD: ReadonlySet<string> = new Set(["read", "post", "ask", "settle", "confirm", "title"])
+// Asking and answering, and seeing who is at work to ask; never handing out
+// work or running the office.
+export const AMBASSADOR_BOARD: ReadonlySet<string> = new Set(["read", "post", "ask", "settle", "confirm", "staff"])
+// Its own title and duty, which every session is asked to write; never another's.
+const OWN_ONLY: ReadonlySet<string> = new Set(["title", "duty"])
 
 const BOARD = "mcp__crab-office__office_board"
 
@@ -47,7 +50,11 @@ function isFenced(path: string, embassyDir: string, home: string): boolean {
 
 export function refusalOf(tool: string, input: Record<string, unknown>, embassyDir: string, home: string): Refusal | undefined {
   if (!AMBASSADOR_TOOLS.has(tool)) return "tool"
-  if (tool === BOARD) return typeof input.action === "string" && !AMBASSADOR_BOARD.has(input.action) ? "board" : undefined
+  if (tool === BOARD) {
+    const action = typeof input.action === "string" ? input.action : ""
+    if (OWN_ONLY.has(action)) return typeof input.to === "string" && input.to.trim() !== "" ? "board" : undefined
+    return action !== "" && !AMBASSADOR_BOARD.has(action) ? "board" : undefined
+  }
   const path = tool === "Read" ? input.file_path : tool === "Grep" || tool === "Glob" ? input.path : undefined
   return typeof path === "string" && isFenced(path, embassyDir, home) ? "path" : undefined
 }
