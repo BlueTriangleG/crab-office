@@ -112,8 +112,11 @@ function serial<T>(dir: string, fn: () => Promise<T>): Promise<T> {
 function helloOf(text: string | undefined): Hello | undefined {
   if (text === undefined) return undefined
   try {
-    const name = (JSON.parse(text) as { name?: unknown }).name
-    return typeof name === "string" && name.trim() !== "" ? { name: name.trim().slice(0, NAME_MAX) } : undefined
+    const raw = (JSON.parse(text) as { name?: unknown }).name
+    // One plain line: the name heads every message the ambassador is handed,
+    // and a line break or a control character in it could forge a header.
+    const name = typeof raw === "string" ? raw.replace(/[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]+/gu, " ").replace(/\s+/g, " ").trim() : ""
+    return name !== "" ? { name: name.slice(0, NAME_MAX) } : undefined
   } catch {
     return undefined
   }

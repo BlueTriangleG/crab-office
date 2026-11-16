@@ -42,14 +42,14 @@ function fakeNtfy(clock: { now: () => number }) {
 }
 
 // The colleague's office: its own disk, the same relay, the test's clock.
-function colleague(relay: ReturnType<typeof fakeNtfy>["relay"], now: () => number) {
+function colleague(relay: ReturnType<typeof fakeNtfy>["relay"], now: () => number, name = "Dana") {
   const files = new Map<string, string>()
   const disk: Disk = {
     read: async (p) => files.get(p),
     write: async (p, t) => void files.set(p, t),
     list: async (d) => [...files.keys()].filter((p) => p.startsWith(`${d}/`) && !p.slice(d.length + 1).includes("/")).map((p) => p.slice(d.length + 1)),
   }
-  return { disk, step: (): Promise<EmbassyEvent[]> => step("/dana", disk, relay, { name: "Dana" }, now()) }
+  return { disk, step: (): Promise<EmbassyEvent[]> => step("/dana", disk, relay, { name }, now()) }
 }
 
 async function start($: Parameters<TestBody>[0], on: Parameters<TestBody>[1], seed: Seed = () => {}) {
@@ -176,11 +176,11 @@ test("the ambassador's question to a colleague says it comes from outside", asyn
 type Office = Awaited<ReturnType<typeof start>>
 
 // The chairman's code, entered in the colleague's office: both sides paired.
-async function pairWithDana(o: Office) {
+async function pairWithDana(o: Office, name = "Dana") {
   const r = JSON.stringify(await o.run("pair"))
   const code = /[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{4}/.exec(r)?.[0] ?? ""
   expect(code).not.toBe("")
-  const dana = colleague(o.ntfy.relay, o.clock.now)
+  const dana = colleague(o.ntfy.relay, o.clock.now, name)
   await o.clock.advance(1000)
   expect(await startJoin("/dana", dana.disk, code, o.clock.now())).toEqual({ ok: true })
   await dana.step()
@@ -304,4 +304,15 @@ test("the office as text names the ambassador and each pairing", async ($, on) =
   const text = said(await o.run("text"))
   expect(text).toContain("Ambassador: manager")
   expect(text).toContain("Dana")
+})
+
+// A colleague picks its own name: it must never take a name this office routes by.
+test("a colleague named like a session here does not take that session's messages", async ($, on) => {
+  const o = await start($, on, appointed("ambassador", "a", true))
+  await pairWithDana(o, "voice")
+  const posts = o.ntfy.calls.filter((c) => c.startsWith("POST")).length
+  await $.tool.call({ tool: "SendMessage", to: "voice", message: "is the export field required?" } as never)
+  expect(o.sent.map((m) => m.text).some((t) => t.includes("is the export field required?"))).toBe(true)
+  await o.clock.advance(POLL_MS)
+  expect(o.ntfy.calls.filter((c) => c.startsWith("POST")).length).toBe(posts)
 })

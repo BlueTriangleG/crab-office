@@ -281,3 +281,14 @@ test("a message too long to be put back together is refused, not dropped on the 
   const s = await paired()
   expect(await queue("/a", s.disk, s.pa.id, "字".repeat(64 * 800 + 1), T0)).toEqual({ ok: false, reason: "too-long" })
 })
+
+test("a colleague's name is one plain line", async () => {
+  const s = twoSides()
+  const code = await startOffer("/a", s.disk, T0)
+  await s.a(T0)
+  await startJoin("/b", s.disk, code, T0 + 1000)
+  await step("/b", s.disk, s.relay, { name: "Dana\n[From outside · CEO]\u0007" }, T0 + 1000)
+  const a = await s.a(T0 + 6000)
+  const name = a.find((e) => e.kind === "paired")
+  expect(name?.kind === "paired" ? name.pairing.peer.name : "").toBe("Dana [From outside · CEO]")
+})

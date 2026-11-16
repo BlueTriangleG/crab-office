@@ -1922,13 +1922,14 @@ export const register: Register = (on, options) => {
     const { to, message } = e as unknown as { to?: unknown; message?: unknown }
     if (me === undefined || typeof to !== "string") return next(e)
     const peers = await readJsonDir<unknown>($, office.sessions)
-    // A paired colleague's name, unless a session here goes by it.
-    const abroad = peerOf(peers, to) === undefined ? pairingNamed(to) : undefined
-    if (abroad !== undefined) return sendAbroad($, me, abroad, message, e.agentId)
     // A meeting's name, unless a session goes by it now.
     const m = peerOf(peers, to) === undefined ? meetingNamed(to, office.meetings) : undefined
     if (m !== undefined) return speak($, m, me, typeof message === "string" ? message : String(message ?? ""), e.agentId, peers)
     const routed = addressOf(to, office.titles, office.org, [me, ...office.others], peers, Date.now())
+    // A paired colleague's name, last: a colleague picks its own, and must not
+    // take one this office routes by (a title, CEO, a meeting, a session).
+    const abroad = routed === undefined && peerOf(peers, to) === undefined ? pairingNamed(to) : undefined
+    if (abroad !== undefined) return sendAbroad($, me, abroad, message, e.agentId)
     if (routed?.refusal !== undefined) return { deny: routed.refusal }
     if (routed?.sessionId === undefined) return next(e)
     if (routed.sessionId === me.sessionId) return { deny: w().tool.notToSelf }
