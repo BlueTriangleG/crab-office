@@ -421,6 +421,29 @@ export function unpair(dir: string, disk: Disk, relay: Relay, pairingId: string,
   })
 }
 
+// The code this office is offering, while it is good, for the chairman to read off.
+export function offeredCode(dir: string, disk: Disk, now: number): Promise<{ code: string; expires: number } | undefined> {
+  return serial(dir, async () => {
+    const p = await readJson<Pending>(disk, `${dir}/pending.json`)
+    return p !== undefined && p.role === "offer" && now <= p.expires ? { code: p.code, expires: p.expires } : undefined
+  })
+}
+
+// Everything said with a colleague, ended pairings too, oldest first.
+export function logOf(dir: string, disk: Disk, name: string): Promise<{ peer: string; rows: { at: number; isOut: boolean; text: string }[] } | undefined> {
+  return serial(dir, async () => {
+    const all = (await Promise.all((await disk.list(`${dir}/pairings`)).map((n) => readJson<Pairing>(disk, `${dir}/pairings/${n}`)))).filter((p): p is Pairing => p !== undefined)
+    const ids = new Set(all.filter((p) => p.peer.name.toLowerCase() === name.trim().toLowerCase()).map((p) => p.id))
+    const peer = all.find((p) => ids.has(p.id))?.peer.name
+    if (peer === undefined) return undefined
+    const read = async (box: "inbox" | "outbox") =>
+      (await Promise.all((await disk.list(`${dir}/${box}`)).map((n) => readJson<Incoming | Outgoing>(disk, `${dir}/${box}/${n}`))))
+        .filter((m): m is Incoming | Outgoing => m !== undefined && ids.has(m.pairing))
+        .map((m) => ({ at: m.at, isOut: box === "outbox", text: m.text }))
+    return { peer, rows: [...(await read("outbox")), ...(await read("inbox"))].sort((a, b) => a.at - b.at) }
+  })
+}
+
 export function pairingsOf(dir: string, disk: Disk): Promise<Pairing[]> {
   return serial(dir, () => allPairings(disk, dir))
 }

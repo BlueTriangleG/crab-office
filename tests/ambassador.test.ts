@@ -249,3 +249,59 @@ test("a key in the ambassador's message is refused before it leaves", async ($, 
   await o.clock.advance(POLL_MS)
   expect(o.ntfy.calls.filter((c) => c.startsWith("POST")).length).toBe(posts)
 })
+
+const PANE_PROPS = { title: "office", isFocused: true, bodyColumns: 160, placement: "dock" as const, scroll: { offset: 0, bodyRows: 200 }, view: {} }
+const CODE = /[23456789A-HJ-NP-Z]{4}-[23456789A-HJ-NP-Z]{4}/
+
+test("the pane shows the ambassador and a code while it is good", async ($, on) => {
+  const o = await start($, on, appointed("ambassador", "a", true))
+  const code = CODE.exec(said(await o.run("pair")))?.[0] ?? "none"
+  await o.clock.advance(1000)
+  const ui = await $.ui.mount({ plugin: "crab-office", surface: "terminal", component: "Pane", requestId: "crab-office", props: PANE_PROPS })
+  expect(await ui.find({ type: "Text", text: new RegExp(code) })).toBeDefined()
+  expect(await ui.find({ type: "Text", text: /manager/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test("the pane shows each pairing", async ($, on) => {
+  const o = await start($, on, appointed("ambassador", "a", true))
+  await pairWithDana(o)
+  await o.clock.advance(1000)
+  const ui = await $.ui.mount({ plugin: "crab-office", surface: "terminal", component: "Pane", requestId: "crab-office", props: PANE_PROPS })
+  expect(await ui.find({ type: "Text", text: /Dana/ })).toBeDefined()
+  await ui.unmount()
+})
+
+test("a code typed in the pane starts joining", async ($, on) => {
+  const o = await start($, on, appointed("ambassador", "a", true))
+  const ui = await $.ui.mount({ plugin: "crab-office", surface: "terminal", component: "Pane", requestId: "crab-office", props: PANE_PROPS })
+  // keyed by a count, so the field empties after each code
+  await ui.input({ key: "office-pair-code-0", text: "K7QM-3XHP" })
+  expect(JSON.parse(o.files.get(`${OFFICE}/embassy/pending.json`) ?? "{}")).toMatchObject({ role: "join", code: "K7QM3XHP" })
+  await ui.unmount()
+})
+
+test("the chairman reads back everything said with a colleague, oldest first", async ($, on) => {
+  const o = await start($, on, appointed("ambassador", "a", true))
+  const dana = await pairWithDana(o)
+  await $.tool.call({ tool: "SendMessage", to: "Dana", message: "out one" } as never)
+  await o.clock.advance(POLL_MS)
+  await dana.step()
+  const [pairing] = await pairingsOf("/dana", dana.disk)
+  await queue("/dana", dana.disk, pairing?.id ?? "", "back two", o.clock.now())
+  await dana.step()
+  await o.clock.advance(POLL_MS)
+  const log = said(await o.run("abroad Dana"))
+  expect(log).toContain("out one")
+  expect(log).toContain("back two")
+  expect(log.indexOf("out one")).toBeLessThan(log.indexOf("back two"))
+  expect(said(await o.run("abroad Nobody"))).toContain("Nobody called Nobody is paired")
+})
+
+test("the office as text names the ambassador and each pairing", async ($, on) => {
+  const o = await start($, on, appointed("ambassador", "a", true))
+  await pairWithDana(o)
+  const text = said(await o.run("text"))
+  expect(text).toContain("Ambassador: manager")
+  expect(text).toContain("Dana")
+})

@@ -18,6 +18,7 @@ import {
   ordersFor,
   recipientsOf,
   targetOf,
+  clockOf,
   messageHeard,
   messageSent,
   subagentBtwOf,
@@ -77,7 +78,7 @@ import type { HerdrPlace } from "./herdr.ts"
 import { cardText, linesText, officeText } from "./text.ts"
 import { LINE_STATUSES, askOfLine, lineRefusal, lineRowsOf, linesOf } from "./lines.ts"
 import { refusalOf as ambassadorRefusal } from "./embassy/guard.ts"
-import { markDelivered, pairingsOf, queue, startJoin, startOffer, step, undelivered, unpair } from "./embassy/embassy.ts"
+import { logOf, markDelivered, offeredCode, pairingsOf, queue, startJoin, startOffer, step, undelivered, unpair } from "./embassy/embassy.ts"
 import type { Disk, EmbassyEvent, Pairing } from "./embassy/embassy.ts"
 import { ntfyRelay } from "./embassy/wire.ts"
 import type { Line, LineRow, LineStatus } from "./lines.ts"
@@ -115,7 +116,15 @@ const office = {
   base: "",
   // The ambassador's side of pairings with other offices: the name it gives
   // them, the pairings as last read, and what it must be told when next free.
-  abroad: { name: "crab-office", pairings: [] as Pairing[], notices: [] as string[] },
+  abroad: {
+    name: "crab-office",
+    pairings: [] as Pairing[],
+    notices: [] as string[],
+    // The code on offer while it is good, and when each pairing last spoke.
+    offered: undefined as { code: string; expires: number } | undefined,
+    lastAt: {} as Record<string, number>,
+    now: 0,
+  },
   // $HOME, where the ambassador's guard finds the machine's credentials.
   home: "",
   // The engine's register of this machine's sessions, one `<pid>.json` each.
@@ -774,8 +783,10 @@ function noticeOf($: EngineInterface, me: Snapshot, e: EmbassyEvent, now: number
                 : e.kind === "unknown-version"
                   ? w().abroad.unknownVersion(e.v)
                   : undefined
-  if (e.kind === "paired" || e.kind === "message")
+  if (e.kind === "paired" || e.kind === "message") {
     messageHeard(me, w().visitorName(e.pairing.peer.name), e.kind === "paired" ? w().pairedLine : e.message.text, now)
+    office.abroad.lastAt = { ...office.abroad.lastAt, [e.pairing.id]: now }
+  }
   if (said === undefined) return
   office.abroad.notices = [...office.abroad.notices, said]
   if (office.isOpen) $.ui.toast(said)
@@ -796,6 +807,8 @@ async function embassyTick($: EngineInterface) {
     if (events.length > 0) changed($)
   }
   office.abroad.pairings = await pairingsOf(embassyDir(), disk)
+  office.abroad.offered = await offeredCode(embassyDir(), disk, now)
+  office.abroad.now = now
   if (isAmbassador) await deliverAbroad($, me, disk, now)
 }
 
@@ -820,8 +833,66 @@ async function sendAbroad($: EngineInterface, me: Snapshot, pairing: Pairing, me
   const queued = await queue(embassyDir(), embassyDisk($), pairing.id, text, now)
   if (!queued.ok) return { deny: queued.reason === "secret" ? w().tool.secretRefused(queued.found) : w().noPairing(pairing.peer.name) }
   messageSent(me, agentId, w().visitorName(pairing.peer.name), text, now)
+  office.abroad.lastAt = { ...office.abroad.lastAt, [pairing.id]: now }
   changed($)
   return { result: { success: true, message: w().tool.abroadQueued(pairing.peer.name) } }
+}
+
+async function abroadLogText($: EngineInterface, name: string): Promise<string> {
+  const log = await logOf(embassyDir(), embassyDisk($), name)
+  if (log === undefined) return w().noPairing(name)
+  if (log.rows.length === 0) return w().noExchange(log.peer)
+  return [w().abroadLog(log.peer), ...log.rows.map((r) => `  ${clockOf(r.at)} ${r.isOut ? "→" : "←"} ${r.text.replaceAll("\n", "\n    ")}`)].join("\n")
+}
+
+// The ambassador as the board names it, when there is one.
+function ambassadorOf(snaps: Snapshot[]): string | undefined {
+  const s = snaps.find((x) => x.sessionId === office.org.ambassador)
+  return s === undefined ? undefined : (office.titles[s.sessionId] ?? whoOf(s))
+}
+
+// The ambassador's card as text: who it is, each pairing, the code on offer.
+function abroadText(snaps: Snapshot[]): string[] {
+  const who = ambassadorOf(snaps)
+  if (who === undefined) return []
+  const offered = office.abroad.offered
+  return [
+    w().embassyHead(who),
+    ...office.abroad.pairings.map((p) => `  ${p.peer.name} · ${p.confirmed ? w().pairedAt(clockOf(p.at)) : w().connecting}`),
+    ...(offered === undefined ? [] : [`  ${w().codeLine(offered.code, Math.max(1, Math.ceil((offered.expires - office.abroad.now) / 60_000)))}`]),
+  ]
+}
+
+// Paired colleagues' ambassadors, for the reception room.
+function visitorsNow(): { id: string; name: string; isTalking: boolean }[] {
+  return office.abroad.pairings
+    .filter((p) => p.confirmed)
+    .map((p) => ({ id: p.id, name: p.peer.name, isTalking: office.abroad.now - (office.abroad.lastAt[p.id] ?? 0) < 60_000 }))
+}
+
+// The ambassador's card, once there is one: who it is, each pairing, the code on
+// offer, a field for a colleague's code and a button that makes one.
+function embassyCard(el: Pick<ClientElements, "Box" | "Text" | "Button" | "Input">, who: string) {
+  const { Box, Text, Button, Input } = el
+  const offered = office.abroad.offered
+  return (
+    <Box key="embassy-card" flexDirection="column" borderStyle="round" borderColor={LEADER_COLOR} paddingX={1}>
+      <Text bold color={LEADER_COLOR}>
+        {w().embassyHead(who)}
+      </Text>
+      {office.abroad.pairings.map((p) => (
+        <Box key={`pairing-${p.id}`} flexDirection="row" columnGap={1}>
+          <Text bold>{p.peer.name}</Text>
+          <Text dimColor>{p.confirmed ? w().pairedAt(clockOf(p.at)) : w().connecting}</Text>
+        </Box>
+      ))}
+      {offered !== undefined && <Text bold>{w().codeLine(offered.code, Math.max(1, Math.ceil((offered.expires - office.abroad.now) / 60_000)))}</Text>}
+      <Box flexDirection="row" columnGap={2}>
+        <Button key="office-pair-new" label={w().pairNew} onPress={() => undefined} />
+        <Input key={`office-pair-code-${office.said}`} label={w().pairCodeLabel} placeholder={w().pairCodePlaceholder} submitLabel={w().send} onSubmit={() => undefined} />
+      </Box>
+    </Box>
+  )
 }
 
 // The ambassador is told its post once per appointment, when free, as the CEO is
@@ -1261,6 +1332,7 @@ function companyNow(older = 0) {
       titles: office.titles,
       meetings: office.meetings,
       asking: office.pending.map((d) => d.by),
+      visitors: visitorsNow(),
     },
     older,
   )
@@ -2029,6 +2101,7 @@ export const register: Register = (on, options) => {
           rowsOf(office.pending, everyone(), office.titles),
           office.org.ceo === undefined ? [] : lineRowsOf(office.lines, everyone(), office.titles),
           office.org.ceo === undefined ? undefined : updateRowOf(office.update, everyone(), office.titles, Date.now()),
+          abroadText(everyone()),
         ),
       }
     if (arg.startsWith("answer ") || arg.startsWith("settle ") || arg === "answer" || arg === "settle")
@@ -2041,6 +2114,7 @@ export const register: Register = (on, options) => {
     if (appointing !== undefined) return { text: isPerson ? await appoint($, appointing) : w().notByPerson }
     // Pairing lets another office talk to this one: the chairman's to make.
     if (arg === "pair" || arg.startsWith("pair ")) return { text: isPerson ? await pairCommand($, args.trim().slice(4).trim()) : w().notByPerson }
+    if (arg.startsWith("abroad ")) return { text: await abroadLogText($, args.trim().slice(7).trim()) }
     if (arg.startsWith("unpair ")) return { text: isPerson ? await unpairCommand($, args.trim().slice(7).trim()) : w().notByPerson }
     const failed = await openPane($)
     if (failed !== undefined) return { text: failed }
@@ -2080,6 +2154,18 @@ export const register: Register = (on, options) => {
     const d = office.pending.find((x) => `office-answer-${x.id}` === e.element)
     if (e.kind !== "submit" || d === undefined || e.value.trim() === "") return next(e)
     $.ui.toast(await answerItem($, d, e.value.trim()))
+    return next(e)
+  })
+
+  on("ui.press", { element: "office-pair-new" }, async ($, e, next) => {
+    $.ui.toast(await pairCommand($, ""))
+    return next(e)
+  })
+
+  on("ui.input", { element: /^office-pair-code/ }, async ($, e, next) => {
+    if (e.kind !== "submit" || e.value.trim() === "") return next(e)
+    $.ui.toast(await pairCommand($, e.value.trim()))
+    office.said += 1
     return next(e)
   })
 
@@ -2183,6 +2269,7 @@ export const register: Register = (on, options) => {
           {office.org.ceo !== undefined && updateCard({ Box, Text, Button }, updateRowOf(office.update, snaps, office.titles, now))}
           {bands(ceoBottom, boardTop, "")}
           {chairmanCard({ Box, Text, Button, Input }, rowsOf(office.pending, snaps, office.titles))}
+          {ambassadorOf(snaps) !== undefined && embassyCard({ Box, Text, Button, Input }, ambassadorOf(snaps) ?? "")}
           {bands(boardTop, drawn.rows, "board-")}
           <Box flexDirection="column" borderStyle="round" borderColor="#5d7a66" paddingX={1}>
             <Input

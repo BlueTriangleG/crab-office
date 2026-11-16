@@ -32,7 +32,7 @@ export function linesText(lines: LineRow[]): string[] {
   return [w().linesHead(lines.length), ...lines.map((l) => `  ${DOTS[l.status] ?? "●"} ${l.name}  ${l.text}`)]
 }
 
-export function officeText(company: Company, waiting: { id: string; who: string; text: string }[], lines: LineRow[] = [], update?: UpdateRow): string {
+export function officeText(company: Company, waiting: { id: string; who: string; text: string }[], lines: LineRow[] = [], update?: UpdateRow, abroad: string[] = []): string {
   const rooms = company.rooms.flatMap((room) => [
     w().textRoom(room.title),
     ...room.teams.flatMap((team, i) => {
@@ -46,6 +46,7 @@ export function officeText(company: Company, waiting: { id: string; who: string;
     ...(company.header ? [company.header, ""] : []),
     ...(lines.length > 0 ? [...linesText(lines), ""] : []),
     ...(update === undefined ? [] : [`${w().updatesHead} ${update.when} ${update.who ?? ""}`, `  ${update.text.replaceAll("\n", "\n  ")}`, ""]),
+    ...(abroad.length > 0 ? [...abroad, ""] : []),
     ...rooms,
     "",
     w().chairmanList(waiting.length),

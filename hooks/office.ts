@@ -193,6 +193,8 @@ export const CREW_COLORS = [
   "#e0985f",
 ]
 const OUTSIDER = "#8f8b80"
+// A paired colleague's ambassador, visiting.
+const VISITOR = "#6f9fb8"
 
 // Where a session sits in the company: a git worktree belongs to its
 // repository's department, under the worktree's own name. The `.git` a worktree
@@ -734,6 +736,8 @@ export function companyOf(
     meetings?: Meeting[]
     // Sessions with something on the chairman's list.
     asking?: string[]
+    // Paired colleagues' ambassadors, in the reception room; talking in the last minute or not.
+    visitors?: { id: string; name: string; isTalking: boolean }[]
   } = { memos: [], claims: [] },
   older = 0,
 ): Company {
@@ -809,7 +813,12 @@ export function companyOf(
       },
     ]
   })
-  rooms.unshift(...top, ...tables)
+  const visitors = desk.visitors ?? []
+  const guests: SeatData[][] = visitors.map((v) => [
+    { id: `visitor-${v.id}`, role: "lead", task: "", look: v.isTalking ? "thinking" : "idle", color: VISITOR, post: w().visitorName(v.name) },
+  ])
+  const reception: Room[] = guests.length === 0 ? [] : [{ title: w().reception, footer: footerOf(guests.flat()), teams: guests, top: true }]
+  rooms.unshift(...top, ...tables, ...reception)
   const onDuty = rooms
     .flatMap((r) => r.teams.flat())
     .filter((s) => s.look !== "gone").length

@@ -802,3 +802,13 @@ test("a background task's notice keeps the card's title and prompt", async () =>
   expect(s.leader.status).toBe("thinking")
   expect(s.leader.finishedAt).toBeUndefined()
 })
+
+test("a paired colleague's ambassador sits in the reception room", async () => {
+  const me = createSnapshot("s1", "web-app", undefined, T0)
+  const company = companyOf([me], "s1", T0, { memos: [], claims: [], visitors: [{ id: "p1", name: "Dana", isTalking: true }] })
+  const room = company.rooms.find((r) => r.title === w().reception)
+  expect(room?.teams).toHaveLength(1)
+  expect(room?.teams[0]?.[0]).toMatchObject({ id: "visitor-p1", post: w().visitorName("Dana"), look: "thinking" })
+  // nobody paired, no reception
+  expect(companyOf([me], "s1", T0, { memos: [], claims: [] }).rooms.some((r) => r.title === w().reception)).toBe(false)
+})
