@@ -15,6 +15,12 @@ export const RESEND_MS = 11 * 3_600_000
 export const UNACKED_NOTICE_MS = 30 * 60_000
 // Under the relay's 250 a day for an IP, which every pairing, retry and ack shares.
 export const DAILY_BUDGET = 200
+// The relay takes a burst of 60 requests, then one every 5 s: one poll a step
+// at most, and never two within this, whatever is waiting and however many
+// pairings there are. A code waiting to be used is polled this often too.
+export const MIN_POLL_GAP_MS = 5_000
+// 64 parts of PART_BYTES: about 150 KB, more than any message an ambassador writes.
+export const MAX_PARTS = 64
 
 export type Disk = {
   read: (path: string) => Promise<string | undefined>
@@ -63,7 +69,18 @@ type Pending = {
   since?: string
 }
 type Budget = { day: string; count: number; told?: string }
-type Ctx = { dir: string; disk: Disk; relay: Relay; now: number; events: EmbassyEvent[]; budget: Budget; failing: { reason?: string }; failed: boolean }
+type Ctx = {
+  dir: string
+  disk: Disk
+  relay: Relay
+  now: number
+  events: EmbassyEvent[]
+  budget: Budget
+  failing: { reason?: string }
+  failed: boolean
+  // When each topic (and, under "*", any topic) was last polled.
+  polled: Record<string, number>
+}
 
 const NAME_MAX = 60
 
@@ -152,8 +169,14 @@ async function send(ctx: Ctx, topic: string, e: Envelope): Promise<boolean> {
   return true
 }
 
-async function poll(ctx: Ctx, topic: string, since: string) {
-  if (ctx.failed) return undefined
+function mayPoll(ctx: Ctx, key: string, every: number): boolean {
+  const never = Number.NEGATIVE_INFINITY
+  return !ctx.failed && ctx.now - (ctx.polled["*"] ?? never) >= MIN_POLL_GAP_MS && ctx.now - (ctx.polled[key] ?? never) >= every
+}
+
+async function poll(ctx: Ctx, key: string, topic: string, since: string) {
+  ctx.polled[key] = ctx.now
+  ctx.polled["*"] = ctx.now
   const r = await ctx.relay.poll(topic, since)
   if (!r.ok) {
     fail(ctx, r.reason)
@@ -174,7 +197,8 @@ async function stepOffer(ctx: Ctx, p: Pending, me: Hello) {
     p.offerId = id
     await writeJson(disk, `${dir}/pending.json`, p)
   }
-  const items = await poll(ctx, p.topic, p.since ?? "all")
+  if (!mayPoll(ctx, "pending", MIN_POLL_GAP_MS)) return
+  const items = await poll(ctx, "pending", p.topic, p.since ?? "all")
   if (items === undefined) return
   for (const item of items) {
     p.since = item.id
@@ -202,9 +226,11 @@ async function stepOffer(ctx: Ctx, p: Pending, me: Hello) {
 async function stepJoin(ctx: Ctx, p: Pending, me: Hello) {
   const { dir, disk, now } = ctx
   const codeKey = fromB64(p.codeKey)
-  const items = await poll(ctx, p.topic, "all")
+  if (!mayPoll(ctx, "pending", MIN_POLL_GAP_MS)) return
+  const items = await poll(ctx, "pending", p.topic, p.since ?? "all")
   if (items === undefined) return
   for (const item of items) {
+    p.since = item.id
     const e = item.envelope
     if (!isOurs(e) || e.kind !== "offer" || e.from === p.side || e.pub === undefined || e.proof === undefined || e.body === undefined) continue
     // An offer older than a code lasts is a code that has run out.
@@ -227,6 +253,7 @@ async function stepJoin(ctx: Ctx, p: Pending, me: Hello) {
       // As above: not an offer anyone made with this code.
     }
   }
+  await writeJson(disk, `${dir}/pending.json`, p)
 }
 
 async function stepPending(ctx: Ctx, me: Hello) {
@@ -253,6 +280,8 @@ async function listOf(disk: Disk, path: string): Promise<string[]> {
 async function received(ctx: Ctx, pairing: Pairing, key: Uint8Array, e: Envelope) {
   const { dir, disk, now } = ctx
   const [n, of] = e.part ?? [0, 1]
+  // Numbered as no sender of ours numbers parts: nothing to put together.
+  if (!Number.isInteger(n) || !Number.isInteger(of) || n < 0 || n >= of || of > MAX_PARTS) return
   const text = e.body === undefined ? undefined : open(key, e.body, `${e.id}:${n}`)
   if (text === undefined) return
   const ack: Envelope = { v: 1, kind: "ack", from: pairing.side, id: e.id }
@@ -290,19 +319,16 @@ async function acked(ctx: Ctx, pairing: Pairing, id: string) {
 
 async function stepPairings(ctx: Ctx) {
   const { dir, disk, now } = ctx
-  const polledPath = `${dir}/polled.json`
-  const polled = (await readJson<Record<string, number>>(disk, polledPath)) ?? {}
-  let isPolled = false
+  const live: Pairing[] = []
   for (const pairing of await allPairings(disk, dir)) {
     if (!pairing.confirmed && now - pairing.at > CODE_TTL_MS) {
       await writeJson(disk, `${dir}/pairings/${pairing.id}.json`, { ...pairing, ended: now })
       ctx.events.push({ kind: "expired" })
-      continue
-    }
-    if (now - (polled[pairing.id] ?? 0) < POLL_MS) continue
-    polled[pairing.id] = now
-    isPolled = true
-    const items = await poll(ctx, pairing.topic, pairing.since)
+    } else live.push(pairing)
+  }
+  const due = live.filter((p) => mayPoll(ctx, p.id, POLL_MS)).sort((a, b) => (ctx.polled[a.id] ?? Number.NEGATIVE_INFINITY) - (ctx.polled[b.id] ?? Number.NEGATIVE_INFINITY))
+  for (const pairing of due.slice(0, 1)) {
+    const items = await poll(ctx, pairing.id, pairing.topic, pairing.since)
     if (items === undefined) break
     const key = fromB64(pairing.key)
     for (const item of items) {
@@ -323,7 +349,6 @@ async function stepPairings(ctx: Ctx) {
     }
     await writeJson(disk, `${dir}/pairings/${pairing.id}.json`, pairing)
   }
-  if (isPolled) await writeJson(disk, polledPath, polled)
 }
 
 async function stepOutbox(ctx: Ctx) {
@@ -360,11 +385,14 @@ export function step(dir: string, disk: Disk, relay: Relay, me: Hello, now: numb
     const held = await readJson<Budget>(disk, `${dir}/budget.json`)
     const budget: Budget = held?.day === day ? held : { day, count: 0 }
     const failing = (await readJson<{ reason?: string }>(disk, `${dir}/failing.json`)) ?? {}
+    const polled = (await readJson<Record<string, number>>(disk, `${dir}/polled.json`)) ?? {}
     const was = JSON.stringify([budget, failing])
-    const ctx: Ctx = { dir, disk, relay, now, events: [], budget, failing, failed: false }
+    const polledWas = JSON.stringify(polled)
+    const ctx: Ctx = { dir, disk, relay, now, events: [], budget, failing, failed: false, polled }
     await stepPending(ctx, me)
     await stepPairings(ctx)
     await stepOutbox(ctx)
+    if (JSON.stringify(polled) !== polledWas) await writeJson(disk, `${dir}/polled.json`, polled)
     if (JSON.stringify([budget, failing]) !== was) {
       await writeJson(disk, `${dir}/budget.json`, budget)
       await writeJson(disk, `${dir}/failing.json`, failing)
@@ -379,10 +407,11 @@ export function queue(
   pairingId: string,
   text: string,
   now: number,
-): Promise<{ ok: true; id: string } | { ok: false; reason: "no-pairing" } | { ok: false; reason: "secret"; found: string[] }> {
+): Promise<{ ok: true; id: string } | { ok: false; reason: "no-pairing" | "too-long" } | { ok: false; reason: "secret"; found: string[] }> {
   return serial(dir, async () => {
     const found = secretsIn(text)
     if (found.length > 0) return { ok: false as const, reason: "secret" as const, found }
+    if (partsOf(text).length > MAX_PARTS) return { ok: false as const, reason: "too-long" as const }
     const pairing = await readJson<Pairing>(disk, `${dir}/pairings/${pairingId}.json`)
     if (pairing === undefined || pairing.ended !== undefined || !pairing.confirmed) return { ok: false as const, reason: "no-pairing" as const }
     const out: Outgoing = { id: newId(), pairing: pairingId, text, at: now }

@@ -831,7 +831,10 @@ async function sendAbroad($: EngineInterface, me: Snapshot, pairing: Pairing, me
   const text = typeof message === "string" ? message : String(message ?? "")
   const now = await clockNow($)
   const queued = await queue(embassyDir(), embassyDisk($), pairing.id, text, now)
-  if (!queued.ok) return { deny: queued.reason === "secret" ? w().tool.secretRefused(queued.found) : w().noPairing(pairing.peer.name) }
+  if (!queued.ok)
+    return {
+      deny: queued.reason === "secret" ? w().tool.secretRefused(queued.found) : queued.reason === "too-long" ? w().tool.abroadTooLong : w().noPairing(pairing.peer.name),
+    }
   messageSent(me, agentId, w().visitorName(pairing.peer.name), text, now)
   office.abroad.lastAt = { ...office.abroad.lastAt, [pairing.id]: now }
   changed($)

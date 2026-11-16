@@ -419,6 +419,7 @@ const EN = {
     onlyAmbassadorAbroad: "Only the ambassador writes to a paired colleague. Ask the ambassador.",
     secretRefused: (found: string[]) => `Not sent: the message holds ${found.join(", ")}. Take it out and send again.`,
     abroadQueued: (name: string) => `Sent to ${name}'s ambassador; you will hear if it does not arrive.`,
+    abroadTooLong: "Not sent: the message is too long to go abroad in one piece (about 150 KB at most). Send it in shorter messages.",
     ambassadorOnly: (kind: "tool" | "board" | "path", what: string) =>
       kind === "tool"
         ? `The ambassador's session cannot use ${what}: an ambassador reads, asks and negotiates, and changes nothing. Ask a colleague who can, or bring it to the CEO.`
@@ -881,6 +882,7 @@ const ZH: Words = {
     onlyAmbassadorAbroad: "只有大使能给配对的同事发消息，请交给大使。",
     secretRefused: (found) => `没发：消息里有${found.join("、")}。去掉后再发。`,
     abroadQueued: (name) => `已发给 ${name} 的大使；如果没送到，会告诉你。`,
+    abroadTooLong: "没发：消息太长，没法一次发出去（最多约 150 KB）。请分成几条短一些的发。",
     ambassadorOnly: (kind, what) =>
       kind === "tool"
         ? `大使的会话里不能用 ${what}：大使只读资料、发消息、协商，不改东西。要动手的事请问能做的同事，或交给 CEO。`

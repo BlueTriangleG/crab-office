@@ -1,6 +1,6 @@
 import { expect, test } from "claude-code/testing"
 
-import { channelOf, codeSecrets, fromB64, newKeyPair, normalizeCode, open } from "../hooks/embassy/crypto.ts"
+import { channelOf, codeSecrets, fromB64, newKeyPair, normalizeCode, open, seal } from "../hooks/embassy/crypto.ts"
 import {
   CODE_TTL_MS,
   DAILY_BUDGET,
@@ -64,8 +64,9 @@ async function paired() {
   await s.a(T0)
   expect(await startJoin("/b", s.disk, code, T0 + 1000)).toEqual({ ok: true })
   await s.b(T0 + 1000)
-  await s.a(T0 + 2000)
-  await s.b(T0 + 2000 + POLL_MS)
+  // the offerer polls its code every MIN_POLL_GAP_MS; the joiner its channel every POLL_MS
+  await s.a(T0 + 6000)
+  await s.b(T0 + 6000 + POLL_MS)
   const [pa] = await pairingsOf("/a", s.disk)
   const [pb] = await pairingsOf("/b", s.disk)
   if (pa === undefined || pb === undefined) throw new Error("not paired")
@@ -79,9 +80,9 @@ test("a code pairs the two sides, and each knows the other by name", async () =>
   expect(await startJoin("/b", s.disk, code, T0 + 1000)).toEqual({ ok: true })
   // the joiner has answered, but is paired only once the offerer confirms
   expect(kinds(await s.b(T0 + 1000))).toEqual([])
-  const a = await s.a(T0 + 2000)
+  const a = await s.a(T0 + 6000)
   expect(a.find((e) => e.kind === "paired")).toMatchObject({ pairing: { peer: { name: "Dana" } } })
-  const b = await s.b(T0 + 2000 + POLL_MS)
+  const b = await s.b(T0 + 6000 + POLL_MS)
   expect(b.find((e) => e.kind === "paired")).toMatchObject({ pairing: { peer: { name: "Sam" } } })
   expect((await pairingsOf("/a", s.disk)).map((p) => p.topic)).toEqual((await pairingsOf("/b", s.disk)).map((p) => p.topic))
   expect(await startJoin("/b", s.disk, "not a code", T0)).toEqual({ ok: false, reason: "bad-code" })
@@ -220,7 +221,7 @@ test("the outbox stops at DAILY_BUDGET publishes a day and says so once", async 
 test("an envelope of another version is reported, not dropped silently", async () => {
   const s = await paired()
   await s.relay.publish(s.pb.topic, '{"v":2,"kind":"msg","from":"x","id":"y"}')
-  const events = await s.b(T0 + 2000 + 2 * POLL_MS)
+  const events = await s.b(T0 + 6000 + 2 * POLL_MS)
   expect(events.filter((e) => e.kind === "unknown-version")).toEqual([{ kind: "unknown-version", v: 2 }])
 })
 
@@ -228,7 +229,7 @@ test("either side can end a pairing, and the other hears it", async () => {
   const s = await paired()
   expect(await unpair("/a", s.disk, s.relay, s.pa.id, T0 + 10_000)).toBe(true)
   expect(await pairingsOf("/a", s.disk)).toHaveLength(0)
-  expect(kinds(await s.b(T0 + 2000 + 2 * POLL_MS))).toContain("ended")
+  expect(kinds(await s.b(T0 + 6000 + 2 * POLL_MS))).toContain("ended")
   expect(await pairingsOf("/b", s.disk)).toHaveLength(0)
   expect(await queue("/a", s.disk, s.pa.id, "still there?", T0 + 20_000)).toEqual({ ok: false, reason: "no-pairing" })
 })
@@ -237,4 +238,46 @@ test("a message holding a key is not queued", async () => {
   const s = await paired()
   expect(await queue("/a", s.disk, s.pa.id, "use sk-ant-api03-" + "x".repeat(40), T0)).toMatchObject({ ok: false, reason: "secret" })
   expect(await s.disk.list("/a/outbox")).toHaveLength(0)
+})
+
+// The relay allows a burst of 60 requests, then one every 5 s: a code waiting
+// to be used, or many pairings, must stay under it.
+function counting(s: ReturnType<typeof twoSides>) {
+  let polls = 0
+  const relay: Relay = { publish: s.relay.publish, poll: (t, since) => ((polls += 1), s.relay.poll(t, since)) }
+  return { relay, polls: () => polls }
+}
+
+test("a code waiting to be used asks the relay at most once every 5 s", async () => {
+  const s = twoSides()
+  const c = counting(s)
+  await startOffer("/a", s.disk, T0)
+  for (let t = 0; t < 60_000; t += 1000) await step("/a", s.disk, c.relay, { name: "Sam" }, T0 + t)
+  expect(c.polls()).toBeLessThanOrEqual(12)
+  expect(c.polls()).toBeGreaterThan(0)
+})
+
+test("many pairings together ask the relay at most once every 5 s", async () => {
+  const s = twoSides()
+  const c = counting(s)
+  for (let i = 0; i < 6; i++)
+    s.files.set(`/a/pairings/p${i}.json`, JSON.stringify({ id: `p${i}`, topic: `co-c-${i}`, key: "AAAA", side: "s", peer: { name: `P${i}` }, since: "all", at: T0, confirmed: true }))
+  for (let t = 0; t < 60_000; t += 1000) await step("/a", s.disk, c.relay, { name: "Sam" }, T0 + t)
+  expect(c.polls()).toBeLessThanOrEqual(12)
+})
+
+test("a broken part on the channel does not stop the messages after it", async () => {
+  const s = await paired()
+  // sealed with the channel's key, so only its numbering is wrong
+  const body = seal(fromB64(s.pa.key), "x", "bad:0")
+  await s.relay.publish(s.pa.topic, JSON.stringify({ v: 1, kind: "msg", from: s.pa.side, id: "bad", part: [0, -1], body }))
+  await queue("/a", s.disk, s.pa.id, "still here", T0 + 10_000)
+  await s.a(T0 + 10_000 + POLL_MS)
+  const got = (await s.b(T0 + 10_000 + 2 * POLL_MS)).filter((e) => e.kind === "message")
+  expect(got.map((e) => (e.kind === "message" ? e.message.text : ""))).toEqual(["still here"])
+})
+
+test("a message too long to be put back together is refused, not dropped on the other side", async () => {
+  const s = await paired()
+  expect(await queue("/a", s.disk, s.pa.id, "字".repeat(64 * 800 + 1), T0)).toEqual({ ok: false, reason: "too-long" })
 })
