@@ -399,6 +399,11 @@ export function spawned(
 
 // A SendMessage from any loop of this session. The recipient is one of this
 // session's crabs by id, or someone outside it, named as the sender spelled it.
+// A word from outside the office, a paired colleague's ambassador, to this session.
+export function messageHeard(s: Snapshot, from: string, text: string, now: number) {
+  noted(s, { at: now, kind: "message", from: { name: from, color: OUTSIDER }, to: speakerOf(s.leader, s), text: clip(text, NOTE_MAX) })
+}
+
 export function messageSent(
   s: Snapshot,
   agentId: string | undefined,

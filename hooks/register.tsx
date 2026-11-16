@@ -18,6 +18,7 @@ import {
   ordersFor,
   recipientsOf,
   targetOf,
+  messageHeard,
   messageSent,
   subagentBtwOf,
   parseSay,
@@ -76,6 +77,9 @@ import type { HerdrPlace } from "./herdr.ts"
 import { cardText, linesText, officeText } from "./text.ts"
 import { LINE_STATUSES, askOfLine, lineRefusal, lineRowsOf, linesOf } from "./lines.ts"
 import { refusalOf as ambassadorRefusal } from "./embassy/guard.ts"
+import { markDelivered, pairingsOf, queue, startJoin, startOffer, step, undelivered, unpair } from "./embassy/embassy.ts"
+import type { Disk, EmbassyEvent, Pairing } from "./embassy/embassy.ts"
+import { ntfyRelay } from "./embassy/wire.ts"
 import type { Line, LineRow, LineStatus } from "./lines.ts"
 import type { Decision, Settled } from "./decisions.ts"
 import { MEETING, closeRefusal, isLiveMeeting, meetingNameRefusal, meetingNamed, meetingsOf, speakRefusal } from "./meetings.ts"
@@ -109,6 +113,9 @@ const PANE_COLUMNS = SEAT_COLS * 3 + 2
 const office = {
   me: undefined as Snapshot | undefined,
   base: "",
+  // The ambassador's side of pairings with other offices: the name it gives
+  // them, the pairings as last read, and what it must be told when next free.
+  abroad: { name: "crab-office", pairings: [] as Pairing[], notices: [] as string[] },
   // $HOME, where the ambassador's guard finds the machine's credentials.
   home: "",
   // The engine's register of this machine's sessions, one `<pid>.json` each.
@@ -680,6 +687,7 @@ async function tick($: EngineInterface) {
   await watch($, now)
   await syncTab($)
   await obey($, now)
+  await embassyTick($)
   if (office.isOpen) announce($, office.others, now)
   // The elapsed times on screen move every second.
   if (office.isOpen || me.agents.length > 0) $.ui.invalidate("ui.render")
@@ -700,6 +708,120 @@ async function handOver($: EngineInterface, now: number) {
   turnStarted(me, undefined, text, now)
   changed($)
   await $.prompt.submit({ text })
+}
+
+// The name a paired office knows this one by: whose machine it is.
+async function helloName($: EngineInterface, home: string | undefined): Promise<string> {
+  const git = await $.process.run(["git", "config", "user.name"]).catch(() => undefined)
+  const name = git?.exitCode === 0 ? git.stdout.trim() : ""
+  return name || (await $.env.get("USER").catch(() => undefined)) || home?.split("/").pop() || "crab-office"
+}
+
+const embassyDir = () => `${office.base}/embassy`
+// The engine's clock, not Date.now: what the embassy times (a code's ten
+// minutes, a poll every twenty seconds) then runs on the clock a test moves.
+const clockNow = ($: EngineInterface) => $.clock.now()
+
+function embassyDisk($: EngineInterface): Disk {
+  return {
+    read: (path) => $.fs.read(path).then((text) => String(text)).catch(() => undefined),
+    write: (path, text) => $.fs.write(path, text),
+    list: (dir) => $.fs.list(dir).then((entries) => entries.map((x) => x.name)).catch(() => []),
+  }
+}
+
+const relayOf = ($: EngineInterface) => ntfyRelay((url, init) => $.http.fetch(url, init))
+
+// A paired colleague by the name the ambassador writes to: theirs, or as the
+// board shows them; the latest pairing where two share a name.
+function pairingNamed(to: string): Pairing | undefined {
+  const name = to.trim().replace(/^@/, "").toLowerCase()
+  return office.abroad.pairings
+    .filter((p) => p.confirmed)
+    .sort((a, b) => b.at - a.at)
+    .find((p) => p.peer.name.toLowerCase() === name || w().visitorName(p.peer.name).toLowerCase() === name)
+}
+
+async function pairCommand($: EngineInterface, args: string): Promise<string> {
+  if (office.org.ambassador === undefined) return w().noAmbassador
+  const now = await clockNow($)
+  if (args === "") return w().pairCode(await startOffer(embassyDir(), embassyDisk($), now))
+  return (await startJoin(embassyDir(), embassyDisk($), args, now)).ok ? w().joining : w().badCode
+}
+
+async function unpairCommand($: EngineInterface, name: string): Promise<string> {
+  const pairing = pairingNamed(name)
+  if (pairing === undefined) return w().noPairing(name)
+  await unpair(embassyDir(), embassyDisk($), relayOf($), pairing.id, await clockNow($))
+  office.abroad.pairings = office.abroad.pairings.filter((p) => p.id !== pairing.id)
+  return w().unpaired(pairing.peer.name)
+}
+
+function noticeOf($: EngineInterface, me: Snapshot, e: EmbassyEvent, now: number) {
+  const said =
+    e.kind === "paired"
+      ? w().abroad.paired(e.pairing.peer.name)
+      : e.kind === "unacked"
+        ? w().abroad.unacked(e.pairing.peer.name, clip(e.message.text, 40))
+        : e.kind === "ended"
+          ? w().abroad.ended(e.pairing.peer.name)
+          : e.kind === "expired"
+            ? w().abroad.expired
+            : e.kind === "relay-failed"
+              ? w().abroad.relayFailed(e.reason)
+              : e.kind === "over-budget"
+                ? w().abroad.overBudget
+                : e.kind === "unknown-version"
+                  ? w().abroad.unknownVersion(e.v)
+                  : undefined
+  if (e.kind === "paired" || e.kind === "message")
+    messageHeard(me, w().visitorName(e.pairing.peer.name), e.kind === "paired" ? w().pairedLine : e.message.text, now)
+  if (said === undefined) return
+  office.abroad.notices = [...office.abroad.notices, said]
+  if (office.isOpen) $.ui.toast(said)
+}
+
+// Only the ambassador's session reaches the relay. What came in waits for it
+// to be free with nothing typed in its prompt, then goes in as one prompt.
+async function embassyTick($: EngineInterface) {
+  const me = office.me
+  if (me === undefined) return
+  const isAmbassador = office.org.ambassador === me.sessionId
+  if (!isAmbassador && !office.isOpen) return
+  const now = await clockNow($)
+  const disk = embassyDisk($)
+  if (isAmbassador) {
+    const events = await step(embassyDir(), disk, relayOf($), { name: office.abroad.name }, now)
+    for (const e of events) noticeOf($, me, e, now)
+    if (events.length > 0) changed($)
+  }
+  office.abroad.pairings = await pairingsOf(embassyDir(), disk)
+  if (isAmbassador) await deliverAbroad($, me, disk, now)
+}
+
+async function deliverAbroad($: EngineInterface, me: Snapshot, disk: Disk, now: number) {
+  if (!isFree(me, now)) return
+  const messages = await undelivered(embassyDir(), disk)
+  if (messages.length === 0 && office.abroad.notices.length === 0) return
+  if ((await $.prompt.read()).text.trim() !== "") return
+  const nameOf = (id: string) => office.abroad.pairings.find((p) => p.id === id)?.peer.name ?? "?"
+  const text = [...office.abroad.notices, ...messages.map((m) => w().outsideEnvelope(nameOf(m.pairing), m.text))].join("\n\n")
+  office.abroad.notices = []
+  for (const m of messages) await markDelivered(embassyDir(), disk, m.id, now)
+  turnStarted(me, undefined, text, now)
+  changed($)
+  await $.prompt.submit({ text })
+}
+
+async function sendAbroad($: EngineInterface, me: Snapshot, pairing: Pairing, message: unknown, agentId: string | undefined) {
+  if (office.org.ambassador !== me.sessionId) return { deny: w().tool.onlyAmbassadorAbroad }
+  const text = typeof message === "string" ? message : String(message ?? "")
+  const now = await clockNow($)
+  const queued = await queue(embassyDir(), embassyDisk($), pairing.id, text, now)
+  if (!queued.ok) return { deny: queued.reason === "secret" ? w().tool.secretRefused(queued.found) : w().noPairing(pairing.peer.name) }
+  messageSent(me, agentId, w().visitorName(pairing.peer.name), text, now)
+  changed($)
+  return { result: { success: true, message: w().tool.abroadQueued(pairing.peer.name) } }
 }
 
 // The ambassador is told its post once per appointment, when free, as the CEO is
@@ -1420,6 +1542,7 @@ async function restore($: EngineInterface, me: Snapshot) {
   if (before.seen !== undefined) me.seen = before.seen
   me.obeyed = before.obeyed ?? []
   if (before.ceoSeen !== undefined) me.ceoSeen = before.ceoSeen
+  if (before.ambassadorSeen !== undefined) me.ambassadorSeen = before.ambassadorSeen
   if (before.nudged !== undefined) me.nudged = before.nudged
   if (before.themeSeen !== undefined) me.themeSeen = before.themeSeen
   if (before.askedName === true) me.askedName = true
@@ -1531,6 +1654,7 @@ export const register: Register = (on, options) => {
     const isObserving = options.mode === "observe" || (!e.isInteractive && kind !== "bg")
     office.base = `${configDir || `${home}/.claude`}/crab-office`
     office.home = home ?? ""
+    office.abroad.name = await helloName($, home)
     office.sessions = `${configDir || `${home}/.claude`}/sessions`
     // A worktree's `.git` is a file naming its repository; a checkout's is a
     // folder, which a read rejects.
@@ -1723,6 +1847,9 @@ export const register: Register = (on, options) => {
     const { to, message } = e as unknown as { to?: unknown; message?: unknown }
     if (me === undefined || typeof to !== "string") return next(e)
     const peers = await readJsonDir<unknown>($, office.sessions)
+    // A paired colleague's name, unless a session here goes by it.
+    const abroad = peerOf(peers, to) === undefined ? pairingNamed(to) : undefined
+    if (abroad !== undefined) return sendAbroad($, me, abroad, message, e.agentId)
     // A meeting's name, unless a session goes by it now.
     const m = peerOf(peers, to) === undefined ? meetingNamed(to, office.meetings) : undefined
     if (m !== undefined) return speak($, m, me, typeof message === "string" ? message : String(message ?? ""), e.agentId, peers)
@@ -1912,6 +2039,9 @@ export const register: Register = (on, options) => {
     // A person appoints: the prompt box, or the person's own remote client.
     const isPerson = e.origin.kind === "composer" || e.origin.kind === "bridge"
     if (appointing !== undefined) return { text: isPerson ? await appoint($, appointing) : w().notByPerson }
+    // Pairing lets another office talk to this one: the chairman's to make.
+    if (arg === "pair" || arg.startsWith("pair ")) return { text: isPerson ? await pairCommand($, args.trim().slice(4).trim()) : w().notByPerson }
+    if (arg.startsWith("unpair ")) return { text: isPerson ? await unpairCommand($, args.trim().slice(7).trim()) : w().notByPerson }
     const failed = await openPane($)
     if (failed !== undefined) return { text: failed }
     const hint = e.presentation.isFullscreen
