@@ -458,7 +458,8 @@ but never drew.
   instruction to the session it names, and the CEO its handover and the
   watchdog's nudges as prompts, sends the CEO's jobs and the reports through
   the engine's cross-session channel, and answers a btw with one side call to
-  the model. No network, no processes.
+  the model. Its one use of the network is an ambassador's sealed messages
+  to a paired office, through ntfy.sh.
 - "Waiting for approval" comes from the classic `PermissionRequest` event, skipped in
   auto mode. `tool.check` answering `ask` was tried first and raised a hand on most
   calls in auto mode, where the classifier answers and nobody is asked. Where an

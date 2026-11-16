@@ -1,7 +1,7 @@
 {
   "name": "crab-office",
-  "version": "0.8.0",
-  "description": "Every running Claude Code session and its subagents as a pixel-art office: departments by project, org-chart teams, a shared board, a CEO you appoint, meetings between sessions, and btw questions to any crab",
+  "version": "0.9.0",
+  "description": "Every running Claude Code session and its subagents as a pixel-art office: departments by project, org-chart teams, a shared board, a CEO you appoint, meetings between sessions, btw questions to any crab, and an ambassador that talks to a colleague's office",
   "author": {
     "name": "Gavin Hao"
   },
